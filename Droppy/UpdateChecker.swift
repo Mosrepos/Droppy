@@ -123,31 +123,22 @@ class UpdateChecker: ObservableObject {
             alert.informativeText += "\n\nWhat's new:\n\(releaseNotes!.prefix(200))..."
         }
         
-        alert.informativeText += "\n\nTo update via Homebrew, click the button below to copy the command and open Terminal."
+        alert.informativeText += "\n\nThe app will update and restart automatically."
         
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Update via Homebrew")
+        alert.addButton(withTitle: "Update & Restart")
         alert.addButton(withTitle: "Later")
         
         let response = alert.runModal()
         
         if response == .alertFirstButtonReturn {
-            updateViaHomebrew()
+            if let url = downloadURL {
+                AutoUpdater.shared.installUpdate(from: url)
+            }
         }
     }
     
-    /// Copy command and open Terminal
-    func updateViaHomebrew() {
-        // 1. Copy command to clipboard
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString("brew upgrade iordv/tap/droppy", forType: .string)
-        
-        // 2. Open Terminal
-        if let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
-            NSWorkspace.shared.open(terminalURL)
-        }
-    }
+    // Removed old update methods as they are replaced by AutoUpdater
     
     /// Check for updates and always show feedback to user
     func checkAndNotify() {
