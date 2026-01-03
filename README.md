@@ -16,9 +16,9 @@
 </p>
 
 <p align="center">
-  <a href="#-installation">Installation</a> •
-  <a href="#-key-features">Features</a> •
-  <a href="#-usage">Usage</a>
+  <a href="#installation">Installation</a> •
+  <a href="#key-features">Features</a> •
+  <a href="#usage">Usage</a>
 </p>
 
 ---
