@@ -190,6 +190,7 @@ struct SettingsView: View {
 struct ChangelogData {
 
     static let current = """
+    Fixed: Installation error (SHA mismatch) when installing via Homebrew.
     Fixed: App quitting when closing Settings window
     Fixed: Crash when moving basket during animation
     Fixed: Window memory management stability improvements
