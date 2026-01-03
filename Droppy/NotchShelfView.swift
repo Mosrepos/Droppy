@@ -586,33 +586,51 @@ struct NotchItemView: View {
     private func moveFiles(to destination: URL) {
         let itemsToMove = state.selectedItems.isEmpty ? [item] : state.items.filter { state.selectedItems.contains($0.id) }
         
-        for item in itemsToMove {
-            do {
-                let destURL = destination.appendingPathComponent(item.url.lastPathComponent)
-                var finalDestURL = destURL
-                var counter = 1
-                while FileManager.default.fileExists(atPath: finalDestURL.path) {
-                    let ext = destURL.pathExtension
-                    let name = destURL.deletingPathExtension().lastPathComponent
-                    let newName = "\(name) \(counter)" + (ext.isEmpty ? "" : ".\(ext)")
-                    finalDestURL = destination.appendingPathComponent(newName)
-                    counter += 1
-                }
-                
-                try FileManager.default.moveItem(at: item.url, to: finalDestURL)
-                state.removeItem(item)
-            } catch {
+        // Run file operations in background to prevent UI freezing (especially for NAS/Network drives)
+        DispatchQueue.global(qos: .userInitiated).async {
+            for item in itemsToMove {
                 do {
-                   try FileManager.default.copyItem(at: item.url, to: destination.appendingPathComponent(item.url.lastPathComponent))
-                   try FileManager.default.removeItem(at: item.url)
-                   state.removeItem(item)
+                    let destURL = destination.appendingPathComponent(item.url.lastPathComponent)
+                    var finalDestURL = destURL
+                    var counter = 1
+                    
+                    // Check existence (this is fast usually, but good to be in bg for network drives)
+                    while FileManager.default.fileExists(atPath: finalDestURL.path) {
+                        let ext = destURL.pathExtension
+                        let name = destURL.deletingPathExtension().lastPathComponent
+                        let newName = "\(name) \(counter)" + (ext.isEmpty ? "" : ".\(ext)")
+                        finalDestURL = destination.appendingPathComponent(newName)
+                        counter += 1
+                    }
+                    
+                    // Try primitive move first
+                    try FileManager.default.moveItem(at: item.url, to: finalDestURL)
+                    
+                    // Update UI on Main Thread
+                    DispatchQueue.main.async {
+                        state.removeItem(item)
+                    }
                 } catch {
-                    print("Failed to move file: \(error.localizedDescription)")
-                    let alert = NSAlert()
-                    alert.messageText = "Move Failed"
-                    alert.informativeText = "Could not move \(item.name): \(error.localizedDescription)"
-                    alert.alertStyle = .warning
-                    alert.runModal()
+                    // Fallback copy+delete mechanism for cross-volume moves
+                    do {
+                        try FileManager.default.copyItem(at: item.url, to: destination.appendingPathComponent(item.url.lastPathComponent))
+                        try FileManager.default.removeItem(at: item.url)
+                        
+                        DispatchQueue.main.async {
+                            state.removeItem(item)
+                        }
+                    } catch {
+                        let errorDescription = error.localizedDescription
+                        DispatchQueue.main.async {
+                            print("Failed to move file: \(errorDescription)")
+                            let alert = NSAlert()
+                            alert.messageText = "Move Failed"
+                            alert.informativeText = "Could not move \(item.name): \(errorDescription)"
+                            alert.alertStyle = .warning
+                            // Check if window is still available to attach sheet, otherwise runModal
+                            alert.runModal()
+                        }
+                    }
                 }
             }
         }

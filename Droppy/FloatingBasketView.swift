@@ -636,35 +636,46 @@ struct BasketItemView: View {
     private func moveFiles(to destination: URL) {
         let itemsToMove = state.selectedBasketItems.isEmpty ? [item] : state.basketItems.filter { state.selectedBasketItems.contains($0.id) }
         
-        for item in itemsToMove {
-            do {
-                let destURL = destination.appendingPathComponent(item.url.lastPathComponent)
-                var finalDestURL = destURL
-                var counter = 1
-                while FileManager.default.fileExists(atPath: finalDestURL.path) {
-                    let ext = destURL.pathExtension
-                    let name = destURL.deletingPathExtension().lastPathComponent
-                    let newName = "\(name) \(counter)" + (ext.isEmpty ? "" : ".\(ext)")
-                    finalDestURL = destination.appendingPathComponent(newName)
-                    counter += 1
+        DispatchQueue.global(qos: .userInitiated).async {
+            for item in itemsToMove {
+                do {
+                    let destURL = destination.appendingPathComponent(item.url.lastPathComponent)
+                    var finalDestURL = destURL
+                    var counter = 1
+                    while FileManager.default.fileExists(atPath: finalDestURL.path) {
+                        let ext = destURL.pathExtension
+                        let name = destURL.deletingPathExtension().lastPathComponent
+                        let newName = "\(name) \(counter)" + (ext.isEmpty ? "" : ".\(ext)")
+                        finalDestURL = destination.appendingPathComponent(newName)
+                        counter += 1
+                    }
+                    
+                    try FileManager.default.moveItem(at: item.url, to: finalDestURL)
+                    
+                    DispatchQueue.main.async {
+                        state.removeBasketItem(item)
+                    }
+                } catch {
+                    // Fallback copy+delete mechanism
+                    do {
+                        try FileManager.default.copyItem(at: item.url, to: destination.appendingPathComponent(item.url.lastPathComponent))
+                        try FileManager.default.removeItem(at: item.url)
+                        
+                        DispatchQueue.main.async {
+                            state.removeBasketItem(item)
+                        }
+                    } catch {
+                        let errorDescription = error.localizedDescription
+                        DispatchQueue.main.async {
+                            print("Failed to move file: \(errorDescription)")
+                            let alert = NSAlert()
+                            alert.messageText = "Move Failed"
+                            alert.informativeText = "Could not move \(item.name): \(errorDescription)"
+                            alert.alertStyle = .warning
+                            alert.runModal()
+                        }
+                    }
                 }
-                
-                try FileManager.default.moveItem(at: item.url, to: finalDestURL)
-                state.removeBasketItem(item)
-            } catch {
-               // Fallback copy+delete mechanism
-               do {
-                   try FileManager.default.copyItem(at: item.url, to: destination.appendingPathComponent(item.url.lastPathComponent))
-                   try FileManager.default.removeItem(at: item.url)
-                   state.removeBasketItem(item)
-               } catch {
-                   print("Failed to move file: \(error.localizedDescription)")
-                   let alert = NSAlert()
-                   alert.messageText = "Move Failed"
-                   alert.informativeText = "Could not move \(item.name): \(error.localizedDescription)"
-                   alert.alertStyle = .warning
-                   alert.runModal()
-               }
             }
         }
     }
