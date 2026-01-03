@@ -235,55 +235,72 @@ class FileCompressor {
     }
     
     private func compressPDFByRerendering(pdfDocument: PDFDocument, mode: CompressionMode, outputURL: URL) async -> URL? {
-        // Determine scale factor based on mode
+        // Determine scale and JPEG quality based on mode
         let scale: CGFloat
+        let jpegQuality: CGFloat
         switch mode {
         case .preset(let quality):
             switch quality {
-            case .low: scale = 0.5
-            case .medium: scale = 0.72
-            case .high: scale = 0.85
+            case .low: 
+                scale = 0.5
+                jpegQuality = 0.3
+            case .medium: 
+                scale = 0.72
+                jpegQuality = 0.5
+            case .high: 
+                scale = 0.85
+                jpegQuality = 0.7
             }
         case .targetSize:
-            scale = 0.6 // Use medium for target size (iterative would be complex for PDF)
+            scale = 0.6
+            jpegQuality = 0.4 // Lower quality for target size mode
         }
         
-        // Create new PDF by re-rendering pages at lower resolution
-        let newPDF = PDFDocument()
+        // Create PDF context with correct page sizes
+        guard let pdfData = CFDataCreateMutable(nil, 0) else { return nil }
+        guard let consumer = CGDataConsumer(data: pdfData) else { return nil }
+        
+        var mediaBox = CGRect.zero
+        guard let pdfContext = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return nil }
         
         for i in 0..<pdfDocument.pageCount {
             guard let page = pdfDocument.page(at: i) else { continue }
             let bounds = page.bounds(for: .mediaBox)
+            let rotation = page.rotation
             
-            // Create image of page at reduced resolution
-            let imageSize = NSSize(width: bounds.width * scale, height: bounds.height * scale)
-            let image = NSImage(size: imageSize)
+            // Calculate scaled bounds, preserving orientation
+            var scaledBounds = CGRect(
+                x: 0, y: 0,
+                width: bounds.width * scale,
+                height: bounds.height * scale
+            )
             
-            image.lockFocus()
-            if let context = NSGraphicsContext.current?.cgContext {
-                context.scaleBy(x: scale, y: scale)
-                page.draw(with: .mediaBox, to: context)
-            }
-            image.unlockFocus()
+            // Begin PDF page with correct size
+            let pageInfo: [CFString: Any] = [
+                kCGPDFContextMediaBox: scaledBounds
+            ]
+            pdfContext.beginPDFPage(pageInfo as CFDictionary)
             
-            // Convert to JPEG for compression
-            if let tiffData = image.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiffData),
-               let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) {
-                
-                // Create PDF page from JPEG
-                if let jpegImage = NSImage(data: jpegData) {
-                    let pdfPage = PDFPage(image: jpegImage)
-                    newPDF.insert(pdfPage!, at: newPDF.pageCount)
-                }
-            }
+            // Draw page scaled
+            pdfContext.scaleBy(x: scale, y: scale)
+            
+            // Use PDFPage's draw which handles rotation
+            page.draw(with: .mediaBox, to: pdfContext)
+            
+            pdfContext.endPDFPage()
         }
         
-        if newPDF.write(to: outputURL) {
+        pdfContext.closePDF()
+        
+        // Write the PDF data
+        let data = pdfData as Data
+        do {
+            try data.write(to: outputURL)
             return outputURL
+        } catch {
+            print("Error writing PDF: \(error)")
+            return nil
         }
-        
-        return nil
     }
     
     // MARK: - Video Compression
@@ -335,11 +352,15 @@ class FileCompressor {
         guard durationSeconds > 0 else { return nil }
         
         // Target bitrate = (target size in bits) / duration
-        // Leave some room for audio (estimate 128kbps audio)
+        // Add 15% overhead because H.264 encoders often undershoot average bitrate
+        // Also account for audio (~128kbps)
         let audioBitrate: Int64 = 128_000
-        let targetBits = targetBytes * 8
+        let overheadMultiplier: Double = 1.15 // 15% overhead to hit target more closely
+        let targetBits = Int64(Double(targetBytes * 8) * overheadMultiplier)
         let availableBitsForVideo = targetBits - Int64(durationSeconds * Double(audioBitrate))
         let videoBitrate = max(100_000, Int(Double(availableBitsForVideo) / durationSeconds))
+        
+        print("Target: \(targetBytes) bytes, Duration: \(durationSeconds)s, Video bitrate: \(videoBitrate) bps")
         
         return await compressVideoWithBitrate(asset: asset, videoBitrate: videoBitrate, outputURL: outputURL)
     }
