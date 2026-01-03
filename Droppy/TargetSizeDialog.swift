@@ -21,6 +21,7 @@ struct TargetSizeDialogView: View {
     @State private var isBgHovering: Bool = false
     @State private var isCompressButtonHovering = false
     @State private var isCancelButtonHovering = false
+    @State private var inputDashPhase: CGFloat = 0
     
     private let cornerRadius: CGFloat = 24
     
@@ -88,25 +89,44 @@ struct TargetSizeDialogView: View {
                 .background(Color.white.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 
-                // Target size input
+                // Target size input - using same style as rename text field
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target Size (MB)")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.6))
                     
-                    HStack {
-                        CompressTextField(text: $targetSizeMB, onSubmit: compress)
+                    HStack(spacing: 8) {
+                        // Text field with animated dotted border (same as rename)
+                        TargetSizeTextField(
+                            text: $targetSizeMB,
+                            onSubmit: compress,
+                            onCancel: onCancel
+                        )
+                        .frame(width: 200)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.black.opacity(0.3))
+                        )
+                        // Animated dotted blue outline (same as rename)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(
+                                    Color.accentColor.opacity(0.8),
+                                    style: StrokeStyle(
+                                        lineWidth: 1.5,
+                                        lineCap: .round,
+                                        dash: [3, 3],
+                                        dashPhase: inputDashPhase
+                                    )
+                                )
+                        )
                         
                         Text("MB")
                             .foregroundStyle(.white.opacity(0.6))
+                            .font(.system(size: 14, weight: .medium))
                     }
-                    .padding(12)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.blue.opacity(0.5), lineWidth: 1.5)
-                    )
                 }
                 
                 // Buttons
@@ -158,7 +178,7 @@ struct TargetSizeDialogView: View {
             }
             .padding(24)
         }
-        .frame(width: 340, height: 280)
+        .frame(width: 340, height: 290)
         .coordinateSpace(name: "compressDialog")
         .onContinuousHover(coordinateSpace: .named("compressDialog")) { phase in
             switch phase {
@@ -170,9 +190,12 @@ struct TargetSizeDialogView: View {
             }
         }
         .onAppear {
-            // Animate dashed border
+            // Animate dashed borders
             withAnimation(.linear(duration: 25).repeatForever(autoreverses: false)) {
                 dashPhase -= 280
+            }
+            withAnimation(.linear(duration: 0.5).repeatForever(autoreverses: false)) {
+                inputDashPhase = 6
             }
             // Default to 50% of current size
             let suggestedMB = Double(currentSize) / (1024 * 1024) / 2
@@ -194,11 +217,12 @@ struct TargetSizeDialogView: View {
     }
 }
 
-// MARK: - Editable Text Field
+// MARK: - Target Size Text Field (same as AutoSelectTextField from rename)
 
-struct CompressTextField: NSViewRepresentable {
+private struct TargetSizeTextField: NSViewRepresentable {
     @Binding var text: String
     let onSubmit: () -> Void
+    let onCancel: () -> Void
     
     func makeNSView(context: Context) -> NSTextField {
         let textField = NSTextField()
@@ -211,19 +235,36 @@ struct CompressTextField: NSViewRepresentable {
         textField.alignment = .left
         textField.focusRingType = .none
         textField.stringValue = text
-        textField.isEditable = true
-        textField.isSelectable = true
         
-        // Make it the first responder after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            textField.window?.makeFirstResponder(textField)
+        // Make it the first responder and select all text after a brief delay
+        // For non-activating panels, we need special handling to make them accept keyboard input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard let window = textField.window as? NSPanel else { return }
+            
+            // Temporarily allow the panel to become key window
+            window.becomesKeyOnlyIfNeeded = false
+            
+            // CRITICAL: Activate the app itself - this is what makes the selection blue vs grey
+            NSApp.activate(ignoringOtherApps: true)
+            
+            // Make the window key and order it front to accept keyboard input
+            window.makeKeyAndOrderFront(nil)
+            
+            // Now make the text field first responder
+            window.makeFirstResponder(textField)
+            
+            // Select all text
             textField.selectText(nil)
+            if let editor = textField.currentEditor() {
+                editor.selectedRange = NSRange(location: 0, length: textField.stringValue.count)
+            }
         }
         
         return textField
     }
     
     func updateNSView(_ nsView: NSTextField, context: Context) {
+        // Only update if text changed externally
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
@@ -234,21 +275,26 @@ struct CompressTextField: NSViewRepresentable {
     }
     
     class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: CompressTextField
+        let parent: TargetSizeTextField
         
-        init(_ parent: CompressTextField) {
+        init(_ parent: TargetSizeTextField) {
             self.parent = parent
         }
         
-        func controlTextDidChange(_ obj: Notification) {
-            if let textField = obj.object as? NSTextField {
+        func controlTextDidChange(_ notification: Notification) {
+            if let textField = notification.object as? NSTextField {
                 parent.text = textField.stringValue
             }
         }
         
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                // Enter pressed - submit
                 parent.onSubmit()
+                return true
+            } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                // Escape pressed - cancel
+                parent.onCancel()
                 return true
             }
             return false
@@ -283,7 +329,7 @@ class TargetSizeDialogController {
             )
             
             let hostingView = NSHostingView(rootView: dialogView)
-            hostingView.frame = NSRect(x: 0, y: 0, width: 340, height: 280)
+            hostingView.frame = NSRect(x: 0, y: 0, width: 340, height: 290)
             
             let window = NSPanel(
                 contentRect: hostingView.frame,
@@ -303,7 +349,7 @@ class TargetSizeDialogController {
             if let screen = NSScreen.main {
                 let screenFrame = screen.frame
                 let x = (screenFrame.width - 340) / 2
-                let y = (screenFrame.height - 280) / 2
+                let y = (screenFrame.height - 290) / 2
                 window.setFrameOrigin(NSPoint(x: x, y: y))
             }
             
