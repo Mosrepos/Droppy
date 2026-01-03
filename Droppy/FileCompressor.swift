@@ -215,7 +215,7 @@ class FileCompressor {
             
             for i in 0..<pdfDocument.pageCount {
                 guard let page = pdfDocument.page(at: i) else { continue }
-                let mediaBox = page.bounds(for: .mediaBox)
+                _ = page.bounds(for: .mediaBox)
                 
                 context?.beginPDFPage(nil)
                 filter.apply(to: context!)
@@ -297,7 +297,7 @@ class FileCompressor {
             }
             
             // Create PDF page with this image
-            var pageMediaBox = CGRect(x: 0, y: 0, width: visualWidth, height: visualHeight)
+            let pageMediaBox = CGRect(x: 0, y: 0, width: visualWidth, height: visualHeight)
             let pageInfo: [CFString: Any] = [kCGPDFContextMediaBox: pageMediaBox]
             pdfContext.beginPDFPage(pageInfo as CFDictionary)
             
