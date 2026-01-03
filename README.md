@@ -16,9 +16,9 @@
 </p>
 
 <p align="center">
-  <a href="#installation">Installation</a> •
-  <a href="#features">Features</a> •
-  <a href="#usage">Usage</a>
+  <a href="#-installation">Installation</a> •
+  <a href="#-key-features">Features</a> •
+  <a href="#-usage">Usage</a>
 </p>
 
 ---
@@ -38,8 +38,28 @@ Droppy provides a **temporary shelf** for your files. Drag files to the top of y
 | **🗂️ Notch Shelf** | Drag files to the Notch. They vanish into a sleek shelf, ready when you are. |
 | **🧺 Floating Basket** | **"Jiggle" your mouse** while dragging to summon a basket instantly at your cursor. |
 | **📉 Smart Compression** | Right-click to compress Images, PDFs, and Videos. Now with **Size Guard** 🛡️ to prevent bloat. |
-| **⚡️ Fast Actions** | Convert images/docs, extract text (OCR), zip, or rename directly from the shelf. |
+| **⚡️ Fast Actions** | Convert images/docs, extract text (OCR), zip, or rename directly in the shelf. |
 | **🖥️ Multi-Monitor** | Works beautifully on external displays. Auto-hides the visual notch if you prefer. |
+
+---
+
+## 🕹️ Usage
+
+### 1. Stash it 📥
+- **Notch**: Drag any file to the black area around your webcam. It snaps in.
+- **Basket**: While dragging a file, **shake your mouse cursor** left and right. A basket appears under your pointer.
+
+### 2. Tweak it 🪄
+- **Hover** over the Notch or Basket to see your files.
+- **Right-click** any item to:
+    - **Compress** (Auto or Target Size).
+    - **Convert** (e.g., HEIC towards JPEG).
+    - **extract Text** (Copy text from images).
+    - **Share** or **Reveal in Finder**.
+
+### 3. Drop it 📤
+- Drag the file out of the shelf and drop it into your email, Discord, Photoshop, or Finder folder.
+- **Poof**: The file is moved (or copied) and vanishes from the shelf.
 
 ---
 
