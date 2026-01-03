@@ -179,6 +179,8 @@ struct TargetSizeDialogView: View {
             .padding(24)
         }
         .frame(width: 340, height: 290)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .background(Color.clear)
         .coordinateSpace(name: "compressDialog")
         .onContinuousHover(coordinateSpace: .named("compressDialog")) { phase in
             switch phase {
