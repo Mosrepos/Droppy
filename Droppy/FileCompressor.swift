@@ -418,7 +418,15 @@ class FileCompressor {
                 audioInput?.expectsMediaDataInRealTime = false
                 writer.add(audioInput!)
                 
-                audioOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
+                // Reader must output decompressed audio for the writer to re-encode
+                let audioReaderSettings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVLinearPCMIsFloatKey: false,
+                    AVLinearPCMBitDepthKey: 16,
+                    AVLinearPCMIsNonInterleaved: false,
+                    AVLinearPCMIsBigEndianKey: false
+                ]
+                audioOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: audioReaderSettings)
                 audioOutput?.alwaysCopiesSampleData = false
                 reader.add(audioOutput!)
             }
