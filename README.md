@@ -27,7 +27,7 @@
 
 Droppy provides a **temporary shelf** for your files. Drag files to the top of your screen (the Notch) or "jiggle" your mouse to summon a Basket right where you are. It's the perfect holding zone when moving files between apps, spaces, or folders.
 
-🚀 **Version 2.6.0 is here!** Introducing the **Clipboard Manager (Beta)**, plus refined UI and smoother navigation!
+🚀 **Version 2.7.1 is here!** Introducing the **Liquid Clipboard Manager** with Direct Editing, Morphing UI, and rock-solid stability!
 
 ---
 
@@ -41,7 +41,7 @@ Droppy provides a **temporary shelf** for your files. Drag files to the top of y
 |**📉 Smart Compression**|Right-click to compress Images, PDFs, and Videos. Now with **Size Guard** 🛡️ to prevent bloat.|
 |**⚡️ Fast Actions**|Convert images/docs, extract text (OCR), zip, or rename directly in the shelf.|
 |**🖥️ Multi-Monitor**|Works beautifully on external displays. Auto-hides on fullscreen games/videos.|
-|**📋 Clipboard (Beta)**|A powerful manager for your history. Search, rename, favorite, and drag directly out.|
+|**📋 Clipboard Manager**|A powerful liquid history. Search, **Edit**, Rename, Favorite, and Drag & Drop.|
 
 ---
 
@@ -69,6 +69,8 @@ Droppy provides a **temporary shelf** for your files. Drag files to the top of y
 - **Search & Rename**: Type to search, or right-click to rename entries for better organization.
 - **Multi-Drag**: Select multiple items and drag them directly into the Notch, Basket, or any other app.
 - **Direct Paste**: Click "Paste" on any item to send it immediately to your last active window.
+- **Edit Content**: Click the **Pencil** icon on any text item to edit it directly. The UI morphs into a focused editor.
+- **Smart Drag**: Drag items from the clipboard directly to the Shelf or other apps.
 
 ---
 
@@ -86,8 +88,8 @@ Droppy provides a **temporary shelf** for your files. Drag files to the top of y
   <img src="https://i.postimg.cc/50488cNj/image.png" alt="Floating Basket Preview" width="100%">
 </p>
 
-### The Clipboard Manager (BETA)
-*Your history, beautifully organized. Works in perfect harmony with the shelf and basket.*
+### The Clipboard Manager
+*Your history, beautifully organized. Search, Edit, and Drag & Drop.*
 
 <p align="center">
   <img src="https://i.postimg.cc/ZKzM7j76/image.png" alt="Multi-select, Favorite, and Paste" width="100%">
@@ -137,15 +139,18 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-# Droppy v2.7.0: The Liquid Clipboard & Iron-Clad Stability 🌊🛡️
+# Droppy v2.7.1: Editor Polish & Critical Fixes 🛠️
+
+*This release reinforces v2.7.0 with critical stability improvements.*
 
 This release marks a major milestone for Droppy, bringing the **Clipboard Manager** to full maturity and introducing significant architectural improvements for stability.
 
 ### 📋 Liquid Clipboard Manager
+- **Direct Content Editing**: Edit text and URLs directly in the history. The UI morphs seamlessly into a dedicated editor.
 - **Smart Deduplication**: Copying an existing item now intelligently moves it to the top without creating duplicates.
 - **Persistent Metadata**: Your "Favorites" and "Renamed Titles" are preserved even if you copy the item again.
 - **Visual History**: Rich previews for text, images, files, and colors.
-- **Fluid Search**: Instantly filter your history with the new "marching ants" animated search bar (`Cmd+F`).
+- **Fluid Animations**: "Marching ants" animations for search, rename, and editing modes indicate active states clearly.
 - **Drag & Drop**: Seamlessly drag items from history directly to the Shelf, Basket, or other apps.
 
 ### 🛡️ Core Stability & Performance
