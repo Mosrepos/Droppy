@@ -170,7 +170,7 @@ If you enjoy using Droppy, consider buying me a coffee to support development!
 
 <p align="center">
   <a href="https://buymeacoffee.com/droppy">
-    <img src="https://i.postimg.cc/yxRYWNqL/0x0.png" alt="Buy Me A Coffee" width="180">
+    <img src="https://i.postimg.cc/yxRYWNqL/0x0.png" alt="Buy Me A Coffee" width="128">
   </a>
 </p>
 

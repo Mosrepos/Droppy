@@ -1,13 +1,17 @@
-# What's New in v3.1.9
+# What's New in v3.2.5
 
-### ❤️ Support Development
-Added a new "Support Development" section in Settings. If you enjoy Droppy, you can now easily buy me a coffee to support the project!
+### 🎨 Major UI Refinements
+- **Settings Sidebar Overhaul**: Navigation tabs now use modern squircle button styling with hover animations
+- **Unified Button Design**: All buttons across Settings now share the same polished squircle style
+- **"Check for Updates" Window**: Replaced the basic alert with a beautiful styled window matching the "Update Available" screen
+- **Buy Me a Coffee Button**: Now styled as a vibrant yellow squircle button with hover effects
 
-### 🎨 UI Refinements
-- **Refined Settings UI**: Improved layout and alignment in the Settings sidebar.
-- **New Update Button**: The "Check for Updates" button has been redesigned to match the modern "Paste" button style inside the clipboard manager.
-- **Cleaner Interface**: Removed redundant icons for a cleaner look.
+### ✨ Keyboard Shortcut Recorder
+- Completely restyled with new squircle button design
+- Fixed button width to prevent text wrapping when switching between "Record Shortcut" and "Press Keys..."
+- Smooth color morph animation from blue to red when recording
 
-### 🛠️ Improvements
-- **Repository Cleanup**: Optimized project structure for contributors.
-- **Performance**: Minor under-the-hood optimizations.
+### � Improvements
+- History Limit text field now matches the clipboard search bar styling
+- Wider Settings sidebar to prevent text wrapping
+- Fixed potential race conditions in event handling for improved stability

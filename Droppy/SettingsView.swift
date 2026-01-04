@@ -20,6 +20,13 @@ struct SettingsView: View {
     @State private var isHistoryLimitEditing: Bool = false
     @State private var isUpdateHovering = false
     
+    // Hover states for sidebar items
+    @State private var hoverGeneral = false
+    @State private var hoverClipboard = false
+    @State private var hoverDisplay = false
+    @State private var hoverAbout = false
+    @State private var isCoffeeHovering = false
+    
     var body: some View {
         ZStack {
             // Interactive background effect
@@ -30,20 +37,15 @@ struct SettingsView: View {
             )
             
             NavigationSplitView {
-                List(selection: $selectedTab) {
-                    Label("General", systemImage: "gear")
-                        .tag("General")
-                    Label("Clipboard", systemImage: "doc.on.clipboard")
-                        .tag("Clipboard")
-                    Label("Display", systemImage: "display")
-                        .tag("Display")
-
-                    Label("About Droppy", systemImage: "info.circle")
-                        .tag("About Droppy")
-                }
-                .scrollContentBackground(.hidden)
-                .background(Color.clear) 
-                .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 6) {
+                    sidebarButton(title: "General", icon: "gear", tag: "General", isHovering: $hoverGeneral)
+                    sidebarButton(title: "Clipboard", icon: "doc.on.clipboard", tag: "Clipboard", isHovering: $hoverClipboard)
+                    sidebarButton(title: "Display", icon: "display", tag: "Display", isHovering: $hoverDisplay)
+                    sidebarButton(title: "About Droppy", icon: "info.circle", tag: "About Droppy", isHovering: $hoverAbout)
+                    
+                    Spacer()
+                    
+                    // Update button at bottom
                     Button {
                         UpdateChecker.shared.checkAndNotify()
                     } label: {
@@ -56,7 +58,7 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                         .background(Color.blue.opacity(isUpdateHovering ? 1.0 : 0.8))
                         .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)) // Slightly smaller radius for sidebar
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
@@ -64,14 +66,16 @@ struct SettingsView: View {
                         .scaleEffect(isUpdateHovering ? 1.02 : 1.0)
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
                     .onHover { hovering in
                         withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                             isUpdateHovering = hovering
                         }
                     }
-                } 
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
+                .frame(minWidth: 180)
+                .background(Color.clear) 
             } detail: {
                 Form {
                     if selectedTab == "General" {
@@ -107,6 +111,43 @@ struct SettingsView: View {
                 withAnimation(.linear(duration: 0.2)) {
                     isHovering = false
                 }
+            }
+        }
+    }
+    
+    // MARK: - Sidebar Button Helper
+    
+    private func sidebarButton(title: String, icon: String, tag: String, isHovering: Binding<Bool>) -> some View {
+        Button {
+            selectedTab = tag
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 20)
+                Text(title)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selectedTab == tag 
+                          ? Color.blue.opacity(0.9) 
+                          : Color.white.opacity(isHovering.wrappedValue ? 0.15 : 0.08))
+            )
+            .foregroundStyle(selectedTab == tag ? .white : .primary)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(selectedTab == tag ? 0.2 : 0.1), lineWidth: 1)
+            )
+            .scaleEffect(isHovering.wrappedValue ? 1.02 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                isHovering.wrappedValue = hovering
             }
         }
     }
@@ -254,20 +295,30 @@ struct SettingsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             
                             Link(destination: URL(string: "https://buymeacoffee.com/droppy")!) {
-                                HStack {
+                                HStack(spacing: 8) {
                                     Text("Buy me a coffee")
-                                        .fontWeight(.medium)
+                                        .fontWeight(.semibold)
                                     Image(systemName: "arrow.up.right")
-                                        .font(.caption)
+                                        .font(.caption.weight(.semibold))
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
                                 // BMC Yellow: #FFDD00
-                                .background(Color(red: 1.0, green: 0.867, blue: 0.0))
+                                .background(Color(red: 1.0, green: 0.867, blue: 0.0).opacity(isCoffeeHovering ? 1.0 : 0.9))
                                 .foregroundStyle(.black) // Black text for contrast on yellow
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                )
+                                .scaleEffect(isCoffeeHovering ? 1.02 : 1.0)
                             }
-                            .buttonStyle(.plain) // Standard link button behavior
+                            .buttonStyle(.plain)
+                            .onHover { hovering in
+                                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                                    isCoffeeHovering = hovering
+                                }
+                            }
                             .padding(.top, 4)
                         }
                     }
@@ -372,13 +423,13 @@ struct SettingsView: View {
                     
                     HStack(spacing: 0) {
                         AutoSelectNumberField(value: $clipboardHistoryLimit, isEditing: $isHistoryLimitEditing)
-                            .frame(width: 50, height: 20) // Provide height for NSView
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .frame(width: 60, height: 24)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
                             .background(Color.black.opacity(0.3))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .stroke(
                                         Color.accentColor.opacity(isHistoryLimitEditing ? 0.8 : 0),
                                         style: StrokeStyle(

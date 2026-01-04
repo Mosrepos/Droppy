@@ -248,8 +248,23 @@ class NotchWindow: NSWindow {
     }
     
     func handleGlobalMouseEvent(_ event: NSEvent) {
-        // Get global mouse position
-        let mouseLocation = NSEvent.mouseLocation
+        // SAFETY: Use the event's location properties instead of NSEvent.mouseLocation
+        // class property to avoid race conditions with the HID event decoding system.
+        // For global monitors, we need to convert the event location to screen coordinates.
+        // Global events have locationInScreen as the screen-based location.
+        let mouseLocation: NSPoint
+        if let screen = event.window?.screen ?? NSScreen.main {
+            // Convert window-relative location to screen coordinates
+            if event.window != nil {
+                mouseLocation = event.window!.convertPoint(toScreen: event.locationInWindow)
+            } else {
+                // For events without a window (global monitor), the locationInWindow 
+                // is already in screen coordinates for global monitors
+                mouseLocation = NSEvent.mouseLocation // fallback, cached once
+            }
+        } else {
+            mouseLocation = NSEvent.mouseLocation
+        }
         
         // Check if mouse is over the notch area
         let isOverNotch = notchRect.contains(mouseLocation)

@@ -27,29 +27,52 @@ struct KeyShortcutRecorder: View {
     @Binding var shortcut: SavedShortcut?
     @State private var isRecording = false
     @State private var monitor: Any?
+    @State private var isHovering = false
     
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            // Shortcut display
             Text(shortcut?.description ?? "None")
+                .fontWeight(.medium)
                 .frame(minWidth: 80, alignment: .center)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 8)
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .background(Color.white.opacity(0.08))
+                .foregroundStyle(.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(isRecording ? Color.blue : Color.gray.opacity(0.3), lineWidth: isRecording ? 2 : 1)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(isRecording ? Color.blue : Color.white.opacity(0.1), lineWidth: isRecording ? 2 : 1)
                 )
             
-            Button(isRecording ? "Press Keys..." : "Record Shortcut") {
+            // Record button
+            Button {
                 if isRecording {
                     stopRecording()
                 } else {
                     startRecording()
                 }
+            } label: {
+                Text(isRecording ? "Press Keys..." : "Record Shortcut")
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .frame(width: 120)
+                    .padding(.vertical, 10)
+                    .background((isRecording ? Color.red : Color.blue).opacity(isHovering ? 1.0 : 0.8))
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                    .scaleEffect(isHovering ? 1.02 : 1.0)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(isRecording ? .red : .blue)
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                    isHovering = hovering
+                }
+            }
         }
         .onDisappear {
             stopRecording() // Cleanup

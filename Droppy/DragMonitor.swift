@@ -54,9 +54,14 @@ final class DragMonitor: ObservableObject {
     private func monitorLoop() {
         guard isMonitoring else { return }
         
-        checkForActiveDrag()
+        // CRITICAL: Only access NSEvent class properties if we're truly on the main thread
+        // and not during system event dispatch to avoid race conditions with HID event decoding
+        if Thread.isMainThread {
+            checkForActiveDrag()
+        }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        // Increased interval from 50ms to 100ms to reduce collision chance with system event processing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) { [weak self] in
             self?.monitorLoop()
         }
     }
@@ -71,8 +76,10 @@ final class DragMonitor: ObservableObject {
 
     private func checkForActiveDrag() {
         autoreleasepool {
-            // Retrieve pasteboard handle locally to ensure validity
+            // SAFETY: Cache NSEvent class properties immediately to minimize
+            // repeated access during HID event system contention
             let mouseIsDown = NSEvent.pressedMouseButtons & 1 != 0
+            let currentMouseLocation = NSEvent.mouseLocation
             
             // Optimization: If mouse is not down and we are not tracking a drag, 
             // return early to avoid unnecessary NSPasteboard allocation/release (which caused crashes)
@@ -92,18 +99,17 @@ final class DragMonitor: ObservableObject {
                     dragStartChangeCount = currentChangeCount
                     resetJiggle()
                     dragEndNotified = false
-                    lastDragLocation = NSEvent.mouseLocation
+                    lastDragLocation = currentMouseLocation
                     isDragging = true
-                    dragLocation = NSEvent.mouseLocation
+                    dragLocation = currentMouseLocation
                 }
             }
             
-            // Update location while dragging
+            // Update location while dragging (use cached value)
             if dragActive && mouseIsDown {
-                let currentLocation = NSEvent.mouseLocation
-                dragLocation = currentLocation
-                detectJiggle(currentLocation: currentLocation)
-                lastDragLocation = currentLocation
+                dragLocation = currentMouseLocation
+                detectJiggle(currentLocation: currentMouseLocation)
+                lastDragLocation = currentMouseLocation
             }
             
             // Detect drag END

@@ -118,20 +118,20 @@ class UpdateChecker: ObservableObject {
         Task {
             await checkForUpdates()
             if updateAvailable {
+                showingUpToDate = false
                 showUpdateWindow()
             } else {
-                showUpToDateAlert()
+                showUpToDateWindow()
             }
         }
     }
     
-    /// Show alert that app is up to date
-    func showUpToDateAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Droppy is up to date!"
-        alert.informativeText = "You're running the latest version (\(currentVersion))."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+    /// Published property to indicate we're showing "up to date" state
+    @Published var showingUpToDate = false
+    
+    /// Show the "up to date" styled window instead of NSAlert
+    func showUpToDateWindow() {
+        showingUpToDate = true
+        UpdateWindowController.shared.showWindow()
     }
 }
