@@ -140,12 +140,24 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-Release v2.9.3
+Release v3.0
+
+🎉 Major Update - Clipboard Manager Enhancements
+
+New Features:
+- Extract Text button now uses squircle (rounded square) design for better consistency
+- Reset Window Size button relocated to header next to Search for cleaner UI layout
+- OCR "Copied" feedback - Copy button shows green checkmark confirmation before auto-closing
+- OCR window now auto-closes after copying, keeping clipboard manager open
+
+UI Improvements:
+- Search and Reset buttons now have identical hover styling
+- Consistent 20pt padding throughout the clipboard manager interface
+- Left panel entries now extend to bottom without reset button obstruction
 
 Bug Fixes:
-- Fixed a critical rendering crash in the Clipboard Manager.
-- Implemented asynchronous caching for images and rich text previews for improved performance and stability.
-- Smoother scrolling and navigation when viewing clipboard history.
+- Fixed clipboard manager closing when interacting with OCR extracted text window
+- OCR window clicks no longer dismiss the clipboard manager
 <!-- CHANGELOG_END -->
 
 ---
