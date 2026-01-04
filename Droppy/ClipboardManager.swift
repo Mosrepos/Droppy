@@ -81,8 +81,12 @@ struct ClipboardItem: Identifiable, Codable, Hashable {
 class ClipboardManager: ObservableObject {
     static let shared = ClipboardManager()
     
+    private var isLoading = false // Flag to prevent saving during load
+    
     @Published var history: [ClipboardItem] = [] {
         didSet {
+            // Don't save during initial load
+            guard !isLoading else { return }
             saveToDisk()
         }
     }
@@ -194,9 +198,9 @@ class ClipboardManager: ObservableObject {
         do {
             let data = try Data(contentsOf: persistenceURL)
             let decoded = try JSONDecoder().decode([ClipboardItem].self, from: data)
-            DispatchQueue.main.async {
-                self.history = decoded
-            }
+            isLoading = true
+            self.history = decoded
+            isLoading = false
         } catch {
             print("Failed to load clipboard history: \(error)")
         }
