@@ -15,8 +15,11 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// The notch overlay window
     private var notchWindow: NotchWindow?
     
-    /// Timer for periodic mouse location checks
-    private var updateTimer: Timer?
+    /// Timer for fast interaction updates (clicks through)
+    private var interactionTimer: Timer?
+    
+    /// Timer for slow environmental checks (fullscreen)
+    private var fullscreenTimer: Timer?
     
     /// Monitor for mouse movement when window is not key or mouse is outside
     private var globalMouseMonitor: Any?
@@ -106,13 +109,25 @@ final class NotchWindowController: NSObject, ObservableObject {
         stopMonitors() // Idempotency
         
         // Timer for periodic hit test updates (every 50ms)
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
+        // Timer for periodic hit test updates (every 50ms) - Fast, lightweight
+        interactionTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
             autoreleasepool {
                 guard let self = self, let window = self.notchWindow, window.isValid else {
                     timer.invalidate()
                     return
                 }
                 window.updateMouseEventHandling()
+            }
+        }
+        
+        // Timer for fullscreen/visibility checks (every 1s) - Slower, heavier
+        fullscreenTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            autoreleasepool {
+                guard let self = self, let window = self.notchWindow, window.isValid else {
+                    timer.invalidate()
+                    return
+                }
+                self.checkFullscreenState()
             }
         }
         
@@ -130,8 +145,11 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Stops and releases all monitors and timers
     private func stopMonitors() {
-        updateTimer?.invalidate()
-        updateTimer = nil
+        interactionTimer?.invalidate()
+        interactionTimer = nil
+        
+        fullscreenTimer?.invalidate()
+        fullscreenTimer = nil
         
         if let monitor = globalMouseMonitor {
             NSEvent.removeMonitor(monitor)
@@ -142,6 +160,11 @@ final class NotchWindowController: NSObject, ObservableObject {
             NSEvent.removeMonitor(monitor)
             localMonitor = nil
         }
+    }
+    
+    private func checkFullscreenState() {
+        guard let window = notchWindow else { return }
+        window.checkForFullscreen()
     }
     
     /// Routed event handler from monitors
@@ -248,11 +271,11 @@ class NotchWindow: NSWindow {
             self.ignoresMouseEvents = !shouldAcceptEvents
         }
         
-        // Check for fullscreen apps (games/videos)
-        checkForFullscreen()
+        // Check for fullscreen apps (games/videos) - Now handled by separate timer
+        // checkForFullscreen() 
     }
     
-    private func checkForFullscreen() {
+    func checkForFullscreen() {
         guard let screen = NSScreen.main else { return }
         
         // 1. Check basic visible frame (Standard Spaces Fullscreen)

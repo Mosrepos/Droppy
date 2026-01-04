@@ -1,9 +1,9 @@
-# Droppy v2.6.3 Hotfix 🩹
+# Droppy v2.6.4 Hotfix 🩹
 
-Another stability patch to ensure Droppy runs smoothly in the background without eating up your RAM.
+Critical stability update for the Notch Window.
 
-### � Improvements
-- **Memory Optimization**: Implemented tighter memory management for the Drag and Clipboard monitors. This fixes potential crashes that could occur after leaving the app running for long periods.
-- **Stability**: Hardened the monitoring loops against object accumulation.
+### 🛠 Fixes
+- **Crash Resolved**: Fixed a persistent crash caused by high-frequency fullscreen detection monitoring.
+- **Performance**: Separated window interaction logic (50ms) from environmental checks (1s), significantly reducing CPU and memory usage in the background.
 
-Safe and sound! �️
+This is the definitive fix for the `objc_release` crash. Thanks mainly to the detailed stack traces submitted by users! 🕵️‍♂️
