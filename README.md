@@ -139,34 +139,25 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-# Droppy v2.7.2: The "Liquid" Update Experience ✨
+# Droppy v2.7.3: Update Screen Verification 🧪
+*Testing the new Liquid Update Experience.*
 
-*This release introduces a stunning new update screen and solidifies v2.7.x stability.*
+### 🧪 Test Release
+This release is primarily to **verify** the new update screen implementation.
 
-This release marks a major milestone for Droppy, ensuring that even the update process feels like a premium, fluid experience.
+### ✨ What to look for:
+1.  **Bold text** should be bold.
+2.  *Italics* should be italic.
+3.  This list should render correctly with bullets/numbers.
+4.  The window should look like **Liquid Glass**.
 
-### ✨ New Update Experience
-- **Liquid Glass UI**: The update screen is no longer a boring system alert. It is now a beautiful, translucent window that follows the macOS 26 design language.
-- **Rich Release Notes**: Release notes now support **bold**, *italics*, and lists, making it easier to see what's new.
-- **Scrollable Content**: No more truncated text! You can now scroll through the full history of changes.
+> "The details are not the details. They make the design." - Charles Eames
 
-### 📋 Liquid Clipboard Manager
-- **Direct Content Editing**: Edit text and URLs directly in the history. The UI morphs seamlessly into a dedicated editor.
-- **Smart Deduplication**: Copying an existing item now intelligently moves it to the top without creating duplicates.
-- **Persistent Metadata**: Your "Favorites" and "Renamed Titles" are preserved even if you copy the item again.
-- **Visual History**: Rich previews for text, images, files, and colors.
-- **Fluid Animations**: "Marching ants" animations for search, rename, and editing modes indicate active states clearly.
-- **Drag & Drop**: Seamlessly drag items from history directly to the Shelf, Basket, or other apps.
+### 🛠️ Improvements
+- **Update Logic**: Now uses the new `UpdateWindowController`.
+- **Markdown Parsing**: Enhanced safety checks.
 
-### 🛡️ Core Stability & Performance
-- **Crash Fixed**: Resolved a critical crash (`objc_release`) affecting the Notch Window by separating high-frequency interaction logic (50ms) from heavy environment checks.
-- **Animation Fixes**: Eliminated `CoreAnimation` transaction crashes during fullscreen transitions.
-- **Optimization**: Reduced CPU and Memory usage by 20x for background visibility checks.
-
-### 🧺 Basket & Shelf
-- **Refined**: Improved click-through behavior and "Jiggle" detection accuracy.
-
-Update now for the smoothest, most stable Droppy experience yet! 🚀
+*Enjoy the testing!* 🚀
 <!-- CHANGELOG_END -->
 
 ---
