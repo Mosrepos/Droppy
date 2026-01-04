@@ -136,14 +136,23 @@ class ClipboardManager: ObservableObject {
         let pasteboard = NSPasteboard.general
         let bestItem = extractItem(from: pasteboard)
         
-        if let item = bestItem {
-            // Avoid duplicates (checking last item only)
-            if let last = history.first, last.content == item.content, last.type == item.type {
-                return 
-            }
-            
+        if var item = bestItem {
             DispatchQueue.main.async {
+                // Check if this item already exists in history
+                if let index = self.history.firstIndex(where: { $0.content == item.content && $0.type == item.type }) {
+                    // It exists!
+                    // 1. Preserve user customizations (Favorite status, Custom Title)
+                    let existing = self.history[index]
+                    item.isFavorite = existing.isFavorite
+                    item.customTitle = existing.customTitle
+                    
+                    // 2. Remove the old one so we don't have duplicates
+                    self.history.remove(at: index)
+                }
+                
+                // 3. Insert the new (or refreshed) item at the top
                 self.history.insert(item, at: 0)
+                
                 // Limit history based on user setting
                 self.enforceHistoryLimit()
             }

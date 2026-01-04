@@ -1,9 +1,9 @@
-# Droppy v2.6.4 Hotfix 🩹
+# Droppy v2.6.5 🩹
 
-Critical stability update for the Notch Window.
+Polishing the Clipboard Manager experience.
 
-### 🛠 Fixes
-- **Crash Resolved**: Fixed a persistent crash caused by high-frequency fullscreen detection monitoring.
-- **Performance**: Separated window interaction logic (50ms) from environmental checks (1s), significantly reducing CPU and memory usage in the background.
+### ✨ Improvements
+- **Smart Deduplication**: Copying an item that's already in your history now moves it to the top instead of creating a duplicate.
+- **Metadata Persistence**: If you've favorited or renamed an item, these settings are preserved when you copy it again. Your "API Key" stays named "API Key" even if you re-copy it! 🧠
 
-This is the definitive fix for the `objc_release` crash. Thanks mainly to the detailed stack traces submitted by users! 🕵️‍♂️
+Enjoy the cleaner history! 🧹
