@@ -154,6 +154,7 @@ brew install --cask iordv/tap/droppy
 Fixes:
 - Fixed notch position not updating when docking/undocking MacBook (screen resolution changes)
 - Fixed objc_release crash in clipboard monitoring loop
+- Fixed RenderBox crash during drag operations by retaining preview images
 <!-- CHANGELOG_END -->
 
 ---
