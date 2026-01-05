@@ -1,10 +1,9 @@
-Droppy v3.3.7: Stability Hotfix
+Droppy v3.3.8: Clipboard-to-Basket Dragging
 
-This hotfix addresses a rare crash during file jiggles and further optimizes system resource usage.
+This update fixes the issue where the basket would not appear when dragging items directly from the Clipboard Manager.
 
 **Fixes & Improvements**
-- **Reactive Drag Monitoring**: Completely refactored the drag detection engine to use native macOS event monitors instead of a background polling loop. This eliminates potential race conditions in the HID event system and reduces idle CPU usage.
-- **Animation Stability**: Added debouncing to the floating basket's movement animations to prevent overload during rapid jiggles.
-- **Crash Prevention**: Resolved an `objc_release` issue in the system event queue reported by users.
+- **Unified Drag Monitoring**: `DragMonitor` now listens for both local and global drag events. This ensures that jiggle detection works perfectly even when Droppy is the frontmost application (e.g., when the Clipboard is open).
+- **Z-Index Optimization**: Verified that the floating basket correctly appears on top of the Clipboard window for a seamless drag-and-drop experience.
 
-This release builds on the memory optimizations and smooth animation improvements introduced in v3.3.6.
+This release follows the stability and performance improvements made in v3.3.7.

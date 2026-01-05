@@ -45,18 +45,30 @@ final class DragMonitor: ObservableObject {
         guard !isMonitoring else { return }
         isMonitoring = true
         
-        // Monitor for drag starts and movements
-        let dragMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged]) { [weak self] event in
+        // 1. Global Monitors (captures events when OTHER apps are active)
+        let gDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged]) { [weak self] event in
             self?.handleDragEvent(event)
         }
         
-        // Monitor for drag ends (mouse up)
-        let mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+        let gMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
             self?.handleMouseUp(event)
         }
         
-        if let dm = dragMonitor { eventMonitors.append(dm) }
-        if let mum = mouseUpMonitor { eventMonitors.append(mum) }
+        // 2. Local Monitors (captures events when DROPPY is active, e.g. Clipboard open)
+        let lDragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged]) { [weak self] event in
+            self?.handleDragEvent(event)
+            return event
+        }
+        
+        let lMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+            self?.handleMouseUp(event)
+            return event
+        }
+        
+        if let m = gDragMonitor { eventMonitors.append(m) }
+        if let m = gMouseUpMonitor { eventMonitors.append(m) }
+        if let m = lDragMonitor { eventMonitors.append(m) }
+        if let m = lMouseUpMonitor { eventMonitors.append(m) }
     }
     
     /// Stops monitoring for drag events
