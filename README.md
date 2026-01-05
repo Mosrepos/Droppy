@@ -155,6 +155,7 @@ brew install --cask iordv/tap/droppy
 
 ### 🐛 Bug Fixes
 - **Shelf Hover Detection**: Fixed an issue where hovering over files in the shelf would only trigger on the upper half of the file icon. The interaction area now correctly covers the entire file.
+- **Stability Improvements**: Resolved a potential crash related to high-frequency rendering updates in the background effects.
 <!-- CHANGELOG_END -->
 
 ---
