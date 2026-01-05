@@ -105,13 +105,13 @@ Drag files out of the shelf and drop into any app — email, Discord, Photoshop,
 ### The Floating Basket
 *Summoned anywhere with a quick jiggle. The perfect temporary holding zone.*
 <p align="center">
-  <img src="https://i.postimg.cc/X7VmqqYM/Schermopname2026-01-05om21-57-55-ezgif-com-video-to-gif-converter.gif" alt="Floating Basket Preview" width="100%">
+  <img src="https://i.postimg.cc/dtHH09fB/Schermopname2026-01-05om22-01-22-ezgif-com-video-to-gif-converter.gif" alt="Floating Basket Preview" width="100%">
 </p>
 
 ### The Clipboard Manager
 *Your history, beautifully organized. Search, Edit, and Drag & Drop.*
 <p align="center">
-  <img src="https://i.postimg.cc/dtHH09fB/Schermopname2026-01-05om22-01-22-ezgif-com-video-to-gif-converter.gif" alt="Clipboard Manager Preview" width="100%">
+  <img src="https://i.postimg.cc/X7VmqqYM/Schermopname2026-01-05om21-57-55-ezgif-com-video-to-gif-converter.gif" alt="Clipboard Manager Preview" width="100%">
 </p>
 
 ### 🆕 Media Player

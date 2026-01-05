@@ -220,7 +220,7 @@ struct SettingsView: View {
             }
             
             if enableFloatingBasket {
-                FeaturePreviewGIF(url: "https://i.postimg.cc/X7VmqqYM/Schermopname2026-01-05om21-57-55-ezgif-com-video-to-gif-converter.gif")
+                FeaturePreviewGIF(url: "https://i.postimg.cc/dtHH09fB/Schermopname2026-01-05om22-01-22-ezgif-com-video-to-gif-converter.gif")
             }
         } header: {
             Text("General")
@@ -465,7 +465,7 @@ struct SettingsView: View {
             }
             
             if enableClipboard {
-                FeaturePreviewGIF(url: "https://i.postimg.cc/dtHH09fB/Schermopname2026-01-05om22-01-22-ezgif-com-video-to-gif-converter.gif")
+                FeaturePreviewGIF(url: "https://i.postimg.cc/X7VmqqYM/Schermopname2026-01-05om21-57-55-ezgif-com-video-to-gif-converter.gif")
                 
                 HStack {
                     Text("Global Shortcut")
