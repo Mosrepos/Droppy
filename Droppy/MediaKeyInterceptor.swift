@@ -138,6 +138,7 @@ final class MediaKeyInterceptor {
 }
 
 /// C callback function for CGEventTap
+/// Uses autoreleasepool to properly manage NSEvent memory
 private func mediaKeyCallback(
     proxy: CGEventTapProxy,
     type: CGEventType,
@@ -158,40 +159,50 @@ private func mediaKeyCallback(
         return Unmanaged.passUnretained(event)
     }
     
-    // Convert to NSEvent to extract media key data
-    guard let nsEvent = NSEvent(cgEvent: event),
-          nsEvent.subtype.rawValue == 8 else { // NX_SUBTYPE_AUX_CONTROL_BUTTONS
-        return Unmanaged.passUnretained(event)
-    }
+    // Use autoreleasepool to properly manage NSEvent memory
+    // This prevents objc_release crashes from CGEvent/NSEvent bridging
+    var shouldSuppress = false
     
-    // Extract key data
-    let data1 = nsEvent.data1
-    let keyCode = UInt32((data1 & 0xFFFF0000) >> 16)
-    let keyFlags = UInt32(data1 & 0x0000FFFF)
-    let keyState = ((keyFlags & 0xFF00) >> 8)
-    let keyDown = keyState == 0x0A // Key down
-    let keyRepeat = (keyFlags & 0x1) != 0
-    
-    // Check if this is a media key we handle
-    let handledKeys: [UInt32] = [
-        NX_KEYTYPE_SOUND_UP,
-        NX_KEYTYPE_SOUND_DOWN,
-        NX_KEYTYPE_MUTE,
-        NX_KEYTYPE_BRIGHTNESS_UP,
-        NX_KEYTYPE_BRIGHTNESS_DOWN
-    ]
-    
-    if handledKeys.contains(keyCode) {
-        // Get the interceptor instance
-        if let userInfo = userInfo {
-            let interceptor = Unmanaged<MediaKeyInterceptor>.fromOpaque(userInfo).takeUnretainedValue()
-            
-            // Handle the key event
-            if interceptor.handleMediaKey(keyCode: keyCode, keyDown: keyDown || keyRepeat) {
-                // Return nil to suppress the system HUD
-                return nil
+    autoreleasepool {
+        // Convert to NSEvent to extract media key data
+        guard let nsEvent = NSEvent(cgEvent: event),
+              nsEvent.subtype.rawValue == 8 else { // NX_SUBTYPE_AUX_CONTROL_BUTTONS
+            return
+        }
+        
+        // Extract key data immediately before nsEvent is released
+        let data1 = nsEvent.data1
+        let keyCode = UInt32((data1 & 0xFFFF0000) >> 16)
+        let keyFlags = UInt32(data1 & 0x0000FFFF)
+        let keyState = ((keyFlags & 0xFF00) >> 8)
+        let keyDown = keyState == 0x0A // Key down
+        let keyRepeat = (keyFlags & 0x1) != 0
+        
+        // Check if this is a media key we handle
+        let handledKeys: [UInt32] = [
+            NX_KEYTYPE_SOUND_UP,
+            NX_KEYTYPE_SOUND_DOWN,
+            NX_KEYTYPE_MUTE,
+            NX_KEYTYPE_BRIGHTNESS_UP,
+            NX_KEYTYPE_BRIGHTNESS_DOWN
+        ]
+        
+        if handledKeys.contains(keyCode) {
+            // Get the interceptor instance
+            if let userInfo = userInfo {
+                let interceptor = Unmanaged<MediaKeyInterceptor>.fromOpaque(userInfo).takeUnretainedValue()
+                
+                // Handle the key event
+                if interceptor.handleMediaKey(keyCode: keyCode, keyDown: keyDown || keyRepeat) {
+                    shouldSuppress = true
+                }
             }
         }
+    }
+    
+    // Return nil AFTER autoreleasepool to suppress system HUD
+    if shouldSuppress {
+        return nil
     }
     
     // Let other events pass through
