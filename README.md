@@ -163,10 +163,12 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-v4.4.4 - Stability Hotfix
+v4.4.5 - External Display & Keyboard Fixes
 
 Fixes:
-- Fixed crash in clipboard monitoring (objc_release) that could occur during rapid pasteboard changes
+- Volume/Brightness HUD now appears on external displays even when "hide notch" is enabled
+- Brightness controls now correctly target laptop's built-in display when docked
+- Improved external keyboard media key handling for volume/brightness controls
 <!-- CHANGELOG_END -->
 
 ---
