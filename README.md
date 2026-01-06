@@ -163,13 +163,21 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-## Features
-- **Auto-Shrink Shelf**: The notch shelf now automatically collapses after a configurable delay (3-30 seconds) when the mouse leaves the area. Enabled by default.
-- New "Shelf Behavior" section in Display settings to configure auto-shrink timing
+# v4.5.2 - Universal Display Compatibility
 
-## Fixes
-- Fixed Share submenu positioning in context menus
-- Silenced deprecation warnings for share services API (required for proper SwiftUI context menu integration)
+## 🖥️ Resolution Scaling
+- Dynamic notch detection for all MacBook screen sizes
+- Works perfectly on "More Space" resolutions (1800x1169, etc.)
+- HUD scales proportionally with notch width
+
+## ⭐ Clipboard Favorites Fix
+- Favorited entries now persist after restart
+- Custom titles are preserved correctly
+
+## ⚙️ Settings Reorganization
+- General: Split into "System" and "Drop Zones" sections
+- Display: Split into "Appearance", "Shelf Behavior", "Media Player", "System HUD"
+- Auto-shrink delay now uses native slider (1-10 seconds, default 3s)
 <!-- CHANGELOG_END -->
 
 ---
