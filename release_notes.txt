@@ -1,4 +1,10 @@
-v4.4.9 - Stability Hotfix
+### Version 4.5.0
 
-Fixes:
-- Fixed potential crash in media key handling (HID race condition)
+**Visual & Interface Refinements**
+- **MacBook Notch Compatibility**: Fixed an issue where volume percentage and media timestamps were partially obscured by the physical MacBook notch on supported displays.
+- **Instant Settings Previews**: Rewrote the GIF preview system in Settings to use a high-performance in-memory cache. Feature previews now load with zero latency when navigating settings.
+
+**Technical Improvements**
+- Improved `GIFPreloader` to decode assets on background threads at app startup.
+- Enhanced `AnimatedGIFView` to check for cached assets before attempting network requests.
+- Optimized horizontal padding in `NotchHUDView` and `MediaHUDView` for better visual balance on internal MacBook displays.

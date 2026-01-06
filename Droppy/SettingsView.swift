@@ -860,6 +860,7 @@ struct FeaturePreviewGIF: View {
 }
 
 /// Native NSImageView-based GIF display (crash-safe, no WebKit)
+/// Checks GIFPreloader's cache first for instant display in Settings
 struct AnimatedGIFView: NSViewRepresentable {
     let url: String
     
@@ -893,18 +894,23 @@ struct AnimatedGIFView: NSViewRepresentable {
         // Store imageView reference for loading
         context.coordinator.imageView = imageView
         
-        // Load GIF data asynchronously
-        if let gifURL = URL(string: url) {
-            Task {
-                do {
-                    let (data, _) = try await URLSession.shared.data(from: gifURL)
-                    if let image = NSImage(data: data) {
-                        await MainActor.run {
-                            context.coordinator.imageView?.image = image
+        // INSTANT: Check if image is already pre-loaded in cache
+        if let cachedImage = GIFPreloader.shared.getCachedImage(for: url) {
+            imageView.image = cachedImage
+        } else {
+            // Fallback: Load GIF data asynchronously (for non-preloaded images)
+            if let gifURL = URL(string: url) {
+                Task {
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: gifURL)
+                        if let image = NSImage(data: data) {
+                            await MainActor.run {
+                                context.coordinator.imageView?.image = image
+                            }
                         }
+                    } catch {
+                        print("GIF load failed: \(error)")
                     }
-                } catch {
-                    print("GIF load failed: \(error)")
                 }
             }
         }
@@ -928,29 +934,55 @@ struct AnimatedGIFView: NSViewRepresentable {
 
 // MARK: - GIF Pre-loader
 /// Pre-loads all feature preview GIFs at app launch so they're instantly ready in Settings
+/// Maintains an in-memory NSImage cache for zero-latency display
 class GIFPreloader {
     static let shared = GIFPreloader()
     
-    /// All preview GIF URLs
+    /// Thread-safe image cache (URL string -> decoded NSImage)
+    private var imageCache: [String: NSImage] = [:]
+    private let cacheLock = NSLock()
+    
+    /// All preview GIF URLs (MUST match URLs in SettingsView)
     private let gifURLs = [
+        // Notch Shelf
         "https://i.postimg.cc/jqkPwkRp/Schermopname2026-01-05om22-04-43-ezgif-com-video-to-gif-converter.gif",
+        // Floating Basket
         "https://i.postimg.cc/dtHH09fB/Schermopname2026-01-05om22-01-22-ezgif-com-video-to-gif-converter.gif",
-        "https://i.postimg.cc/X7VmqqYM/Schermopname2026-01-05om21-57-55-ezgif-com-video-to-gif-converter.gif",
+        // Media Player
         "https://i.postimg.cc/wM52HXm6/Schermopname2026-01-05om21-48-08-ezgif-com-video-to-gif-converter.gif",
-        "https://i.postimg.cc/hG22QtJ8/Schermopname2026-01-05om19-08-22-ezgif-com-video-to-gif-converter.gif"
+        // HUDs
+        "https://i.postimg.cc/hG22QtJ8/Schermopname2026-01-05om19-08-22-ezgif-com-video-to-gif-converter.gif",
+        // Clipboard Manager (CRITICAL: was missing!)
+        "https://i.postimg.cc/Kvc9c2Kr/Schermopname2026-01-06om18-05-02-ezgif-com-video-to-gif-converter.gif"
     ]
     
     private init() {}
     
-    /// Call this at app launch to pre-fetch all GIFs into URLCache
+    /// Retrieve a pre-loaded image from cache (instant, no network)
+    func getCachedImage(for urlString: String) -> NSImage? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return imageCache[urlString]
+    }
+    
+    /// Call this at app launch to pre-fetch and decode all GIFs into memory
     func preloadAll() {
         for urlString in gifURLs {
             guard let url = URL(string: urlString) else { continue }
             
             let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
-            URLSession.shared.dataTask(with: request) { data, response, error in
-                if let data = data, let response = response {
-                    // Store in URLCache for instant access later
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                guard let self = self, let data = data else { return }
+                
+                // Decode image on background thread
+                if let image = NSImage(data: data) {
+                    self.cacheLock.lock()
+                    self.imageCache[urlString] = image
+                    self.cacheLock.unlock()
+                }
+                
+                // Also store in URLCache as a backup
+                if let response = response {
                     let cachedResponse = CachedURLResponse(response: response, data: data)
                     URLCache.shared.storeCachedResponse(cachedResponse, for: request)
                 }

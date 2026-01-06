@@ -57,7 +57,7 @@ struct NotchHUDView: View {
             .frame(height: 6)
             .animation(.spring(response: 0.15, dampingFraction: 0.8), value: value)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 32)
         .padding(.top, 4)
         .padding(.bottom, 8)
         // Ensure all elements scale together during notch expansion
@@ -148,7 +148,7 @@ struct MediaHUDView: View {
                 )
                 .frame(height: 6)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 32)
             .padding(.top, 4)
             .padding(.bottom, 8)
         }
