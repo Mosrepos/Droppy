@@ -163,11 +163,11 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-## v4.6 - Appearance Consistency Update
+## Fixes
 
-### Fixed
-- Transparent background setting now only applies to windows (Settings, Clipboard, Update) and not the shelf/notch, which always stays solid black for a cleaner look
-- Updated setting description to clarify behavior: "Use glass effect for windows (not shelf)"
+- Fixed volume keyboard buttons not working with USB audio devices (e.g., Jabra speakers)
+  - Droppy now detects if a device supports software volume control
+  - If not supported, volume keys pass through to macOS for native handling
 <!-- CHANGELOG_END -->
 
 ---
