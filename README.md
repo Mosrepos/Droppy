@@ -169,22 +169,21 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
-# Version 4.8.1 - USB Audio Device Support
+# Version 4.8.2 - USB Audio Device Hotfix
 
 ## 🐛 Bug Fixes
 
 ### 🔊 Fixed Volume Control for USB Audio Devices
-The volume slider now works correctly with USB audio devices like Jabra speakers and other USB DACs:
+Volume slider now works correctly with USB audio devices like Jabra speakers and USB DACs:
 
-- **Full USB device support** - Volume slider now controls USB speakers, headsets, and audio interfaces
-- **Uses system-level APIs** - Now uses the same `VirtualMainVolume` property that macOS uses
-- **Automatic fallback** - Seamlessly falls back to hardware-level control for built-in speakers
-- **Media key support** - Volume up/down keyboard keys work correctly with USB devices
+- **AppleScript fallback** - Uses macOS system-level volume control when CoreAudio fails
+- **Universal compatibility** - Works with any USB audio device that macOS can control
+- **Seamless experience** - Automatically tries CoreAudio first, falls back to AppleScript
 
 **Technical Details:**
-- Added `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` support to VolumeManager
-- This property is the system-level volume abstraction that works across all device types
-- Previously used `kAudioDevicePropertyVolumeScalar` which some USB devices don't expose
+- Uses `set volume output volume` AppleScript command as fallback
+- Uses `output volume of (get volume settings)` to read USB device volume
+- CoreAudio VirtualMainVolume is tried first for best performance
 <!-- CHANGELOG_END -->
 
 ---
