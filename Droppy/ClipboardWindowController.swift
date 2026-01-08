@@ -304,8 +304,8 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
     }
     
     private func checkPermissions() {
-        // Accessibility Check
-        let isAccessibilityTrusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        // First check WITHOUT prompting - use AXIsProcessTrusted() instead of AXIsProcessTrustedWithOptions with prompt
+        let isAccessibilityTrusted = AXIsProcessTrusted()
         
         // Input Monitoring Check
         // First check the runtime variable, then fall back to cached grant
@@ -315,16 +315,17 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         
         // If either the runtime check passes OR we have a cached successful grant, consider it active
         // This prevents repeated prompts when TCC is slow to respond
-        if isAccessibilityTrusted && (isInputMonitoringActive || hasCachedGrant) {
+        let inputMonitoringOk = isInputMonitoringActive || hasCachedGrant
+        
+        // If all permissions are granted, return without prompting
+        if isAccessibilityTrusted && inputMonitoringOk {
             return
         }
         
+        // Only show our custom dialog if permissions are actually missing
         let alert = NSAlert()
         alert.messageText = "Permissions Required"
         alert.informativeText = "To work in password fields and all apps, Droppy needs specific permissions:\n\n"
-        
-        // Use combined check for alert text
-        let inputMonitoringOk = isInputMonitoringActive || hasCachedGrant
         
         var missingPermissions: [String] = []
         if !isAccessibilityTrusted { missingPermissions.append("• Accessibility (for Paste)") }

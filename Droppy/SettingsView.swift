@@ -34,6 +34,7 @@ struct SettingsView: View {
     @State private var hoverClipboard = false
     @State private var hoverAppearance = false
     @State private var hoverIndicators = false
+    @State private var hoverIntegrations = false
     @State private var hoverAbout = false
     @State private var isCoffeeHovering = false
     @State private var isAlfredHovering = false
@@ -48,6 +49,7 @@ struct SettingsView: View {
                     sidebarButton(title: "Clipboard", icon: "doc.on.clipboard", tag: "Clipboard", isHovering: $hoverClipboard)
                     sidebarButton(title: "Appearance", icon: "paintbrush.fill", tag: "Appearance", isHovering: $hoverAppearance)
                     sidebarButton(title: "Indicators", icon: "hand.point.up.left.fill", tag: "Indicators", isHovering: $hoverIndicators)
+                    sidebarButton(title: "Integrations", icon: "puzzlepiece.extension.fill", tag: "Integrations", isHovering: $hoverIntegrations)
                     sidebarButton(title: "About", icon: "info.circle.fill", tag: "About", isHovering: $hoverAbout)
                     
                     Spacer()
@@ -93,6 +95,8 @@ struct SettingsView: View {
                             appearanceSettings
                         } else if selectedTab == "Indicators" {
                             indicatorsSettings
+                        } else if selectedTab == "Integrations" {
+                            integrationsSettings
                         } else if selectedTab == "About" {
                             aboutSettings
                         }
@@ -392,7 +396,11 @@ struct SettingsView: View {
             } footer: {
                 Text("Requires Accessibility permissions to intercept media keys.")
             }
-            
+        }
+    }
+    
+    private var integrationsSettings: some View {
+        Group {
             // MARK: Finder Services
             Section {
                 Toggle(isOn: $enableFinderServices) {
@@ -406,7 +414,7 @@ struct SettingsView: View {
             } header: {
                 Text("Finder Integration")
             } footer: {
-                Text("Right-click files → Services → Add to Droppy")
+                Text("Right-click files → Services → Add to Droppy. No installation required!")
             }
             
             // MARK: Alfred Integration
@@ -463,7 +471,7 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 8)
             } header: {
-                Text("Alfred Integration")
+                Text("Alfred")
             } footer: {
                 Text("Requires Alfred 4+ with Powerpack.")
             }
@@ -489,21 +497,13 @@ struct SettingsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             
                             Button {
-                                // Open the bundled Raycast extension folder
-                                if let bundlePath = Bundle.main.resourcePath,
-                                   let raycastURL = Bundle.main.url(forResource: "Raycast", withExtension: nil, subdirectory: "../Integrations") {
-                                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: raycastURL.path)
-                                } else {
-                                    // Fallback: open GitHub releases
-                                    if let url = URL(string: "https://github.com/iordv/Droppy/tree/main/Integrations/Raycast") {
-                                        NSWorkspace.shared.open(url)
-                                    }
-                                }
+                                // Install the Raycast extension by copying to ~/.config/raycast/extensions/
+                                installRaycastExtension()
                             } label: {
                                 HStack(spacing: 8) {
-                                    Text("Open Extension Folder")
+                                    Text("Install in Raycast")
                                         .fontWeight(.semibold)
-                                    Image(systemName: "folder.fill")
+                                    Image(systemName: "arrow.down.circle.fill")
                                         .font(.caption.weight(.semibold))
                                 }
                                 .padding(.horizontal, 16)
@@ -528,9 +528,9 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 8)
             } header: {
-                Text("Raycast Integration")
+                Text("Raycast")
             } footer: {
-                Text("Import the extension folder in Raycast → Extensions.")
+                Text("Installs to ~/.config/raycast/extensions/droppy")
             }
         }
     }
@@ -774,14 +774,12 @@ struct SettingsView: View {
             }
             .onChange(of: enableClipboard) { oldValue, newValue in
                 if newValue {
-                    // Check for Accessibility Permissions
-                    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-                    let isTrusted = AXIsProcessTrustedWithOptions(options)
+                    // Check for Accessibility Permissions - first check WITHOUT prompting
+                    let isTrusted = AXIsProcessTrusted()
                     
                     if !isTrusted {
-                        // User needs to approve. 
-                        // The system prompt appears automatically due to options above.
-                        // We can also show a helper alert if needed, but system prompt is standard.
+                        // Only prompt if not already trusted
+                        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
                         print("Prompting for Accessibility permissions")
                     }
                     
@@ -1011,6 +1009,79 @@ struct SettingsView: View {
             return FileManager.default.displayName(atPath: appURL.path)
         }
         return bundleID
+    }
+    
+    /// Installs the Raycast extension by extracting it to the correct folder
+    private func installRaycastExtension() {
+        // Get the bundled Raycast.zip extension
+        guard let bundledPath = Bundle.main.path(forResource: "Raycast", ofType: "zip") else {
+            showRaycastAlert(success: false, message: "Raycast extension not found in app bundle.")
+            return
+        }
+        
+        // Destination: ~/.config/raycast/extensions/
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let raycastExtDir = homeDir.appendingPathComponent(".config/raycast/extensions")
+        let destPath = raycastExtDir.appendingPathComponent("droppy")
+        
+        do {
+            // Create parent directories if needed
+            try FileManager.default.createDirectory(at: raycastExtDir, withIntermediateDirectories: true)
+            
+            // Remove existing installation
+            if FileManager.default.fileExists(atPath: destPath.path) {
+                try FileManager.default.removeItem(at: destPath)
+            }
+            
+            // Unzip the extension using /usr/bin/unzip
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            process.arguments = ["-o", bundledPath, "-d", raycastExtDir.path]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            
+            guard process.terminationStatus == 0 else {
+                showRaycastAlert(success: false, message: "Failed to extract extension.")
+                return
+            }
+            
+            // Rename extracted Raycast folder to droppy
+            let extractedPath = raycastExtDir.appendingPathComponent("Raycast")
+            if FileManager.default.fileExists(atPath: extractedPath.path) {
+                try FileManager.default.moveItem(at: extractedPath, to: destPath)
+            }
+            
+            // Success - show alert and offer to open Raycast
+            showRaycastAlert(success: true, message: "Extension installed! Open Raycast and search for \"Add to Droppy\".")
+            
+        } catch {
+            showRaycastAlert(success: false, message: "Failed to install: \(error.localizedDescription)")
+        }
+    }
+    
+    private func showRaycastAlert(success: Bool, message: String) {
+        let alert = NSAlert()
+        alert.messageText = success ? "Raycast Extension Installed" : "Installation Failed"
+        alert.informativeText = message
+        alert.alertStyle = success ? .informational : .warning
+        
+        if success {
+            alert.addButton(withTitle: "Open Raycast")
+            alert.addButton(withTitle: "Done")
+        } else {
+            alert.addButton(withTitle: "OK")
+        }
+        
+        let response = alert.runModal()
+        
+        if success && response == .alertFirstButtonReturn {
+            // Open Raycast
+            if let raycastURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.raycast.macos") {
+                NSWorkspace.shared.open(raycastURL)
+            }
+        }
     }
 }
 // MARK: - Launch Handler
