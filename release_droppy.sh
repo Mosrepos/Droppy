@@ -145,7 +145,7 @@ CASK_CONTENT="cask \"droppy\" do
   version \"$VERSION\"
   sha256 \"$HASH\"
 
-  url \"https://raw.githubusercontent.com/iordv/Droppy/main/$DMG_NAME\"
+  url \"https://github.com/iordv/Droppy/releases/download/v$VERSION/$DMG_NAME\"
   name \"Droppy\"
   desc \"Drag and drop file shelf for macOS\"
   homepage \"https://github.com/iordv/Droppy\"
