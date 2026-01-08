@@ -191,6 +191,16 @@ brew install --cask iordv/tap/droppy
 
 ## 🆕 What's New
 <!-- CHANGELOG_START -->
+# Version 4.9.1 - Hotfix
+
+## 🐛 Bug Fixes
+
+### Alfred Workflow Fix
+- **Fixed "workflow is invalid or corrupted" error** - Workflow now imports correctly into Alfred
+- **Fixed script crash with special characters** - Filenames with quotes, spaces, and unicode now work properly
+
+---
+
 # Version 4.9 - Alfred Integration
 
 ## 🆕 New Features
@@ -198,7 +208,7 @@ brew install --cask iordv/tap/droppy
 ### 🔮 Alfred Integration
 - **Push files to Droppy from Alfred** - Select files in Finder, invoke Alfred, and send them directly to Droppy
 - **Two file actions** - Choose between "Add to Droppy Shelf" (notch) or "Add to Droppy Basket" (floating)
-- **One-click install** - Open Settings → About → click "Install in Alfred" — workflow imports instantly
+- **One-click install** - Open Settings → Features → click "Install in Alfred" — workflow imports instantly
 - **URL scheme support** - External apps can use `droppy://add?target=shelf&path=/path/to/file` to push files programmatically
 - **Fully bundled** - Alfred workflow included in the app, no external downloads needed
 
@@ -209,7 +219,7 @@ brew install --cask iordv/tap/droppy
 
 ## 📖 How to Use
 
-1. Open **Droppy Settings** → **About**
+1. Open **Droppy Settings** → **Features**
 2. Click **"Install in Alfred"**
 3. Select files in Finder → Alfred → "Actions"
 4. Choose **Add to Droppy Shelf** or **Add to Droppy Basket**
