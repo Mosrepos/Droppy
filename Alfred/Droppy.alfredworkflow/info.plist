@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>com.iordv.droppy.alfred</string>
+	<key>category</key>
+	<string>Productivity</string>
+	<key>connections</key>
+	<dict>
+		<key>8A1B2C3D-4E5F-6789-ABCD-EF0123456789</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>SHELF-ACTION-UUID-1234-567890ABCDEF</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitowards</key>
+				<string></string>
+			</dict>
+		</array>
+		<key>9B2C3D4E-5F6A-789B-CDEF-0123456789AB</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>BASKET-ACTION-UUID-5678-90ABCDEF1234</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitowards</key>
+				<string></string>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>Jordy Spruit</string>
+	<key>description</key>
+	<string>Quickly add files to Droppy shelf or basket</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Droppy</string>
+	<key>objects</key>
+	<array>
+		<!-- File Action: Add to Shelf -->
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>acceptsmulti</key>
+				<true/>
+				<key>filetypes</key>
+				<array>
+					<string>public.item</string>
+				</array>
+				<key>name</key>
+				<string>Add to Droppy Shelf</string>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.trigger.fileaction</string>
+			<key>uid</key>
+			<string>8A1B2C3D-4E5F-6789-ABCD-EF0123456789</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<!-- File Action: Add to Basket -->
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>acceptsmulti</key>
+				<true/>
+				<key>filetypes</key>
+				<array>
+					<string>public.item</string>
+				</array>
+				<key>name</key>
+				<string>Add to Droppy Basket</string>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.trigger.fileaction</string>
+			<key>uid</key>
+			<string>9B2C3D4E-5F6A-789B-CDEF-0123456789AB</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<!-- Run Script: Shelf -->
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>./add_to_shelf.sh "$@"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>SHELF-ACTION-UUID-1234-567890ABCDEF</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+		<!-- Run Script: Basket -->
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>./add_to_basket.sh "$@"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>BASKET-ACTION-UUID-5678-90ABCDEF1234</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string>## Droppy Alfred Workflow
+
+Quickly add files to Droppy from Finder using Alfred file actions.
+
+### Usage
+
+1. Select files in Finder
+2. Activate Alfred (⌘ + Space)
+3. Type "Actions" or use your file action hotkey
+4. Choose "Add to Droppy Shelf" or "Add to Droppy Basket"
+
+### Actions
+
+- **Add to Droppy Shelf**: Sends files to the notch shelf area
+- **Add to Droppy Basket**: Sends files to the floating basket
+
+### Requirements
+
+- Droppy v4.9+ (with URL scheme support)
+- Alfred 4+ with Powerpack
+</string>
+	<key>uidata</key>
+	<dict>
+		<key>8A1B2C3D-4E5F-6789-ABCD-EF0123456789</key>
+		<dict>
+			<key>xpos</key>
+			<real>100</real>
+			<key>ypos</key>
+			<real>100</real>
+		</dict>
+		<key>9B2C3D4E-5F6A-789B-CDEF-0123456789AB</key>
+		<dict>
+			<key>xpos</key>
+			<real>100</real>
+			<key>ypos</key>
+			<real>250</real>
+		</dict>
+		<key>SHELF-ACTION-UUID-1234-567890ABCDEF</key>
+		<dict>
+			<key>xpos</key>
+			<real>350</real>
+			<key>ypos</key>
+			<real>100</real>
+		</dict>
+		<key>BASKET-ACTION-UUID-5678-90ABCDEF1234</key>
+		<dict>
+			<key>xpos</key>
+			<real>350</real>
+			<key>ypos</key>
+			<real>250</real>
+		</dict>
+	</dict>
+	<key>version</key>
+	<string>1.0.0</string>
+	<key>webaddress</key>
+	<string>https://github.com/iordv/Droppy</string>
+</dict>
+</plist>

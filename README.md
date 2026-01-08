@@ -50,6 +50,7 @@ It's the perfect bridge between your apps, spaces, and workflow.
 | **🎵 Media Player** | Now Playing controls right in your notch. Album art, seek slider, playback controls with buttery smooth animations. |
 | **🔊 Volume HUD** | Beautiful animated volume indicator with dynamic icons — replaces the ugly system HUD. |
 | **🔆 Brightness HUD** | Elegant brightness overlay with smooth animations. |
+| **🔮 Alfred Integration** | Select files in Finder and push them to Droppy with a quick Alfred action. |
 | **📦 Move To...** | Move files directly to saved folders (like your NAS) from the shelf. Non-blocking & fast. |
 | **📉 Smart Compression** | Right-click to compress images, PDFs, and videos. Includes **Target Size** and **Size Guard** 🛡️. |
 | **⚡️ Fast Actions** | Convert images, extract text (OCR), zip, rename — all directly in the shelf. |
@@ -145,6 +146,27 @@ Drag files out of the shelf and drop into any app — email, Discord, Photoshop,
 1. Drag an image into Droppy
 2. Hold **Shift** while dragging it out
 3. Drop into a text editor — **it's text!**
+
+---
+
+## 🔮 Alfred Integration
+
+Use Droppy directly from Alfred! Select files anywhere and push them to your Shelf or Basket with a quick action.
+
+### Installation
+1. Open **Droppy Settings** → **About**
+2. Click **"Install in Alfred"**
+3. Alfred will prompt to import the workflow
+
+### Usage
+1. Select files in Finder
+2. Activate Alfred (`⌘ + Space`)
+3. Type "Actions" or use your file action hotkey
+4. Choose:
+   - **Add to Droppy Shelf** → Sends to the notch shelf
+   - **Add to Droppy Basket** → Sends to the floating basket
+
+> **Requires** Alfred 4+ with Powerpack
 
 ---
 

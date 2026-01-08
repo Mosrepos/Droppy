@@ -44,6 +44,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Set as accessory app (no dock icon)
         NSApp.setActivationPolicy(.accessory)
         
+        // Register for URL scheme events (droppy://)
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleURLEvent(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+        
         // Touch singletons on main thread to ensure proper @AppStorage / UI initialization
         _ = DroppyState.shared
         _ = DragMonitor.shared
@@ -120,5 +128,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Prevent app from closing when the settings window is closed
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
+    }
+    
+    // MARK: - URL Scheme Handling
+    
+    /// Handles incoming droppy:// URL events from Alfred and other apps
+    @objc func handleURLEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString) else {
+            print("⚠️ AppDelegate: Failed to parse URL from event")
+            return
+        }
+        
+        // Route to URLSchemeHandler
+        URLSchemeHandler.handle(url)
     }
 }

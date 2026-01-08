@@ -494,11 +494,71 @@ struct SettingsView: View {
         }
     }
     
-    
-
+    @State private var isAlfredHovering = false
     
     private var aboutSettings: some View {
-        Section {
+        Group {
+            // MARK: Alfred Integration
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 14) {
+                        // Alfred Icon (bundled locally for instant loading)
+                        Image("AlfredIcon")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Alfred Integration")
+                                .font(.headline)
+                            
+                            Text("Select files in Finder and push them to Droppy with a quick Alfred action. Supports both Shelf and Basket destinations.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            
+                            Button {
+                                // Open the bundled Alfred workflow for installation
+                                if let workflowPath = Bundle.main.path(forResource: "Droppy", ofType: "alfredworkflow") {
+                                    NSWorkspace.shared.open(URL(fileURLWithPath: workflowPath))
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text("Install in Alfred")
+                                        .fontWeight(.semibold)
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.purple.opacity(isAlfredHovering ? 1.0 : 0.8))
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .onHover { hovering in
+                                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                                    isAlfredHovering = hovering
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            } header: {
+                Text("Integrations")
+            } footer: {
+                Text("Requires Alfred 4+ with Powerpack.")
+            }
+            
+            // MARK: About
+            Section {
             VStack(alignment: .leading) {
                 Text("Droppy")
                     .font(.headline)
@@ -586,6 +646,7 @@ struct SettingsView: View {
                     downloadCount = count
                 }
             }
+        }
         }
     }
     
