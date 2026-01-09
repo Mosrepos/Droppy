@@ -33,6 +33,7 @@ struct NotchShelfView: View {
     @AppStorage("showOpenShelfIndicator") private var showOpenShelfIndicator = true
     @AppStorage("showDropIndicator") private var showDropIndicator = true
     @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true  // For reactive mode changes
+    @AppStorage("useDynamicIslandTransparent") private var useDynamicIslandTransparent = false  // Transparent DI (only when DI + transparent enabled)
     
     // HUD State - Use @ObservedObject for singletons (they manage their own lifecycle)
     @ObservedObject private var volumeManager = VolumeManager.shared
@@ -115,6 +116,15 @@ struct NotchShelfView: View {
         // Use the @AppStorage property for reactive updates!
         return (!hasNotch || forceTest) && useDynamicIslandStyle
     }
+    
+    /// Whether the Dynamic Island should use transparent glass effect
+    /// Only applies when in DI mode AND the transparent DI setting is enabled
+    private var shouldUseDynamicIslandTransparent: Bool {
+        isDynamicIslandMode && useDynamicIslandTransparent
+    }
+    
+    /// Top margin for Dynamic Island - creates floating effect like iPhone
+    private let dynamicIslandTopMargin: CGFloat = 4
     
     private let expandedWidth: CGFloat = 450
     
@@ -229,14 +239,23 @@ struct NotchShelfView: View {
         
         // DYNAMIC ISLAND MODE: Only show when there's something to display
         if isDynamicIslandMode {
-            // Show when music is playing
-            if musicManager.isPlaying && showMediaPlayer && musicManager.isMediaAvailable { return true }
+            // Show when music is playing (but NOT if auto-fade is enabled and it has faded out)
+            if musicManager.isPlaying && showMediaPlayer && musicManager.isMediaAvailable {
+                // If auto-fade is enabled and HUD has faded out, hide the entire island
+                if autoFadeMediaHUD && mediaHUDFadedOut {
+                    // Don't show just for music - let user hover to reveal
+                } else {
+                    return true
+                }
+            }
             // Show when hovering (to access shelf)
             if state.isMouseHovering || state.isDropTargeted { return true }
             // Show when dragging files
             if dragMonitor.isDragging { return true }
             // Show when expanded
             if state.isExpanded { return true }
+            // Show when battery HUD is visible
+            if batteryHUDIsVisible && enableBatteryHUD { return true }
             // Otherwise hide - Dynamic Island is invisible when idle
             return false
         }
@@ -282,13 +301,14 @@ struct NotchShelfView: View {
             // MORPH: Both shapes exist, crossfade with opacity for smooth transition
             ZStack {
                 // Dynamic Island shape (pill)
+                // When transparent DI is enabled, use glass material instead of black
                 DynamicIslandShape(cornerRadius: state.isExpanded ? 24 : 50)
-                    .fill(Color.black)
+                    .fill(shouldUseDynamicIslandTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
                     .shadow(color: Color.black.opacity(isDynamicIslandMode ? 0.4 : 0), radius: 8, x: 0, y: 4)
                     .opacity(isDynamicIslandMode ? 1 : 0)
                     .scaleEffect(isDynamicIslandMode ? 1 : 0.85)
                 
-                // Notch shape (U-shaped)
+                // Notch shape (U-shaped) - always black (physical notch is black)
                 NotchShape(bottomRadius: state.isExpanded ? 20 : (hudIsVisible ? 18 : 16))
                     .fill(Color.black)
                     .opacity(isDynamicIslandMode ? 0 : 1)
@@ -344,6 +364,8 @@ struct NotchShelfView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.items.count)
                 // Smooth morph when switching between Notch and Dynamic Island modes
                 .animation(.spring(response: 0.4, dampingFraction: 0.75), value: useDynamicIslandStyle)
+                // DYNAMIC ISLAND: Add top margin for floating effect
+                .padding(.top, isDynamicIslandMode ? dynamicIslandTopMargin : 0)
             
             // MARK: - Content Overlay
             ZStack(alignment: .top) {
@@ -416,6 +438,8 @@ struct NotchShelfView: View {
                         .zIndex(2)
                 }
             }
+            // DYNAMIC ISLAND: Match top margin of the background shape
+            .padding(.top, isDynamicIslandMode ? dynamicIslandTopMargin : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Animate all state changes smoothly
@@ -495,6 +519,21 @@ struct NotchShelfView: View {
             if !isPlaying && wasPlaying {
                 mediaDebounceWorkItem?.cancel()
                 isMediaStable = false
+            }
+        }
+        // MARK: - Auto-Fade Setting Observer
+        .onChange(of: autoFadeMediaHUD) { wasEnabled, isEnabled in
+            if isEnabled && !wasEnabled {
+                // Setting was just enabled - start fade timer if music is playing
+                if musicManager.isPlaying && showMediaPlayer {
+                    startMediaFadeTimer()
+                }
+            } else if !isEnabled && wasEnabled {
+                // Setting was disabled - cancel any pending fade and reset state
+                mediaFadeWorkItem?.cancel()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    mediaHUDFadedOut = false
+                }
             }
         }
         // MARK: - Auto-Shrink Timer Observers
@@ -634,14 +673,17 @@ struct NotchShelfView: View {
     // MARK: - Drop Zone
     
     private var dropZone: some View {
-        // Dynamic hit area: tiny in idle, larger when active
-        // This prevents blocking Safari URL bars, Outlook search fields, etc.
+        // MILLIMETER-PRECISE DETECTION (v5.3)
+        // The drop zone NEVER extends below the visible notch/island.
+        // - Horizontal: ±20px expansion for fast cursor movements (both modes)
+        // - Vertical: EXACT height matching the visual - NO downward expansion
+        // This ensures we don't block Safari URL bars, Outlook search fields, etc.
         let isActive = enableNotchShelf && (state.isExpanded || state.isMouseHovering || dragMonitor.isDragging || state.isDropTargeted)
         
-        // For Dynamic Island: ALWAYS use currentNotchWidth/Height to match the visible black shape
-        // For Notch: use conditional sizing (larger when active for comfortable interaction)
-        let dropAreaWidth: CGFloat = isDynamicIslandMode ? currentNotchWidth : (isActive ? (notchWidth + 80) : notchWidth)
-        let dropAreaHeight: CGFloat = isDynamicIslandMode ? currentNotchHeight : (isActive ? (notchHeight + 50) : notchHeight)
+        // Both modes: Horizontal expansion when active, but height is ALWAYS exact
+        let dropAreaWidth: CGFloat = isActive ? (currentNotchWidth + 40) : currentNotchWidth
+        // Height is ALWAYS exactly the current visual height - NEVER expand downward
+        let dropAreaHeight: CGFloat = currentNotchHeight
         
         // Calculate indicator position: exactly below the current notch height with small gap
         let indicatorOffset = currentNotchHeight + 20
@@ -737,10 +779,11 @@ struct NotchShelfView: View {
         .background(indicatorBackground)
     }
     
-    // NOTE: Part of shelf UI - always solid black (transparent setting doesn't apply)
+    // NOTE: In regular notch mode, indicators are solid black.
+    // In transparent DI mode, indicators use glass material to match the DI style.
     private var indicatorBackground: some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(Color.black)
+            .fill(shouldUseDynamicIslandTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)

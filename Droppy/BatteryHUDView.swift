@@ -62,25 +62,26 @@ struct BatteryHUDView: View {
         VStack(alignment: .center, spacing: 0) {
             if isDynamicIslandMode {
                 // DYNAMIC ISLAND: Compact horizontal layout
-                HStack(spacing: 10) {
+                // Standardized sizing: 18px icons, 13pt text, 14px horizontal padding
+                HStack(spacing: 12) {
                     // Battery icon
                     Image(systemName: batteryIcon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(accentColor)
                         .symbolEffect(.pulse, options: .repeating, value: batteryManager.isCharging)
                         .contentTransition(.symbolEffect(.replace))
                         .symbolVariant(.fill)
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                         .shadow(color: accentColor.opacity(0.4), radius: batteryManager.isCharging ? 4 : 0)
                     
                     // Percentage
                     Text("\(batteryManager.batteryLevel)%")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(accentColor)
                         .monospacedDigit()
                         .contentTransition(.numericText(value: Double(batteryManager.batteryLevel)))
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
                 .frame(height: notchHeight)
             } else {
                 // NOTCH MODE: Two wings separated by the notch space

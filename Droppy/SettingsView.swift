@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage("hideNotchOnExternalDisplays") private var hideNotchOnExternalDisplays = false
     @AppStorage("hideNotchFromScreenshots") private var hideNotchFromScreenshots = false
     @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true  // Default: true for non-notch
+    @AppStorage("useDynamicIslandTransparent") private var useDynamicIslandTransparent = false  // Glass effect for DI
     @AppStorage("externalDisplayUseDynamicIsland") private var externalDisplayUseDynamicIsland = true  // External display mode
     
     // HUD and Media Player settings
@@ -612,6 +613,7 @@ struct SettingsView: View {
             }
             
             // MARK: Display Mode (Non-notch displays only)
+            // Only show on non-notch displays (iMacs, Mac minis, older MacBooks, external displays)
             if !hasPhysicalNotch {
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
@@ -648,6 +650,21 @@ struct SettingsView: View {
                                 }
                             ) {
                                 useDynamicIslandStyle = true
+                            }
+                        }
+                        
+                        // Transparent Dynamic Island option (only when DI + transparent enabled)
+                        if useDynamicIslandStyle && useTransparentBackground {
+                            Divider()
+                                .padding(.vertical, 4)
+                            
+                            Toggle(isOn: $useDynamicIslandTransparent) {
+                                VStack(alignment: .leading) {
+                                    Text("Transparent Dynamic Island")
+                                    Text("Use glass effect instead of solid black")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }

@@ -345,15 +345,17 @@ class NotchWindow: NSWindow {
     /// Dynamic Island dimensions
     private let dynamicIslandWidth: CGFloat = 210
     private let dynamicIslandHeight: CGFloat = 37
+    /// Top margin for Dynamic Island - creates floating effect like iPhone
+    private let dynamicIslandTopMargin: CGFloat = 4
     
     private var notchRect: NSRect {
         guard let screen = NSScreen.main else { return .zero }
         
-        // DYNAMIC ISLAND MODE: Floating pill centered at top
+        // DYNAMIC ISLAND MODE: Floating pill centered below screen top edge
         if needsDynamicIsland {
             let x = (screen.frame.width - dynamicIslandWidth) / 2
-            // Position directly below menu bar (no margin to keep hit areas aligned)
-            let y = screen.frame.height - 24 - dynamicIslandHeight
+            // Position below screen top with margin (floating island effect like iPhone)
+            let y = screen.frame.height - dynamicIslandTopMargin - dynamicIslandHeight
             
             return NSRect(
                 x: x,
@@ -449,39 +451,85 @@ class NotchWindow: NSWindow {
         }
         
         // PRECISE HOVER DETECTION (v5.2)
-        // The hardware notch is small (~180x32px). Fast cursor movements can skip over it.
-        // Extend detection zone UPWARD to the screen's top edge (Fitt's Law - screen edge is "infinite")
-        // but NOT downward (to avoid blocking bookmark bars, menu items, etc.)
-        // Horizontal: small expansion for fast side-to-side movements
-        let screenTopY = NSScreen.main?.frame.maxY ?? notchRect.maxY
-        let upwardExpansion = (screenTopY - notchRect.maxY) + 5  // +5px buffer to capture absolute edge
+        // Different logic for NOTCH vs DYNAMIC ISLAND modes
         
-        let expandedNotchRect = NSRect(
-            x: notchRect.origin.x - 20,                     // 20px expansion on left
-            y: notchRect.origin.y,                          // Keep bottom edge exact (no downward expansion)
-            width: notchRect.width + 40,                    // 20px expansion on each side = 40px total
-            height: notchRect.height + upwardExpansion      // Extend to screen top edge + buffer
-        )
         let isOverExactNotch = notchRect.contains(mouseLocation)
-        var isOverExpandedZone = expandedNotchRect.contains(mouseLocation)
+        var isOverExpandedZone: Bool
         
-        // Special case: If cursor is at/near the absolute top of the screen and within notch X range,
-        // always treat it as hovering. The tolerance needs to be generous because:
-        // 1. When cursor hits screen edge, no more mouseMoved events are generated
-        // 2. The last event before hitting the edge might have a Y slightly below maxY
-        // 3. Menu bar is ~24px, notch is within that space, so 10px tolerance is safe
-        if let screen = NSScreen.main {
-            let isAtScreenTop = mouseLocation.y >= screen.frame.maxY - 10  // Within 10px of absolute top
-            let isWithinNotchX = mouseLocation.x >= notchRect.minX - 20 && mouseLocation.x <= notchRect.maxX + 20
-            if isAtScreenTop && isWithinNotchX {
-                isOverExpandedZone = true
+        if needsDynamicIsland {
+            // DYNAMIC ISLAND MODE:
+            // The island is a floating pill below the menu bar with a gap above it.
+            // - Horizontal: ±20px expansion for catching fast horizontal movements
+            // - Upward: Extend to absolute screen top (area above island is still interactive)
+            // - Downward: NO expansion - must NOT detect below the visible island
+            let screenTopY = NSScreen.main?.frame.maxY ?? notchRect.maxY
+            
+            // Extend all the way to screen top (covers the gap above the floating island)
+            let upwardExpansion = max(0, screenTopY - notchRect.maxY)
+            
+            let expandedNotchRect = NSRect(
+                x: notchRect.origin.x - 20,                     // 20px expansion on left
+                y: notchRect.origin.y,                          // Keep bottom edge EXACT (no downward expansion!)
+                width: notchRect.width + 40,                    // 20px expansion on each side = 40px total
+                height: notchRect.height + upwardExpansion      // Extend upward to screen top (covers the gap)
+            )
+            isOverExpandedZone = expandedNotchRect.contains(mouseLocation)
+            
+            // Special case: If cursor is at the absolute screen top edge within island X range,
+            // always treat it as hovering (Fitt's Law)
+            if let screen = NSScreen.main {
+                let isAtScreenTop = mouseLocation.y >= screen.frame.maxY - 5
+                let isWithinIslandX = mouseLocation.x >= notchRect.minX - 20 && mouseLocation.x <= notchRect.maxX + 20
+                if isAtScreenTop && isWithinIslandX {
+                    isOverExpandedZone = true
+                }
+            }
+        } else {
+            // NOTCH MODE:
+            // The hardware notch is at the screen's top edge.
+            // - Horizontal: ±20px expansion for fast side-to-side movements
+            // - Upward: Extend to absolute screen top (Fitt's Law - infinite edge target)
+            // - Downward: NO expansion (avoid blocking bookmark bars, URL fields)
+            let screenTopY = NSScreen.main?.frame.maxY ?? notchRect.maxY
+            let upwardExpansion = (screenTopY - notchRect.maxY) + 5  // +5px buffer to capture absolute edge
+            
+            let expandedNotchRect = NSRect(
+                x: notchRect.origin.x - 20,                     // 20px expansion on left
+                y: notchRect.origin.y,                          // Keep bottom edge exact (no downward expansion)
+                width: notchRect.width + 40,                    // 20px expansion on each side = 40px total
+                height: notchRect.height + upwardExpansion      // Extend to screen top edge + buffer
+            )
+            isOverExpandedZone = expandedNotchRect.contains(mouseLocation)
+            
+            // Special case: If cursor is at/near the absolute top of the screen and within notch X range,
+            // always treat it as hovering. The tolerance needs to be generous because:
+            // 1. When cursor hits screen edge, no more mouseMoved events are generated
+            // 2. The last event before hitting the edge might have a Y slightly below maxY
+            // 3. Menu bar is ~24px, notch is within that space, so 10px tolerance is safe
+            if let screen = NSScreen.main {
+                let isAtScreenTop = mouseLocation.y >= screen.frame.maxY - 10  // Within 10px of absolute top
+                let isWithinNotchX = mouseLocation.x >= notchRect.minX - 20 && mouseLocation.x <= notchRect.maxX + 20
+                if isAtScreenTop && isWithinNotchX {
+                    isOverExpandedZone = true
+                }
             }
         }
         
         // Use expanded zone to START hovering, exact zone to MAINTAIN hover
-        // This ensures fast cursor movements are caught, but exit detection remains precise
+        // Exception: Also maintain hover at the screen top edge (Fitt's Law - user pushing against edge)
         let currentlyHovering = DroppyState.shared.isMouseHovering
-        let isOverNotch = currentlyHovering ? isOverExactNotch : isOverExpandedZone
+        
+        // For maintaining hover: exact notch OR at screen top within horizontal bounds
+        var isOverExactOrEdge = isOverExactNotch
+        if let screen = NSScreen.main {
+            let isAtScreenTop = mouseLocation.y >= screen.frame.maxY - 5
+            let isWithinNotchX = mouseLocation.x >= notchRect.minX && mouseLocation.x <= notchRect.maxX
+            if isAtScreenTop && isWithinNotchX {
+                isOverExactOrEdge = true
+            }
+        }
+        
+        let isOverNotch = currentlyHovering ? isOverExactOrEdge : isOverExpandedZone
         
         // Only update if not dragging (drag monitor handles that)
         if !DragMonitor.shared.isDragging {
@@ -787,17 +835,28 @@ class NotchDragContainer: NSView {
         let isHovering = DroppyState.shared.isMouseHovering
         
         if isHovering {
-             // Expand to include the "Open Shelf" indicator (offset y ~80, height ~30-40)
-             let hoverWidth: CGFloat = 240
-             let hoverHeight: CGFloat = 120
-             
-             let centerX = bounds.midX
-             let xRange = (centerX - hoverWidth/2)...(centerX + hoverWidth/2)
-             let yRange = (bounds.height - hoverHeight)...bounds.height
-             
-             if xRange.contains(localPoint.x) && yRange.contains(localPoint.y) {
-                  return super.hitTest(point)
-             }
+            // PRECISE HOVER HIT AREA (v5.3):
+            // Capture clicks within the notch/island area + the indicator below it
+            // The indicator is offset by notchHeight + 20, and is about 44px tall
+            // So total area is from screen top to (notchHeight + 20 + 44) = notchHeight + 64
+            guard let notchWindow = self.window as? NotchWindow else { return nil }
+            let notchRect = notchWindow.getNotchRect()
+            let mouseScreenPos = NSEvent.mouseLocation
+            
+            // Horizontal: notch bounds + 20px on each side for comfortable clicking
+            let xMin = notchRect.minX - 20
+            let xMax = notchRect.maxX + 20
+            
+            // Vertical: From screen top (notch.maxY) down to just below the indicator
+            // indicator is at notchHeight + 20 offset, ~44px tall
+            // So total clickable area extends ~64-70px below notch bottom
+            let yMin = notchRect.minY - 70  // Enough for indicator
+            let yMax = NSScreen.main?.frame.maxY ?? notchRect.maxY
+            
+            if mouseScreenPos.x >= xMin && mouseScreenPos.x <= xMax &&
+               mouseScreenPos.y >= yMin && mouseScreenPos.y <= yMax {
+                return super.hitTest(point)
+            }
         }
 
         // IDLE STATE: Pass through ALL events to underlying apps.

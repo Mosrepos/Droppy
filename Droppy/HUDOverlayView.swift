@@ -40,33 +40,35 @@ struct NotchHUDView: View {
         VStack(alignment: .center, spacing: 0) {
             if isDynamicIslandMode {
                 // DYNAMIC ISLAND: Compact horizontal layout, all content in one row
-                HStack(spacing: 10) {
+                // Standardized sizing: 18px icons, 13pt text, 14px horizontal padding
+                HStack(spacing: 12) {
                     // Icon
                     Image(systemName: hudType.icon(for: value))
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(hudType == .brightness ? .yellow : .white)
                         .contentTransition(.symbolEffect(.replace))
                         .symbolVariant(.fill)
-                        .frame(width: 18, height: 18)
+                        .frame(width: 20, height: 20)
                     
-                    // Mini slider
+                    // Mini slider - expands to fill available space
                     HUDSlider(
                         value: $value,
                         accentColor: hudType == .brightness ? .yellow : .white,
                         isActive: isActive,
                         onChange: onValueChange
                     )
-                    .frame(width: 100, height: 16)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 16)
                     
                     // Percentage
                     Text("\(Int(value * 100))%")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .monospacedDigit()
                         .contentTransition(.numericText(value: value))
-                        .frame(width: 36)
+                        .frame(width: 40, alignment: .trailing)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
                 .frame(height: notchHeight)
             } else {
                 // NOTCH MODE: Main HUD - Two wings separated by the notch space
@@ -233,22 +235,22 @@ struct MediaHUDView: View {
             // Main HUD layout differs for Dynamic Island vs Notch mode
             if isDynamicIslandMode {
                 // DYNAMIC ISLAND: Album on left, Visualizer on right, Title centered
+                // Standardized sizing: 20px elements, 13pt text, 14px horizontal padding
                 ZStack {
                     // Title - truly centered in the island (both horizontally and vertically)
-                    // Use explicit height and frame alignment to fix GeometryReader vertical positioning
                     VStack {
                         Spacer(minLength: 0)
                         MarqueeText(text: musicManager.songTitle.isEmpty ? "Not Playing" : musicManager.songTitle, speed: 30)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(.white.opacity(0.9))
-                            .frame(height: 14) // Fixed height for text
+                            .frame(height: 16) // Fixed height for text
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 32) // Leave space for album art and visualizer
+                    .padding(.horizontal, 36) // Leave space for album art and visualizer
                     
                     // Album art (left) and Visualizer (right)
                     HStack {
-                        // Album art
+                        // Album art - matches icon size from other HUDs
                         Group {
                             if musicManager.albumArt.size.width > 0 {
                                 Image(nsImage: musicManager.albumArt)
@@ -259,7 +261,7 @@ struct MediaHUDView: View {
                                     .fill(Color.white.opacity(0.2))
                                     .overlay(
                                         Image(systemName: "music.note")
-                                            .font(.system(size: 9))
+                                            .font(.system(size: 10))
                                             .foregroundStyle(.white.opacity(0.5))
                                     )
                             }
@@ -269,14 +271,14 @@ struct MediaHUDView: View {
                         
                         Spacer()
                         
-                        // Visualizer
-                        AudioSpectrumView(isPlaying: musicManager.isPlaying, barCount: 3, barWidth: 2, spacing: 1.5, height: 12, color: visualizerColor)
-                            .frame(width: 3 * 2 + 2 * 1.5, height: 12)
+                        // Visualizer - scaled to match other HUD elements
+                        AudioSpectrumView(isPlaying: musicManager.isPlaying, barCount: 3, barWidth: 2.5, spacing: 2, height: 14, color: visualizerColor)
+                            .frame(width: 3 * 2.5 + 2 * 2, height: 14)
                     }
                     .frame(maxHeight: .infinity, alignment: .center)
                 }
                 .frame(height: notchHeight)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
             } else {
                 // NOTCH MODE: Two wings separated by the notch space
                 HStack(spacing: 0) {
