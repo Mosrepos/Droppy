@@ -144,23 +144,18 @@ Enable in Settings → Basket → **Auto-Hide**. The basket slides to the screen
 <summary><strong>v5.4.1 — Stability & Interaction Fixes</strong></summary>
 
 <!-- CHANGELOG_START -->
-### 🔧 Bug Fixes
+# Droppy v5.4.2 - Rename Fix
 
-**File Transfer Stability**
-- Fixed file corruption when moving between Basket and Shelf multiple times
-- Fixed ZIP creation failures after repeated file transfers
+## 🔧 Bug Fixes
 
-**Auto-Hide Basket**
-- Fixed "peek" not hiding when moving cursor away after dropping files
-- Improved drop detection with better mouse tracking
+### File Renaming
+- **Fixed spacebar during rename** — Pressing spacebar while renaming files now correctly inserts a space character instead of triggering Quick Look preview
 
-**Shelf Interaction**
-- Instant drag from shelf without clicking to activate first
-- Both shelf and basket now support first-click interaction
-
----
-
-*Includes all features from v5.4: Caps Lock HUD, Media Player improvements, and performance optimizations.*
+## 📖 Documentation
+- Added hero demo video to README
+- Redesigned feature tables for better readability
+- Added clickable badges and download button
+- Streamlined README layout with collapsible changelog
 <!-- CHANGELOG_END -->
 
 </details>
