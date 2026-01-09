@@ -30,10 +30,12 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         // Use NSHostingView like SettingsWindowController for native sidebar appearance
         let hostingView = NSHostingView(rootView: clipboardView)
         
-        // Use EXACT same window style as Settings for identical sidebar chrome
-        window = NSWindow(
+        // Use ClipboardPanel (custom NSPanel subclass) for proper focus handling
+        // ClipboardPanel overrides canBecomeKey and canBecomeMain to allow interaction
+        // even after other windows (like media player) have taken focus
+        window = ClipboardPanel(
             contentRect: NSRect(x: 0, y: 0, width: 1040, height: 640),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -375,8 +377,15 @@ class ClipboardPanel: NSPanel {
         return true
     }
     
-    // ✅ Allow interaction even without focus
-    // Note: acceptsFirstMouse is an NSView method, not NSWindow. 
-    // SwiftUI views inside should handle this automatically or via their hosting view.
-
+    // ✅ FIX v5.3: Configure panel for immediate click handling
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+        
+        // Panel should become key on any click, not just title bar
+        self.becomesKeyOnlyIfNeeded = false
+        
+        // Ensure the panel can accept mouse events immediately
+        self.isFloatingPanel = false
+        self.worksWhenModal = true
+    }
 }

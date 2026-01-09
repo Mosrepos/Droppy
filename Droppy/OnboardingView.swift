@@ -80,6 +80,10 @@ struct OnboardingView: View {
     @AppStorage("enableFloatingBasket") private var enableFloatingBasket = true
     @AppStorage("enableClipboardBeta") private var enableClipboard = false
     
+    // Basket sub-settings
+    @AppStorage("enableBasketAutoHide") private var enableBasketAutoHide = false
+    @AppStorage("basketAutoHideEdge") private var basketAutoHideEdge = "right"
+    
     // Shelf sub-settings
     @AppStorage("autoShrinkShelf") private var autoShrinkShelf = true
     @AppStorage("showOpenShelfIndicator") private var showOpenShelfIndicator = true
@@ -347,10 +351,7 @@ struct OnboardingView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
             
-            Text(enableShelf ? "Shelf is enabled" : "Shelf is disabled")
-                .font(.caption)
-                .foregroundStyle(enableShelf ? .green : .secondary)
-            
+
             Spacer()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: enableShelf)
@@ -366,7 +367,7 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             Spacer()
             
-            // SwiftUI Preview
+            // SwiftUI Preview - same size as shelf
             FloatingBasketPreview()
                 .frame(maxWidth: 450, maxHeight: 180)
             
@@ -375,14 +376,14 @@ struct OnboardingView: View {
                     .font(.largeTitle.bold())
                     .foregroundStyle(.white)
                 
-                Text("Jiggle files to summon a floating basket that follows your cursor. Drop files anywhere to collect them.")
+                Text("Jiggle files to summon a floating basket that follows your cursor.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 60)
             }
             
-            // Main Toggle
+            // Main Toggle - same padding as shelf
             Toggle(isOn: $enableFloatingBasket) {
                 HStack {
                     Image(systemName: "basket.fill")
@@ -395,12 +396,60 @@ struct OnboardingView: View {
             .toggleStyle(.switch)
             .padding(.horizontal, 120)
             
-            Text(enableFloatingBasket ? "Basket is enabled" : "Basket is disabled")
-                .font(.caption)
-                .foregroundStyle(enableFloatingBasket ? .green : .secondary)
+            // Sub-settings (only visible if enabled) - matching shelf pattern
+            if enableFloatingBasket {
+                VStack(spacing: 12) {
+                    Text("Options")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    HStack(spacing: 20) {
+                        // Auto-hide toggle - entire area clickable
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                enableBasketAutoHide.toggle()
+                            }
+                        } label: {
+                            VStack(spacing: 2) {
+                                Image(systemName: "arrow.right.to.line")
+                                    .font(.title2)
+                                    .foregroundStyle(.orange)
+                                Text("Auto-Hide")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.primary)
+                            }
+                            .frame(width: 100, height: 70)
+                            .background(enableBasketAutoHide ? Color.orange.opacity(0.15) : Color.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(enableBasketAutoHide ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        
+                        // Edge picker (when auto-hide is on)
+                        if enableBasketAutoHide {
+                            Picker("", selection: $basketAutoHideEdge) {
+                                Text("Left").tag("left")
+                                Text("Right").tag("right")
+                                Text("Bottom").tag("bottom")
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 180)
+                        }
+                    }
+                }
+                .padding(.horizontal, 40)
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
             
             Spacer()
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: enableFloatingBasket)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: enableBasketAutoHide)
         .transition(.asymmetric(
             insertion: .move(edge: .trailing).combined(with: .opacity),
             removal: .move(edge: .leading).combined(with: .opacity)
@@ -410,7 +459,7 @@ struct OnboardingView: View {
     // MARK: - Clipboard Page
     
     private var clipboardPage: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             Spacer()
             
             // SwiftUI Preview
@@ -480,10 +529,7 @@ struct OnboardingView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
             
-            Text(enableClipboard ? "Clipboard history is enabled" : "Clipboard history is disabled")
-                .font(.caption)
-                .foregroundStyle(enableClipboard ? .green : .secondary)
-            
+
             Spacer()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: enableClipboard)
@@ -518,7 +564,7 @@ struct OnboardingView: View {
     // MARK: - HUDs Page
     
     private var hudsPage: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             Spacer()
             
             // SwiftUI Preview - Real HUD component
@@ -567,10 +613,7 @@ struct OnboardingView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
             
-            Text(enableHUDReplacement ? "Custom HUDs are enabled" : "Using system HUDs")
-                .font(.caption)
-                .foregroundStyle(enableHUDReplacement ? .green : .secondary)
-            
+
             Spacer()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: enableHUDReplacement)
@@ -756,6 +799,7 @@ struct OnboardingView: View {
             .scaleEffect(isOn.wrappedValue ? 1.0 : 0.98)
         }
         .buttonStyle(OptionButtonStyle())
+        .contentShape(Rectangle())
     }
     
     private func hudToggle(icon: String, title: String, isOn: Binding<Bool>, color: Color) -> some View {
@@ -782,6 +826,7 @@ struct OnboardingView: View {
             .scaleEffect(isOn.wrappedValue ? 1.0 : 0.98)
         }
         .buttonStyle(OptionButtonStyle())
+        .contentShape(Rectangle())
     }
     
     // MARK: - Alfred Page

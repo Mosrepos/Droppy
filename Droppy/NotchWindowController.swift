@@ -188,19 +188,32 @@ final class NotchWindowController: NSObject, ObservableObject {
             self?.handleMouseEvent(event)
         }
         
-        // GLOBAL CLICK MONITOR (v5.2) - Enables true single-click shelf opening
+        // GLOBAL CLICK MONITOR (v5.3) - Ultra-reliable single-click shelf opening
         // This catches clicks even when Droppy isn't focused, enabling instant shelf opening
+        // Uses a slightly expanded hit zone to match the hover detection expansion
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
             guard let self = self,
                   let notchWindow = self.notchWindow,
                   UserDefaults.standard.bool(forKey: "enableNotchShelf") else { return }
             
-            // Get the notch rect
+            // Get the notch rect and expand it for reliable clicking (same expansion as hover)
             let notchRect = notchWindow.getNotchRect()
             let mouseLocation = NSEvent.mouseLocation
             
-            // Only handle clicks directly over the notch
-            if notchRect.contains(mouseLocation) {
+            // Create a click-friendly zone: ±10px horizontal expansion, upward to screen top
+            // This matches user's natural click targeting when aiming for the notch
+            let screenTopY = NSScreen.main?.frame.maxY ?? notchRect.maxY
+            let upwardExpansion = max(0, screenTopY - notchRect.maxY)
+            
+            let clickZone = NSRect(
+                x: notchRect.origin.x - 10,           // 10px expansion on left
+                y: notchRect.origin.y,                // Keep bottom edge exact
+                width: notchRect.width + 20,          // 10px expansion on each side
+                height: notchRect.height + upwardExpansion  // Extend to screen top
+            )
+            
+            // Handle clicks in the expanded click zone
+            if clickZone.contains(mouseLocation) {
                 DispatchQueue.main.async {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                         DroppyState.shared.isExpanded.toggle()
@@ -220,7 +233,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                 return event
             }
             
-            // Handle click - single-click shelf toggle
+            // Handle click - single-click shelf toggle (v5.3 improved)
             if event.type == .leftMouseDown {
                 guard let notchWindow = self.notchWindow,
                       UserDefaults.standard.bool(forKey: "enableNotchShelf") else { return event }
@@ -228,8 +241,18 @@ final class NotchWindowController: NSObject, ObservableObject {
                 let notchRect = notchWindow.getNotchRect()
                 let mouseLocation = NSEvent.mouseLocation
                 
-                // Only handle clicks directly over the notch
-                if notchRect.contains(mouseLocation) {
+                // Use same expanded click zone as global monitor for consistency
+                let screenTopY = NSScreen.main?.frame.maxY ?? notchRect.maxY
+                let upwardExpansion = max(0, screenTopY - notchRect.maxY)
+                
+                let clickZone = NSRect(
+                    x: notchRect.origin.x - 10,
+                    y: notchRect.origin.y,
+                    width: notchRect.width + 20,
+                    height: notchRect.height + upwardExpansion
+                )
+                
+                if clickZone.contains(mouseLocation) {
                     DispatchQueue.main.async {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                             DroppyState.shared.isExpanded.toggle()
@@ -535,6 +558,9 @@ class NotchWindow: NSWindow {
         if !DragMonitor.shared.isDragging {
             if isOverNotch && !currentlyHovering {
                 DispatchQueue.main.async {
+                    // Validate items before showing shelf (remove ghost files)
+                    DroppyState.shared.validateItems()
+                    
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                         DroppyState.shared.isMouseHovering = true
                     }

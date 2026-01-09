@@ -101,6 +101,31 @@ final class DroppyState {
         cleanupTempFoldersIfEmpty()
     }
     
+    /// Validates that all items still exist on disk and removes ghost items
+    /// Call this when shelf becomes visible or after drag operations
+    func validateItems() {
+        let fileManager = FileManager.default
+        let ghostItems = items.filter { !fileManager.fileExists(atPath: $0.url.path) }
+        
+        for item in ghostItems {
+            print("🗑️ Droppy: Removing ghost item (file no longer exists): \(item.name)")
+            items.removeAll { $0.id == item.id }
+            selectedItems.remove(item.id)
+        }
+    }
+    
+    /// Validates that all basket items still exist on disk and removes ghost items
+    func validateBasketItems() {
+        let fileManager = FileManager.default
+        let ghostItems = basketItems.filter { !fileManager.fileExists(atPath: $0.url.path) }
+        
+        for item in ghostItems {
+            print("🗑️ Droppy: Removing ghost basket item (file no longer exists): \(item.name)")
+            basketItems.removeAll { $0.id == item.id }
+            selectedBasketItems.remove(item.id)
+        }
+    }
+    
     /// Cleans up orphaned temp folders when both shelf and basket are empty
     private func cleanupTempFoldersIfEmpty() {
         guard items.isEmpty && basketItems.isEmpty else { return }

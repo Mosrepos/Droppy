@@ -8,7 +8,8 @@ struct SettingsView: View {
     @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @AppStorage("enableNotchShelf") private var enableNotchShelf = true
     @AppStorage("enableFloatingBasket") private var enableFloatingBasket = true
-    @AppStorage("basketSnapPosition") private var basketSnapPosition = "mouse"  // "mouse", "left", "right", "bottom-center"
+    @AppStorage("enableBasketAutoHide") private var enableBasketAutoHide = false  // Auto-hide basket with peek (v5.3)
+    @AppStorage("basketAutoHideEdge") private var basketAutoHideEdge = "right"  // "left", "right", "bottom"
     @AppStorage("showClipboardButton") private var showClipboardButton = false
     @AppStorage("showOpenShelfIndicator") private var showOpenShelfIndicator = true
     @AppStorage("showDropIndicator") private var showDropIndicator = true
@@ -280,20 +281,35 @@ struct SettingsView: View {
                 if enableFloatingBasket {
                     FloatingBasketPreview()
                     
-                    Picker(selection: $basketSnapPosition) {
-                        Text("Follow Mouse").tag("mouse")
-                        Text("Snap to Left Edge").tag("left")
-                        Text("Snap to Right Edge").tag("right")
-                        Text("Snap to Bottom Center").tag("bottom-center")
-                    } label: {
+                    // Auto-hide with peek toggle
+                    Toggle(isOn: $enableBasketAutoHide) {
                         VStack(alignment: .leading) {
-                            Text("Position")
-                            Text("Where the basket appears when triggered")
+                            Text("Auto-Hide with Peek")
+                            Text("Basket slides to edge when cursor leaves, hover to reveal")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .pickerStyle(.menu)
+                    
+                    // Edge picker (only when auto-hide is enabled)
+                    if enableBasketAutoHide {
+                        Picker(selection: $basketAutoHideEdge) {
+                            Text("Left Edge").tag("left")
+                            Text("Right Edge").tag("right")
+                            Text("Bottom Edge").tag("bottom")
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text("Hide Edge")
+                                Text("Which edge the basket slides to")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        
+                        // Animated peek preview
+                        PeekPreview(edge: basketAutoHideEdge)
+                    }
                 }
             } header: {
                 Text("Drop Zones")
@@ -1961,6 +1977,222 @@ struct FloatingBasketPreview: View {
             withAnimation(.linear(duration: 15).repeatForever(autoreverses: false)) {
                 dashPhase -= 280
             }
+        }
+    }
+}
+
+/// Animated preview demonstrating the Auto-Hide Peek feature
+struct PeekPreview: View {
+    let edge: String
+    
+    @State private var isPeeking = false
+    @State private var dashPhase: CGFloat = 0
+    
+    private let containerWidth: CGFloat = 280
+    private let containerHeight: CGFloat = 100
+    private let basketWidth: CGFloat = 100
+    private let basketHeight: CGFloat = 70
+    private let peekAmount: CGFloat = 20 // How much stays visible
+    
+    var body: some View {
+        ZStack {
+            // Container representing the screen
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.gray.opacity(0.12))
+                .overlay(
+                    Text("Screen")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.quaternary)
+                        .padding(.leading, 8)
+                        .padding(.top, 6)
+                    , alignment: .topLeading
+                )
+            
+            // Mini basket that peeks
+            miniBasket
+                .offset(basketOffset)
+                .rotation3DEffect(
+                    .degrees(isPeeking ? rotationAngle : 0),
+                    axis: rotationAxis,
+                    perspective: 0.5
+                )
+                .scaleEffect(isPeeking ? 0.92 : 1.0)
+                .animation(.easeInOut(duration: isPeeking ? 0.55 : 0.25), value: isPeeking)
+        }
+        .frame(width: containerWidth, height: containerHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .onAppear {
+            // Delay initial start
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                startAnimationCycle()
+            }
+            withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
+                dashPhase -= 280
+            }
+        }
+        .onChange(of: edge) { _, _ in
+            isPeeking = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                startAnimationCycle()
+            }
+        }
+    }
+    
+    private let miniBasketScale: CGFloat = 0.5
+    
+    private var miniBasket: some View {
+        ZStack {
+            // Background with animated dashed border
+            RoundedRectangle(cornerRadius: 20 * miniBasketScale, style: .continuous)
+                .fill(Color.black)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10 * miniBasketScale, style: .continuous)
+                        .stroke(
+                            Color.white.opacity(0.2),
+                            style: StrokeStyle(
+                                lineWidth: 1.5 * miniBasketScale,
+                                lineCap: .round,
+                                dash: [6 * miniBasketScale, 8 * miniBasketScale],
+                                dashPhase: dashPhase * miniBasketScale
+                            )
+                        )
+                        .padding(10 * miniBasketScale)
+                )
+            
+            // Content - matching real basket layout
+            VStack(spacing: 6 * miniBasketScale) {
+                // Header row
+                HStack(spacing: 4 * miniBasketScale) {
+                    Text("3 items")
+                        .font(.system(size: 10 * miniBasketScale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    // To Shelf button
+                    HStack(spacing: 2 * miniBasketScale) {
+                        Image(systemName: "arrow.up.to.line")
+                            .font(.system(size: 8 * miniBasketScale, weight: .bold))
+                        Text("To Shelf")
+                            .font(.system(size: 8 * miniBasketScale, weight: .semibold))
+                            .fixedSize()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6 * miniBasketScale)
+                    .padding(.vertical, 4 * miniBasketScale)
+                    .background(Color.blue.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: 6 * miniBasketScale, style: .continuous))
+                    
+                    // Clear button
+                    Image(systemName: "eraser.fill")
+                        .font(.system(size: 8 * miniBasketScale, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16 * miniBasketScale, height: 16 * miniBasketScale)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 5 * miniBasketScale, style: .continuous))
+                }
+                
+                Spacer(minLength: 0)
+                
+                // File items grid
+                HStack(spacing: 8 * miniBasketScale) {
+                    MiniFileItem(icon: "doc.fill", color: .blue, name: "Document", scale: miniBasketScale)
+                    MiniFileItem(icon: "photo.fill", color: .purple, name: "Image.png", scale: miniBasketScale)
+                    MiniFileItem(icon: "folder.fill", color: .cyan, name: "Folder", scale: miniBasketScale)
+                }
+            }
+            .padding(12 * miniBasketScale)
+        }
+        .frame(width: basketWidth, height: basketHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 20 * miniBasketScale, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20 * miniBasketScale, style: .continuous)
+                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 10 * miniBasketScale, x: 0, y: 5 * miniBasketScale)
+    }
+    
+    private var basketOffset: CGSize {
+        if isPeeking {
+            switch edge {
+            case "left":
+                return CGSize(width: -(containerWidth/2 - peekAmount + basketWidth/2), height: 0)
+            case "right":
+                return CGSize(width: (containerWidth/2 - peekAmount + basketWidth/2), height: 0)
+            case "bottom":
+                return CGSize(width: 0, height: (containerHeight/2 - peekAmount + basketHeight/2))
+            default:
+                return CGSize(width: (containerWidth/2 - peekAmount + basketWidth/2), height: 0)
+            }
+        } else {
+            return .zero
+        }
+    }
+    
+    private var rotationAngle: Double {
+        // Match real peek: ~10 degrees (0.18 radians ≈ 10.3°)
+        switch edge {
+        case "left": return 10
+        case "right": return -10
+        case "bottom": return 10
+        default: return -10
+        }
+    }
+    
+    private var rotationAxis: (x: CGFloat, y: CGFloat, z: CGFloat) {
+        switch edge {
+        case "left", "right": return (x: 0, y: 1, z: 0)
+        case "bottom": return (x: 1, y: 0, z: 0)
+        default: return (x: 0, y: 1, z: 0)
+        }
+    }
+    
+    private func startAnimationCycle() {
+        // Step 1: Slide to peek position (0.55s - matches real)
+        isPeeking = true
+        
+        // Step 2: Stay peeking for 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+            // Step 3: Reveal back (0.25s - matches real)
+            isPeeking = false
+            
+            // Step 4: Stay visible for 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+                // Step 5: Wait 4 more seconds before repeating
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                    startAnimationCycle()
+                }
+            }
+        }
+    }
+}
+
+/// Scaled file item for PeekPreview mini basket
+private struct MiniFileItem: View {
+    let icon: String
+    let color: Color
+    let name: String
+    let scale: CGFloat
+    
+    var body: some View {
+        VStack(spacing: 4 * scale) {
+            Image(systemName: icon)
+                .font(.system(size: 22 * scale))
+                .foregroundStyle(color)
+                .frame(width: 44 * scale, height: 44 * scale)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
+            
+            Text(name)
+                .font(.system(size: 7 * scale))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }

@@ -165,6 +165,14 @@ struct FloatingBasketView: View {
         } // Close ZStack
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        // MARK: - Auto-Hide Hover Tracking
+        .onHover { isHovering in
+            if isHovering {
+                FloatingBasketWindowController.shared.onBasketHoverEnter()
+            } else {
+                FloatingBasketWindowController.shared.onBasketHoverExit()
+            }
+        }
         // MARK: - Keyboard Shortcuts
         .background {
             // Hidden button for Cmd+A select all

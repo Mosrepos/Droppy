@@ -32,6 +32,24 @@ final class FloatingBasketWindowController: NSObject {
     /// Keyboard monitor for spacebar Quick Look
     private var keyboardMonitor: Any?
     
+    // MARK: - Auto-Hide Peek Mode (v5.3)
+    
+    /// Whether basket is currently in peek mode (collapsed at edge)
+    private(set) var isInPeekMode: Bool = false
+    
+    /// Work item for delayed auto-hide (0.5 second delay)
+    private var hideDelayWorkItem: DispatchWorkItem?
+    
+    /// Mouse tracking monitor for hover detection
+    private var mouseTrackingMonitor: Any?
+    
+    /// Stored full-size basket position for restoration
+    private var fullSizeFrame: NSRect = .zero
+    
+    /// Peek sliver size in pixels - how much of the window stays on screen
+    /// With 3D tilt + 0.85 scale, we need less visible area
+    private let peekSize: CGFloat = 200
+    
     private override init() {
         super.init()
     }
@@ -62,68 +80,28 @@ final class FloatingBasketWindowController: NSObject {
         }
     }
     
-    // MARK: - Position Calculation (v5.2)
+    // MARK: - Position Calculation
     
-    /// Calculates the basket position based on the user's snap position preference
+    /// Calculates the basket position centered on mouse
     private func calculateBasketPosition() -> NSRect {
         let windowWidth: CGFloat = 500
         let windowHeight: CGFloat = 600
-        let snapPosition = UserDefaults.standard.string(forKey: "basketSnapPosition") ?? "mouse"
+        let mouseLocation = NSEvent.mouseLocation
         
-        guard let screen = NSScreen.main else {
-            // Fallback to mouse position
-            let mouseLocation = NSEvent.mouseLocation
-            return NSRect(x: mouseLocation.x - windowWidth/2, y: mouseLocation.y - windowHeight/2, width: windowWidth, height: windowHeight)
-        }
-        
-        let padding: CGFloat = 40 // Distance from screen edge
-        
-        switch snapPosition {
-        case "left":
-            // Snap to left edge, vertically centered
-            return NSRect(
-                x: screen.frame.minX + padding,
-                y: (screen.frame.height - windowHeight) / 2 + screen.frame.minY,
-                width: windowWidth,
-                height: windowHeight
-            )
-        case "right":
-            // Snap to right edge, vertically centered
-            return NSRect(
-                x: screen.frame.maxX - windowWidth - padding,
-                y: (screen.frame.height - windowHeight) / 2 + screen.frame.minY,
-                width: windowWidth,
-                height: windowHeight
-            )
-        case "bottom-center":
-            // Snap to bottom center
-            return NSRect(
-                x: (screen.frame.width - windowWidth) / 2 + screen.frame.minX,
-                y: screen.frame.minY + padding,
-                width: windowWidth,
-                height: windowHeight
-            )
-        default: // "mouse"
-            // Follow mouse (original behavior)
-            let mouseLocation = NSEvent.mouseLocation
-            return NSRect(
-                x: mouseLocation.x - windowWidth/2,
-                y: mouseLocation.y - windowHeight/2,
-                width: windowWidth,
-                height: windowHeight
-            )
-        }
+        return NSRect(
+            x: mouseLocation.x - windowWidth/2,
+            y: mouseLocation.y - windowHeight/2,
+            width: windowWidth,
+            height: windowHeight
+        )
     }
     
-    /// Moves the basket to the calculated position (based on snap setting)
+    /// Moves the basket to follow mouse on subsequent jiggles
     private func moveBasketToMouse() {
         guard let panel = basketWindow else { return }
         
-        let snapPosition = UserDefaults.standard.string(forKey: "basketSnapPosition") ?? "mouse"
-        
-        // For fixed snap positions, don't move on subsequent jiggles
-        // Only move if mode is "mouse" (follow cursor)
-        guard snapPosition == "mouse" else { return }
+        // Don't move if in auto-hide mode and peek mode is active
+        if isAutoHideEnabled && isInPeekMode { return }
         
         let mouseLocation = NSEvent.mouseLocation
         let windowWidth: CGFloat = 500
@@ -231,6 +209,9 @@ final class FloatingBasketWindowController: NSObject {
         // Reset notch hover
         DroppyState.shared.isMouseHovering = false
         DroppyState.shared.isDropTargeted = false
+        
+        // Validate basket items before showing (remove ghost files)
+        DroppyState.shared.validateBasketItems()
         DroppyState.shared.isBasketVisible = true
         
         // Start invisible for fade-in animation
@@ -249,6 +230,9 @@ final class FloatingBasketWindowController: NSObject {
         
         // Start keyboard monitor for Quick Look preview
         startKeyboardMonitor()
+        
+        // Start mouse tracking for auto-hide peek mode
+        startMouseTrackingMonitor()
     }
     
     /// Starts keyboard monitor for spacebar Quick Look
@@ -290,6 +274,12 @@ final class FloatingBasketWindowController: NSObject {
         // Stop keyboard monitoring
         stopKeyboardMonitor()
         
+        // Stop mouse tracking
+        stopMouseTrackingMonitor()
+        
+        // Reset peek mode
+        isInPeekMode = false
+        
         // Smooth fade-out animation
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
@@ -300,6 +290,201 @@ final class FloatingBasketWindowController: NSObject {
             self?.basketWindow = nil
             self?.isShowingOrHiding = false
         })
+    }
+    
+    // MARK: - Auto-Hide Peek Mode Methods (v5.3)
+    
+    /// Checks if auto-hide mode is enabled
+    private var isAutoHideEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "enableBasketAutoHide")
+    }
+    
+    /// Gets the configured edge for auto-hide
+    private var autoHideEdge: String {
+        UserDefaults.standard.string(forKey: "basketAutoHideEdge") ?? "right"
+    }
+    
+    /// Starts mouse tracking for auto-hide behavior
+    func startMouseTrackingMonitor() {
+        guard isAutoHideEnabled else { return }
+        stopMouseTrackingMonitor() // Clean up existing
+        
+        mouseTrackingMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+            self?.handleMouseMovement()
+        }
+        
+        // Also add local monitor for when basket window is focused
+        NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            self?.handleMouseMovement()
+            return event
+        }
+    }
+    
+    /// Stops mouse tracking monitor
+    private func stopMouseTrackingMonitor() {
+        if let monitor = mouseTrackingMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseTrackingMonitor = nil
+        }
+    }
+    
+    /// Handles mouse movement for auto-hide logic
+    private func handleMouseMovement() {
+        guard let panel = basketWindow, panel.isVisible, !isShowingOrHiding else { return }
+        
+        let mouseLocation = NSEvent.mouseLocation
+        let currentFrame = panel.frame
+        
+        // Add a small margin for comfortable hover detection
+        let hoverFrame = currentFrame.insetBy(dx: -10, dy: -10)
+        let isMouseOverBasket = hoverFrame.contains(mouseLocation)
+        
+        if isMouseOverBasket {
+            // Mouse is over basket - cancel any pending hide and reveal if peeking
+            cancelHideTimer()
+            if isInPeekMode {
+                revealFromEdge()
+            }
+        } else {
+            // Mouse left basket - start hide timer if not already peeking
+            if !isInPeekMode && !DroppyState.shared.basketItems.isEmpty {
+                startHideTimer()
+            }
+        }
+    }
+    
+    /// Starts the delayed hide timer (0.5 second delay)
+    func startHideTimer() {
+        guard isAutoHideEnabled, !isInPeekMode else { return }
+        
+        cancelHideTimer()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.slideToEdge()
+        }
+        hideDelayWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+    }
+    
+    /// Cancels any pending hide timer
+    func cancelHideTimer() {
+        hideDelayWorkItem?.cancel()
+        hideDelayWorkItem = nil
+    }
+    
+    /// Slides the basket to the configured edge in peek mode
+    func slideToEdge() {
+        guard let panel = basketWindow, !isInPeekMode, !isShowingOrHiding else { return }
+        guard let screen = NSScreen.main else { return }
+        guard let contentView = panel.contentView else { return }
+        
+        // Enable layer backing
+        contentView.wantsLayer = true
+        guard let layer = contentView.layer else { return }
+        
+        // Store current position for restoration
+        fullSizeFrame = panel.frame
+        
+        // Calculate peek position based on edge - vertically centered
+        var peekFrame = panel.frame
+        let basketWidth = panel.frame.width
+        let basketHeight = panel.frame.height
+        let verticalCenter = screen.frame.minY + (screen.frame.height - basketHeight) / 2
+        
+        // Calculate transform for Stage Manager-style tilt
+        var transform = CATransform3DIdentity
+        transform.m34 = -1.0 / 800.0 // Perspective
+        let angle: CGFloat = 0.18 // ~10 degrees, subtle
+        
+        switch autoHideEdge {
+        case "left":
+            peekFrame.origin.x = screen.frame.minX - basketWidth + peekSize
+            peekFrame.origin.y = verticalCenter
+            transform = CATransform3DRotate(transform, angle, 0, 1, 0)
+        case "right":
+            peekFrame.origin.x = screen.frame.maxX - peekSize
+            peekFrame.origin.y = verticalCenter
+            transform = CATransform3DRotate(transform, -angle, 0, 1, 0)
+        case "bottom":
+            peekFrame.origin.y = screen.frame.minY - basketHeight + peekSize
+            transform = CATransform3DRotate(transform, angle, 1, 0, 0)
+        default:
+            peekFrame.origin.x = screen.frame.maxX - peekSize
+            peekFrame.origin.y = verticalCenter
+            transform = CATransform3DRotate(transform, -angle, 0, 1, 0)
+        }
+        
+        // Scale down slightly
+        transform = CATransform3DScale(transform, 0.92, 0.92, 1.0)
+        
+        isInPeekMode = true
+        
+        // Ensure layer is optimized for animation
+        layer.drawsAsynchronously = true
+        layer.shouldRasterize = true
+        layer.rasterizationScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        
+        // Apple-style spring curve (aggressive ease-out with slight overshoot feel)
+        let springCurve = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)
+        
+        // Unified animation
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.55
+            context.timingFunction = springCurve
+            context.allowsImplicitAnimation = true
+            
+            panel.animator().setFrame(peekFrame, display: true)
+            layer.transform = transform
+        } completionHandler: { [weak self] in
+            // Reset rasterization after animation to save memory
+            layer.shouldRasterize = false
+        }
+    }
+    
+    /// Reveals the basket from peek mode back to full size
+    func revealFromEdge() {
+        guard let panel = basketWindow, isInPeekMode else { return }
+        guard fullSizeFrame.width > 0 else { return }
+        guard let contentView = panel.contentView, let layer = contentView.layer else { return }
+        
+        isInPeekMode = false
+        
+        // Pre-warm layer for immediate response
+        layer.drawsAsynchronously = true
+        layer.shouldRasterize = true
+        layer.rasterizationScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        
+        // Very snappy curve for instant feel
+        let revealCurve = CAMediaTimingFunction(controlPoints: 0.0, 0.0, 0.2, 1.0)
+        
+        // Shorter duration for responsive reveal
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.timingFunction = revealCurve
+            context.allowsImplicitAnimation = true
+            
+            panel.animator().setFrame(fullSizeFrame, display: true)
+            layer.transform = CATransform3DIdentity
+        } completionHandler: {
+            layer.shouldRasterize = false
+        }
+    }
+    
+    /// Called when cursor enters the basket area (from FloatingBasketView)
+    func onBasketHoverEnter() {
+        guard isAutoHideEnabled else { return }
+        cancelHideTimer()
+        if isInPeekMode {
+            revealFromEdge()
+        }
+    }
+    
+    /// Called when cursor exits the basket area (from FloatingBasketView)
+    func onBasketHoverExit() {
+        guard isAutoHideEnabled, !DroppyState.shared.basketItems.isEmpty else { return }
+        if !isInPeekMode {
+            startHideTimer()
+        }
     }
 }
 
