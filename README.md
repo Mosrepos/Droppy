@@ -54,12 +54,12 @@ https://github.com/user-attachments/assets/4e60de85-6bfd-4313-ab88-302b5d78f4f3
 
 | | Feature | Description |
 |:--|:--------|:------------|
-| 📦 | **Move To...** | Send files directly to saved folder locations (like your NAS) |
-| 📉 | **Smart Compression** | Compress images, PDFs, and videos with auto or target size options |
-| ✏️ | **Fast Actions** | Convert images, extract text (OCR), create ZIPs, rename — all from the shelf |
-| 🙈 | **Auto-Hide Basket** | Basket slides to screen edge when idle, peeks out on hover |
-| 🖥️ | **Multi-Monitor** | Works on external displays with smart fullscreen detection |
-| 🏝️ | **Dynamic Island** | Non-notch Macs get a beautiful floating pill interface |
+| 📦 | **Move To...** | Send files directly to saved folder locations like your NAS, cloud drives, or project folders |
+| 📉 | **Smart Compression** | Compress images, PDFs, and videos with auto or target size options — keeps originals if larger |
+| ✏️ | **Fast Actions** | Convert images, extract text (OCR), create ZIPs, rename — all from the shelf with one click |
+| 🙈 | **Auto-Hide Basket** | Basket slides to screen edge when idle, peeks out on hover for quick access when you need it |
+| 🖥️ | **Multi-Monitor** | Works on external displays with smart fullscreen detection and automatic positioning |
+| 🏝️ | **Dynamic Island** | Non-notch Macs get a beautiful floating pill interface that matches the notch experience |
 
 ---
 
