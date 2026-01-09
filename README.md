@@ -204,32 +204,55 @@ This release completely overhauls the Settings and Onboarding experience with be
 - **Universal compatibility** — Droppy now works on ANY Mac, not just those with a notch!
 - **Beautiful pill-shaped UI** — Macs without a physical notch get a sleek Dynamic Island-style interface
 - **Display mode picker** — Choose between Notch or Dynamic Island styling in Settings
+- **Same powerful features** — All shelf, HUD, and media player functionality works identically
 
-### 🔗 Alfred Integration (First-Class)
-- **Native Alfred Workflow** — Download the `.alfredworkflow` from Settings → Integrations
-- **URL Scheme Support** — Use `droppy://shelf?file=...` or `droppy://basket?file=...`
-- **Batch Operations** — Pass comma-separated paths for multiple files
-
-### 🎨 Completely Revamped Settings
+### 🎨 Completely Revamped Settings (SwiftUI Previews)
 - **Real SwiftUI demos** — All feature previews are now native SwiftUI components, not external images
-- **Pixel-perfect accuracy** — Previews use actual production components (NotchShape, HUDSlider, AudioSpectrumView)
+- **Pixel-perfect accuracy** — Previews use the actual production components (NotchShape, HUDSlider, AudioSpectrumView, MarqueeText)
 - **Live animations** — Volume slider, battery charging, and media player previews animate in real-time
-- **Zero network requests** — Settings now loads instantly (no waiting for external GIFs)
+- **Zero network requests** — Settings now loads instantly without waiting for external GIFs
 
 ### 🧭 Enhanced Onboarding Wizard
-- **Native SwiftUI demos** — All onboarding pages use real SwiftUI components
+- **Native SwiftUI demos** — All onboarding pages now use real SwiftUI components
 - **Real HUD preview** — System HUDs page shows actual animated VolumeHUDPreview
 - **Floating Basket preview** — Real dashed-border animation with mock file items
 - **Notch Shelf preview** — Authentic "Drop!" indicator with blue marching ants
+- **Clipboard preview** — Split-view design matching the real clipboard window
+
+---
+
+## 🎯 UI/UX Improvements
+
+### 📦 Settings Preview Components
+| Preview | Real Components Used |
+|---------|---------------------|
+| **NotchShelfPreview** | NotchShape, blue marching ants, real "Drop!" indicator |
+| **FloatingBasketPreview** | Animated dashed border, mock file items, symmetrical layout |
+| **VolumeHUDPreview** | NotchShape, HUDSlider, wing-based layout, animated value |
+| **BatteryHUDPreview** | Dynamic battery icons, charging animation, color transitions |
+| **MediaPlayerPreview** | AudioSpectrumView, MarqueeText, album art preview |
+| **ClipboardPreview** | Split-view design, mock history items, paste button |
+| **OpenShelfIndicatorPreview** | Real hand.tap icon with bounce effect |
+| **DropIndicatorPreview** | Real tray icon with green foreground |
+
+### 🧹 Code Cleanup
+- **Removed GIFPreloader** — Entire class deleted (~60 lines), no longer needed
+- **Removed external GIF URLs** — All preview images replaced with native SwiftUI
+- **Simplified AnimatedGIFView** — Removed cache lookup, simplified to async loading
 
 ---
 
 ## 🔧 Technical Improvements
 
-- **Removed GIFPreloader** — Entire class deleted, no longer needed
-- **Removed external GIF URLs** — All preview images replaced with native SwiftUI
+### ⚡ Performance
 - **Faster Settings load** — No network requests for previews
 - **Reduced memory** — No GIF caching or preloading at app startup
+- **Instant previews** — SwiftUI renders immediately
+
+### 🔗 Alfred Integration
+- **First-class support** — Native Alfred workflow for file operations
+- **URL scheme** — `droppy://shelf?file=...` and `droppy://basket?file=...`
+- **Batch operations** — Pass comma-separated paths
 
 ---
 
