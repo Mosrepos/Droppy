@@ -119,86 +119,64 @@ Drag files out of the shelf and drop into any app. The file moves and vanishes f
 
 ---
 
-## 🔮 Alfred Integration
+## �️ Pro Tips
 
-Push files from Finder to Droppy using Alfred!
+### �🔮 Alfred Integration
+Push files from Finder to Droppy: **Settings** → **About** → **Install in Alfred**, then use Alfred's Universal Actions on any file.
 
-1. Open **Droppy Settings** → **About** → **Install in Alfred**
-2. Select files in Finder → Activate Alfred → Type "Actions"
-3. Choose **Add to Droppy Shelf** or **Add to Droppy Basket**
-
-> Requires Alfred 4+ with Powerpack
-
----
-
-## 🛠️ Pro Tips
-
-### Smart Compression
+### � Smart Compression
 - **Auto**: Balanced settings for most files
 - **Target Size**: Need under 2MB? Right-click → Compress → **Target Size...**
 - **Size Guard** 🛡️: If compression would make the file larger, Droppy keeps the original
 
-### Drag-and-Drop OCR
-1. Drag an image into Droppy
-2. Hold **Shift** while dragging it out
-3. Drop into a text editor — **it's text!**
+### ✍️ Drag-and-Drop OCR
+Drag an image into Droppy, hold **Shift** while dragging out, and drop into a text editor — **it's text!**
 
-### Auto-Hide Basket
+### 🙈 Auto-Hide Basket
 Enable in Settings → Basket → **Auto-Hide**. The basket slides to the screen edge when not in use and peeks out on hover.
 
 ---
 
 ## 🆕 What's New
+
+<details>
+<summary><strong>v5.4.1 — Stability & Interaction Fixes</strong></summary>
+
 <!-- CHANGELOG_START -->
-# Droppy v5.4.1 - Stability & Interaction Fixes
+### 🔧 Bug Fixes
 
-## 🔧 Bug Fixes
+**File Transfer Stability**
+- Fixed file corruption when moving between Basket and Shelf multiple times
+- Fixed ZIP creation failures after repeated file transfers
 
-### File Transfer Stability
-- **Fixed file corruption** — Files no longer get corrupted when moved between Basket and Shelf multiple times
-- **Fixed ZIP creation failures** — Zipping now works reliably after repeated file transfers
+**Auto-Hide Basket**
+- Fixed "peek" not hiding when moving cursor away after dropping files
+- Improved drop detection with better mouse tracking
 
-### Auto-Hide Basket
-- **Fixed "peek" not hiding** — Basket now properly slides to the edge when you move your cursor away after dropping files
-- **Improved drop detection** — Better mouse tracking for drag-and-drop operations
-
-### Shelf Interaction
-- **Instant drag from shelf** — Files can now be dragged immediately without clicking to activate first
-- **Matches basket behavior** — Both shelf and basket now support first-click interaction
+**Shelf Interaction**
+- Instant drag from shelf without clicking to activate first
+- Both shelf and basket now support first-click interaction
 
 ---
 
 *Includes all features from v5.4: Caps Lock HUD, Media Player improvements, and performance optimizations.*
 <!-- CHANGELOG_END -->
 
+</details>
+
 ---
 
-## ❤️ Support
-
-If Droppy saves you time, consider buying me a coffee!
+<p align="center">
+  <a href="https://buymeacoffee.com/droppy"><img src="https://img.shields.io/badge/☕_Buy_Me_A_Coffee-FFDD00?style=for-the-badge" alt="Buy Me A Coffee"></a>
+</p>
 
 <p align="center">
-  <a href="https://buymeacoffee.com/droppy">
-    <img src="https://i.postimg.cc/yxRYWNqL/0x0.png" alt="Buy Me A Coffee" width="128">
-  </a>
+  <a href="https://star-history.com/#iordv/droppy&Timeline"><img src="https://img.shields.io/badge/⭐_Star_History-View_Chart-blue?style=flat-square" alt="Star History"></a>
 </p>
 
 ---
 
-## ⭐ Star History
-
-<a href="https://star-history.com/#iordv/droppy&Timeline">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=iordv/droppy&type=Timeline&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=iordv/droppy&type=Timeline" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=iordv/droppy&type=Timeline" />
- </picture>
-</a>
-
----
-
-## License
-
-MIT License — Free and Open Source forever.
-
-Made with ❤️ by [Jordy Spruit](https://github.com/iordv)
+<p align="center">
+  <strong>MIT License</strong> — Free and Open Source forever.<br>
+  Made with ❤️ by <a href="https://github.com/iordv">Jordy Spruit</a>
+</p>
