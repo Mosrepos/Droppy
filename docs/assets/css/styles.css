@@ -1,0 +1,440 @@
+/* Droppy Marketing Site - Styles */
+
+/* Base Reset & Fonts */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --purple-400: #c084fc;
+    --purple-500: #a855f7;
+    --purple-600: #9333ea;
+    --purple-900: #581c87;
+    --pink-400: #f472b6;
+    --pink-800: #9d174d;
+    --cyan-400: #22d3ee;
+    --green-400: #4ade80;
+    --orange-400: #fb923c;
+    --red-400: #f87171;
+    --yellow-400: #facc15;
+    --blue-500: #3b82f6;
+    --stone-900: #1c1917;
+    --stone-950: #0c0a09;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--stone-950);
+    color: white;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+}
+
+/* Typography */
+h1,
+h2,
+h3,
+h4 {
+    line-height: 1.2;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* Utility Classes */
+.text-transparent {
+    color: transparent;
+}
+
+.bg-clip-text {
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+
+/* Animations */
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.8s ease-out forwards;
+    opacity: 0;
+}
+
+.animate-pulse {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+/* Header */
+header {
+    position: fixed;
+    top: 0;
+    z-index: 50;
+    width: 100%;
+    background: rgba(12, 10, 9, 0.8);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+header>div {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header a.group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+header a.group img {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.75rem;
+    transition: transform 0.3s ease;
+}
+
+header a.group:hover img {
+    transform: scale(1.05);
+}
+
+header a.group span {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+/* Hero Section */
+section.hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8rem 1.5rem 5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-hero {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgba(88, 28, 135, 0.2), var(--stone-950), var(--stone-950));
+    pointer-events: none;
+}
+
+.bg-glow {
+    position: absolute;
+    top: 25%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: rgba(147, 51, 234, 0.2);
+    border-radius: 50%;
+    filter: blur(128px);
+    pointer-events: none;
+}
+
+/* Notch Demo */
+.notch-demo {
+    position: relative;
+}
+
+.notch-demo>div {
+    width: 400px;
+    height: 250px;
+    border-radius: 1.5rem;
+    background: linear-gradient(135deg, #312e81, #581c87, var(--pink-800));
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 25px 50px -12px rgba(88, 28, 135, 0.3);
+}
+
+@media (min-width: 640px) {
+    .notch-demo>div {
+        width: 600px;
+        height: 350px;
+    }
+}
+
+.notch-container {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: pointer;
+}
+
+.notch-container svg {
+    width: 140px;
+    height: 28px;
+}
+
+@media (min-width: 640px) {
+    .notch-container svg {
+        width: 180px;
+        height: 32px;
+    }
+}
+
+#notch-files {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.notch-container:hover #notch-files,
+.notch-container.active #notch-files {
+    opacity: 1;
+}
+
+#notch-files>div {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+}
+
+/* Feature Cards */
+.feature-card {
+    padding: 2rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-4px);
+}
+
+.feature-card h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Icon animations */
+.feature-card svg {
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover svg {
+    transform: scale(1.1);
+}
+
+/* Buttons */
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 2rem;
+    background: var(--purple-600);
+    border-radius: 1rem;
+    font-weight: 700;
+    font-size: 1.125rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 20px 25px -5px rgba(147, 51, 234, 0.25);
+}
+
+.btn-primary:hover {
+    background: var(--purple-500);
+    transform: scale(1.05);
+}
+
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: scale(1.05);
+}
+
+/* Badges */
+.badge {
+    display: inline-flex;
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    border: 1px solid;
+}
+
+.badge-green {
+    background: rgba(74, 222, 128, 0.1);
+    color: var(--green-400);
+    border-color: rgba(74, 222, 128, 0.2);
+}
+
+.badge-blue {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+.badge-purple {
+    background: rgba(168, 85, 247, 0.1);
+    color: var(--purple-400);
+    border-color: rgba(168, 85, 247, 0.2);
+}
+
+/* Install Section */
+.install-command {
+    background: var(--stone-900);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 1.125rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.install-command code {
+    color: var(--purple-400);
+}
+
+.install-command button {
+    padding: 0.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 0.5rem;
+    transition: background 0.2s ease;
+}
+
+.install-command button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Footer */
+footer {
+    padding: 4rem 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+footer>div {
+    max-width: 72rem;
+    margin: 0 auto;
+}
+
+/* Responsive Grid */
+.features-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+
+@media (min-width: 640px) {
+    .features-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .features-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Scroll animations */
+.scroll-animate {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.6s ease;
+}
+
+.scroll-animate.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Special gradient text */
+.gradient-text {
+    background: linear-gradient(90deg, var(--purple-400), var(--pink-400), var(--purple-400));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* Copy button success state */
+#copy-btn.copied #copy-icon {
+    display: none;
+}
+
+#copy-btn.copied #check-icon {
+    display: block;
+}
