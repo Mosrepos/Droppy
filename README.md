@@ -181,38 +181,30 @@ Enable in Settings → Basket → **Auto-Hide**. The basket slides to the screen
 ## 🆕 What's New
 
 <details>
-<summary><strong>v5.4.2 — Rename Fix</strong></summary>
+<summary><strong>v6.0 — Native Spotify Integration</strong></summary>
 
 <!-- CHANGELOG_START -->
-# Droppy v5.4.3 - Visual Harmony Update
+# Droppy v6.0 - Native Spotify Integration
 
-## UI Improvements
+## New Features
 
-- **Universal Corner Radius Harmony**: Complete audit and unification of all corner radii across the entire app
-  - 16pt for buttons, cards, and medium elements
-  - 14pt for thumbnails and internal cards
-  - 8pt for small elements and selection indicators
-  - 4pt for sliders and progress bars
-  
-- **Basket & Shelf Consistency**: Perfect visual parity between Floating Basket and Notch Shelf items
-  - Unified thumbnail corner radius (14pt)
-  - Matched hover effect backgrounds and opacities
-  - Consistent text colors and font sizes
-  
-- **Settings Preview Polish**: Fixed PeekPreview component to match real basket proportions
+- **Native Spotify Integration**: Full native control of Spotify playback directly from the media player
+  - Shuffle toggle with real-time state sync
+  - Repeat mode toggle (on/off via AppleScript)
+  - Rock-solid timestamp accuracy via direct AppleScript polling
+  - Spotify Green branding with official icon badge on album art
+
+## Technical Improvements
+
+- **AppleScript Position Sync**: True playback position is fetched directly from Spotify every second
+- **Fixed AppleScript Double Parsing**: Properly handles floating-point return values from AppleScript
+- **Improved Timing Architecture**: MediaRemote timing is ignored for Spotify; AppleScript is the single source of truth
 
 ## Bug Fixes
 
-- Fixed shelf item hover effects overlapping outer edge (added proper clipping)
-- Fixed basket item label color inconsistency (.primary → .white)
-- Fixed NotchControlButton border opacity mismatch (0.1 → 0.15)
-- Fixed HUD album art placeholder corner radius (5pt → 4pt)
-
-## Documentation
-
-- Cleaned up README with emoji-free tables and headers
-- Added high-quality 30fps GIF previews for all features
-- Added official Alfred icon to integration section
+- Fixed timestamp jumping when clicking Spotify controls
+- Fixed timestamp showing 0:00 on pause/resume
+- Fixed AppleScript not parsing player position correctly
 <!-- CHANGELOG_END -->
 
 </details>
