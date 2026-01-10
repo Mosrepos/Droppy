@@ -184,20 +184,27 @@ Enable in Settings → Basket → **Auto-Hide**. The basket slides to the screen
 <summary><strong>v6.0 — Native Spotify Integration</strong></summary>
 
 <!-- CHANGELOG_START -->
-## Droppy 6.0.1
+# Droppy v6.1 Release Notes
 
-### ✨ New Features
-- **Inline HUD in Expanded Media Player**: Volume, brightness, battery, and caps lock HUDs now morph smoothly into the media player controls
-- Universal HUD system with identical animations to the regular notch HUDs
+## ✨ New Features
 
-### 🎨 Improvements
-- HUD displays "MAX" instead of "100%" for maximum values
-- Perfect spacing symmetry in inline HUD elements
-- Snappy, instant HUD response matching regular notch behavior
+### Auto-Clear
+- Files are automatically cleared from shelf/basket after successful drop
+- Toggle in Settings to enable/disable this feature
+- Smoother workflow without manual cleanup
 
-### 🔧 Technical
-- Added `InlineHUDType` enum for easy extension of future HUD types
-- Unified trigger function with per-manager visible duration support
+## 🎨 Improvements
+
+- **Drag Feedback**: Enhanced visual feedback during drag operations
+- **Item Wrapper UX**: Improved drag item wrapper behavior
+- **Clipboard View**: Minor refinements to clipboard manager
+
+## 🌐 Website
+
+- **Theatre Mode**: Demo now fades surrounding content for focus
+- **Faster Trigger**: Hover-to-demo reduced to 500ms
+- **Mobile Support**: Tap-only demo trigger on mobile devices
+- **Feature Showcase**: Added Alfred icon and grow animation
 <!-- CHANGELOG_END -->
 
 </details>
