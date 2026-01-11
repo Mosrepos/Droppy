@@ -24,6 +24,7 @@ struct SettingsView: View {
     @AppStorage("enableHUDReplacement") private var enableHUDReplacement = true
     @AppStorage("enableBatteryHUD") private var enableBatteryHUD = true  // Enabled by default
     @AppStorage("enableCapsLockHUD") private var enableCapsLockHUD = true  // Caps Lock indicator
+    @AppStorage("enableAirPodsHUD") private var enableAirPodsHUD = true  // AirPods connection HUD
     @AppStorage("showMediaPlayer") private var showMediaPlayer = true
     @AppStorage("autoFadeMediaHUD") private var autoFadeMediaHUD = true
     @AppStorage("debounceMediaChanges") private var debounceMediaChanges = false  // Delay media HUD for rapid changes
@@ -405,83 +406,83 @@ struct SettingsView: View {
             
             // MARK: System HUD
             Section {
-                Toggle(isOn: $enableHUDReplacement) {
-                    VStack(alignment: .leading) {
-                        Text("Replace System HUD")
-                        Text("Display volume and brightness controls in the notch")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                // 2x2 Grid of HUD toggle buttons
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ], spacing: 12) {
+                    // Volume/Brightness HUD - special morph animation
+                    VolumeAndBrightnessToggle(isEnabled: $enableHUDReplacement)
+                    .onChange(of: enableHUDReplacement) { _, newValue in
+                        if newValue {
+                            NotchWindowController.shared.setupNotchWindow()
+                            MediaKeyInterceptor.shared.start()
+                        } else {
+                            MediaKeyInterceptor.shared.stop()
+                            if !enableNotchShelf && !showMediaPlayer {
+                                NotchWindowController.shared.closeWindow()
+                            }
+                        }
                     }
-                }
-                .onChange(of: enableHUDReplacement) { _, newValue in
-                    if newValue {
-                        // Ensure notch window exists (needed even if shelf is disabled)
-                        NotchWindowController.shared.setupNotchWindow()
-                        MediaKeyInterceptor.shared.start()
-                    } else {
-                        MediaKeyInterceptor.shared.stop()
-                        // Close window only if shelf and media player are also disabled
-                        if !enableNotchShelf && !showMediaPlayer {
-                            NotchWindowController.shared.closeWindow()
+                    
+                    // Battery HUD
+                    HUDToggleButton(
+                        title: "Battery",
+                        icon: "battery.100.bolt",
+                        isEnabled: $enableBatteryHUD,
+                        color: .green
+                    )
+                    .onChange(of: enableBatteryHUD) { _, newValue in
+                        if newValue {
+                            NotchWindowController.shared.setupNotchWindow()
+                        } else {
+                            if !enableNotchShelf && !enableHUDReplacement && !showMediaPlayer {
+                                NotchWindowController.shared.closeWindow()
+                            }
+                        }
+                    }
+                    
+                    // Caps Lock HUD
+                    HUDToggleButton(
+                        title: "Caps Lock",
+                        icon: "capslock.fill",
+                        isEnabled: $enableCapsLockHUD,
+                        color: .orange
+                    )
+                    .onChange(of: enableCapsLockHUD) { _, newValue in
+                        if newValue {
+                            NotchWindowController.shared.setupNotchWindow()
+                        } else {
+                            if !enableNotchShelf && !enableHUDReplacement && !showMediaPlayer && !enableBatteryHUD {
+                                NotchWindowController.shared.closeWindow()
+                            }
+                        }
+                    }
+                    
+                    // AirPods HUD
+                    HUDToggleButton(
+                        title: "AirPods",
+                        icon: "airpodspro",
+                        isEnabled: $enableAirPodsHUD,
+                        color: .blue
+                    )
+                    .onChange(of: enableAirPodsHUD) { _, newValue in
+                        if newValue {
+                            NotchWindowController.shared.setupNotchWindow()
+                            AirPodsManager.shared.startMonitoring()
+                        } else {
+                            AirPodsManager.shared.stopMonitoring()
+                            if !enableNotchShelf && !enableHUDReplacement && !showMediaPlayer && !enableBatteryHUD && !enableCapsLockHUD {
+                                NotchWindowController.shared.closeWindow()
+                            }
                         }
                     }
                 }
-                
-                if enableHUDReplacement {
-                    VolumeHUDPreview()
-                }
-                
-                Toggle(isOn: $enableBatteryHUD) {
-                    VStack(alignment: .leading) {
-                        Text("Battery HUD")
-                        Text("Show when charging or low battery")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: enableBatteryHUD) { _, newValue in
-                    if newValue {
-                        // Ensure notch window exists
-                        NotchWindowController.shared.setupNotchWindow()
-                    } else {
-                        // Close window only if shelf, HUD replacement, and media player are also disabled
-                        if !enableNotchShelf && !enableHUDReplacement && !showMediaPlayer {
-                            NotchWindowController.shared.closeWindow()
-                        }
-                    }
-                }
-                
-                if enableBatteryHUD {
-                    BatteryHUDPreview()
-                }
-                
-                Toggle(isOn: $enableCapsLockHUD) {
-                    VStack(alignment: .leading) {
-                        Text("Caps Lock HUD")
-                        Text("Show when Caps Lock is toggled")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: enableCapsLockHUD) { _, newValue in
-                    if newValue {
-                        // Ensure notch window exists
-                        NotchWindowController.shared.setupNotchWindow()
-                    } else {
-                        // Close window only if all HUD features are disabled
-                        if !enableNotchShelf && !enableHUDReplacement && !showMediaPlayer && !enableBatteryHUD {
-                            NotchWindowController.shared.closeWindow()
-                        }
-                    }
-                }
-                
-                if enableCapsLockHUD {
-                    CapsLockHUDPreview()
-                }
+                .padding(.vertical, 4)
             } header: {
                 Text("System HUDs")
             } footer: {
-                Text("Requires Accessibility permissions to intercept media keys.")
+                Text("Tap to toggle. System HUD requires Accessibility permissions.")
             }
         }
     }
@@ -1582,66 +1583,30 @@ struct UShape: Shape {
 }
 
 // MARK: - Display Mode Button
-/// Reusable button for Notch/Dynamic Island mode selection with hover and press animations
-struct DisplayModeButton<Icon: View>: View {
+// Note: DisplayModeButton is now defined in SharedComponents.swift
+
+// MARK: - HUD Toggle Button (2x2 Grid)
+
+/// Compact toggle button for HUD settings grid - uses shared AnimatedHUDToggle
+struct HUDToggleButton: View {
     let title: String
-    let isSelected: Bool
-    @ViewBuilder let icon: () -> Icon
-    let action: () -> Void
-    
-    @State private var isHovering = false
-    @State private var isPressed = false
+    let icon: String
+    @Binding var isEnabled: Bool
+    var color: Color = .white
     
     var body: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                action()
-            }
-        }) {
-            VStack(spacing: 8) {
-                // Icon preview area
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(isSelected ? Color.blue.opacity(0.3) : Color.white.opacity(0.1))
-                        .frame(width: 100, height: 50)
-                    
-                    icon()
-                }
-                
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color.blue.opacity(0.15) : Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .strokeBorder(
-                                isSelected ? Color.blue.opacity(0.5) : 
-                                    (isHovering ? Color.white.opacity(0.3) : Color.white.opacity(0.1)),
-                                lineWidth: isSelected ? 1.5 : 1
-                            )
-                    )
-            )
-            .scaleEffect(isPressed ? 0.97 : (isHovering && !isSelected ? 1.02 : 1.0))
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovering)
-            .animation(.spring(response: 0.15, dampingFraction: 0.6), value: isPressed)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovering = hovering
-        }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
+        AnimatedHUDToggle(
+            icon: icon,
+            title: title,
+            isOn: $isEnabled,
+            color: color,
+            fixedWidth: nil  // Flexible - fills grid cell
         )
     }
 }
 
+// MARK: - Volume & Brightness Toggle (Special Morph Animation)
+// Note: VolumeAndBrightnessToggle is now defined in SharedComponents.swift
 
 // MARK: - SwiftUI Feature Previews (Using REAL Components)
 

@@ -110,6 +110,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 print("🎛️ Droppy: Starting Media Key Interceptor for HUD")
                 MediaKeyInterceptor.shared.start()
             }
+            
+            // 4. AirPods HUD monitoring (Bluetooth connection detection)
+            let airPodsEnabled = UserDefaults.standard.object(forKey: "enableAirPodsHUD") == nil
+                ? true
+                : UserDefaults.standard.bool(forKey: "enableAirPodsHUD")
+            if airPodsEnabled {
+                print("🎧 Droppy: Starting AirPods Connection Monitor")
+                AirPodsManager.shared.startMonitoring()
+            }
         }
         
         // Start background update scheduler (checks once per day)
@@ -126,6 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Stop drag monitoring
         DragMonitor.shared.stopMonitoring()
+        
+        // Stop AirPods monitoring
+        AirPodsManager.shared.stopMonitoring()
         
         // Close notch window
         NotchWindowController.shared.closeWindow()

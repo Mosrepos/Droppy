@@ -94,11 +94,13 @@ struct OnboardingView: View {
     @AppStorage("clipboardHistoryLimit") private var clipboardHistoryLimit = 50
     
     // HUD settings
-    @AppStorage("enableHUDReplacement") private var enableHUDReplacement = true
+    @AppStorage("enableHUDReplacement") private var enableHUDReplacement = true  // Master toggle for HUD section visibility
+    @AppStorage("enableVolumeHUD") private var enableVolumeHUD = true  // Volume & Brightness HUD (independent)
     @AppStorage("enableBatteryHUD") private var enableBatteryHUD = true
     @AppStorage("enableCapsLockHUD") private var enableCapsLockHUD = true
+    @AppStorage("enableAirPodsHUD") private var enableAirPodsHUD = true
     @AppStorage("showMediaPlayer") private var showMediaPlayer = true
-    @AppStorage("autoFadeMediaHUD") private var autoFadeMediaHUD = true
+    @AppStorage("autoFadeMediaHUD") private var autoHideMediaPlayer = true
     
     // Display mode (non-notch only)
     @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true
@@ -414,30 +416,14 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                     
                     HStack(spacing: 20) {
-                        // Auto-hide toggle - entire area clickable
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                enableBasketAutoHide.toggle()
-                            }
-                        } label: {
-                            VStack(spacing: 2) {
-                                Image(systemName: "arrow.right.to.line")
-                                    .font(.title2)
-                                    .foregroundStyle(.orange)
-                                Text("Auto-Hide")
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.primary)
-                            }
-                            .frame(width: 100, height: 70)
-                            .background(enableBasketAutoHide ? Color.orange.opacity(0.15) : Color.white.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(enableBasketAutoHide ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(Rectangle())
+                        // Auto-hide toggle - uses shared AnimatedHUDToggle
+                        AnimatedHUDToggle(
+                            icon: "arrow.right.to.line",
+                            title: "Auto-Hide",
+                            isOn: $enableBasketAutoHide,
+                            color: .orange,
+                            fixedWidth: 100
+                        )
                         
                         // Edge picker (when auto-hide is on)
                         if enableBasketAutoHide {
@@ -612,13 +598,33 @@ struct OnboardingView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     
-                    // HUD toggles grid
-                    HStack(spacing: 24) {
+                    // HUD toggles grid - 3x2 layout
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12)
+                    ], spacing: 12) {
+                        // Row 1
+                        VolumeAndBrightnessToggle(isEnabled: $enableVolumeHUD)
                         hudToggle(icon: "battery.100", title: "Battery", isOn: $enableBatteryHUD, color: .green)
-                        hudToggle(icon: "capslock.fill", title: "Caps Lock", isOn: $enableCapsLockHUD, color: .green)
+                        hudToggle(icon: "capslock.fill", title: "Caps Lock", isOn: $enableCapsLockHUD, color: .orange)
+                        
+                        // Row 2
                         hudToggle(icon: "play.fill", title: "Media", isOn: $showMediaPlayer, color: .pink)
-                        hudToggle(icon: "clock", title: "Auto-fade", isOn: $autoFadeMediaHUD, color: .blue)
+                        
+                        // Auto-Hide (with subtitle showing it's for Media)
+                        hudToggleWithSubtitle(
+                            icon: "arrow.right.to.line",
+                            title: "Auto-Hide",
+                            subtitle: "For Media HUD",
+                            isOn: $autoHideMediaPlayer,
+                            color: .pink,
+                            isEnabled: showMediaPlayer
+                        )
+                        
+                        hudToggle(icon: "airpodspro", title: "AirPods", isOn: $enableAirPodsHUD, color: .blue)
                     }
+                    .frame(maxWidth: 380)
                 }
                 .padding(.horizontal, 40)
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -709,41 +715,7 @@ struct OnboardingView: View {
     }
     
     private func displayModeOption<Icon: View>(title: String, subtitle: String, isSelected: Bool, @ViewBuilder icon: () -> Icon, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                action()
-            }
-        } label: {
-            VStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(isSelected ? Color.blue.opacity(0.25) : Color.white.opacity(0.08))
-                        .frame(width: 120, height: 60)
-                    
-                    icon()
-                }
-                
-                VStack(spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(isSelected ? .white : .secondary)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color.blue.opacity(0.12) : Color.clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .strokeBorder(isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.15), lineWidth: 1.5)
-                    )
-            )
-            .scaleEffect(isSelected ? 1.02 : 1.0)
-        }
-        .buttonStyle(OptionButtonStyle())
+        DisplayModeButton(title: title, subtitle: subtitle, isSelected: isSelected, icon: icon, action: action)
     }
     
     // MARK: - Navigation Helpers
@@ -782,62 +754,23 @@ struct OnboardingView: View {
     // MARK: - Helper Views
     
     private func subSettingToggle(icon: String, title: String, subtitle: String, isOn: Binding<Bool>, color: Color) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                isOn.wrappedValue.toggle()
-            }
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundStyle(isOn.wrappedValue ? color : .secondary)
-                Text(title)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(isOn.wrappedValue ? .white : .secondary)
-                Text(subtitle)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(width: 140)
-            .padding(.vertical, 12)
-            .background(Color.white.opacity(isOn.wrappedValue ? 0.1 : 0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isOn.wrappedValue ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .scaleEffect(isOn.wrappedValue ? 1.0 : 0.98)
-        }
-        .buttonStyle(OptionButtonStyle())
-        .contentShape(Rectangle())
+        AnimatedSubSettingToggle(icon: icon, title: title, subtitle: subtitle, isOn: isOn, color: color)
     }
     
     private func hudToggle(icon: String, title: String, isOn: Binding<Bool>, color: Color) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                isOn.wrappedValue.toggle()
-            }
-        } label: {
-            VStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundStyle(isOn.wrappedValue ? color : .secondary)
-                Text(title)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(isOn.wrappedValue ? .white : .secondary)
-            }
-            .frame(width: 100, height: 80)
-            .background(Color.white.opacity(isOn.wrappedValue ? 0.1 : 0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isOn.wrappedValue ? color.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .scaleEffect(isOn.wrappedValue ? 1.0 : 0.98)
-        }
-        .buttonStyle(OptionButtonStyle())
-        .contentShape(Rectangle())
+        AnimatedHUDToggle(icon: icon, title: title, isOn: isOn, color: color, fixedWidth: nil)
+    }
+    
+    /// HUD toggle with subtitle text (for showing connection to another toggle)
+    private func hudToggleWithSubtitle(icon: String, title: String, subtitle: String, isOn: Binding<Bool>, color: Color, isEnabled: Bool = true) -> some View {
+        AnimatedHUDToggleWithSubtitle(
+            icon: icon,
+            title: title,
+            subtitle: subtitle,
+            isOn: isOn,
+            color: color,
+            isEnabled: isEnabled
+        )
     }
     
     // MARK: - Alfred Page
@@ -1171,16 +1104,13 @@ struct OnboardingGIF: View {
     }
 }
 
-// MARK: - Option Button Style with Press Animation
 
-struct OptionButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: configuration.isPressed)
-            .contentShape(Rectangle())
-    }
-}
+// Components moved to SharedComponents.swift:
+// - OptionButtonStyle
+// - VolumeAndBrightnessToggle (replaces OnboardingVolumeAndBrightnessToggle)
+// - DisplayModeButton (replaces AnimatedDisplayModeOption)
+// - AnimatedSubSettingToggle
+// - AnimatedHUDToggle
 
 // MARK: - U-Shape for Notch Icon Preview
 /// Simple U-shape for notch mode icon in onboarding
