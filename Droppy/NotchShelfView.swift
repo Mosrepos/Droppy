@@ -1574,7 +1574,7 @@ struct NotchItemView: View {
                         }
                     }
                 } label: {
-                    Label("Remove Background", systemImage: "person.crop.rectangle.badge.minus")
+                    Label("Remove Background", systemImage: "person.and.background.dotted")
                 }
             }
             
