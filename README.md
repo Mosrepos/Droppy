@@ -111,12 +111,11 @@ brew install --cask iordv/tap/droppy
 
 ### Manual Download
 1. Download [**Droppy.dmg**](https://github.com/iordv/Droppy/releases/latest)
-2. Open the DMG and drag Droppy to Applications
-3. **First time only:** Run this command to clear quarantine:
+2. **Before opening**, run this command to clear quarantine:
    ```bash
-   xattr -rd com.apple.quarantine /Applications/Droppy.app
+   xattr -rd com.apple.quarantine ~/Downloads/Droppy-*.dmg
    ```
-4. Open Droppy from Applications
+3. Open the DMG and drag Droppy to Applications
 
 > 💡 **Tip:** Use Homebrew to avoid quarantine issues and get automatic updates!
 
