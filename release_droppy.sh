@@ -210,34 +210,9 @@ cp -R "$APP_PATH" dmg_root/
 # Add Applications symlink for drag-to-install
 ln -s /Applications dmg_root/Applications
 
-# Create DMG
-if [ -f "$DMG_BACKGROUND" ] && command -v create-dmg &> /dev/null; then
-    # Use create-dmg for pretty background
-    if create-dmg \
-        --volname "Droppy" \
-        --background "$DMG_BACKGROUND" \
-        --window-pos 200 120 \
-        --window-size 660 480 \
-        --icon-size 128 \
-        --icon "Droppy.app" 180 200 \
-        --hide-extension "Droppy.app" \
-        --app-drop-link 480 200 \
-        --no-internet-enable \
-        "$DMG_NAME" \
-        "dmg_root" 2>/dev/null; then
-        success "$DMG_NAME created"
-    else
-        # Fallback to basic DMG
-        warning "create-dmg failed, using basic DMG"
-        rm -f "$DMG_NAME" rw.*.dmg 2>/dev/null
-        hdiutil create -volname Droppy -srcfolder dmg_root -ov -format UDZO "$DMG_NAME" -quiet || error "DMG creation failed"
-        success "$DMG_NAME created (basic)"
-    fi
-else
-    # Basic DMG without custom background
-    hdiutil create -volname Droppy -srcfolder dmg_root -ov -format UDZO "$DMG_NAME" -quiet || error "DMG creation failed"
-    success "$DMG_NAME created (basic)"
-fi
+# Create DMG with hdiutil (simple and reliable)
+hdiutil create -volname Droppy -srcfolder dmg_root -ov -format UDZO "$DMG_NAME" -quiet || error "DMG creation failed"
+success "$DMG_NAME created"
 rm -rf dmg_root
 
 # Checksum
