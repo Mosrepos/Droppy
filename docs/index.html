@@ -1305,20 +1305,26 @@
                             <div
                                 class="group p-5 rounded-[28px] bg-slate-900/30 hover:bg-slate-800/40 transition-all duration-300 text-center">
                                 <div class="h-12 w-12 mx-auto mb-3 relative">
-                                    <!-- AirPods icon -->
-                                    <svg class="absolute inset-0 h-12 w-12 fill-current transition-all duration-300 ease-out group-hover:scale-110 group-hover:fill-blue-400"
+                                    <!-- AirPods Pro icon (SF Symbols style) -->
+                                    <svg class="absolute inset-0 h-12 w-12 fill-current transition-all duration-500 ease-out group-hover:scale-110"
                                         viewBox="0 0 24 24">
-                                        <path
-                                            d="M6.5 8.5C6.5 6.5 8 5 10 5s3.5 1.5 3.5 3.5v7c0 2-1.5 3.5-3.5 3.5S6.5 17.5 6.5 15.5v-7z" />
-                                        <circle cx="10" cy="8.5" r="1.5" />
-                                        <path d="M17.5 8.5C17.5 6.5 16 5 14 5s-3.5 1.5-3.5 3.5" opacity="0" />
-                                        <path d="M14 5c2 0 3.5 1.5 3.5 3.5v7c0 2-1.5 3.5-3.5 3.5s-3.5-1.5-3.5-3.5v-7" />
-                                        <circle cx="14" cy="8.5" r="1.5" />
-                                        <!-- Battery indicator (appears on hover) -->
-                                        <rect
-                                            class="fill-green-400 opacity-0 transition-all duration-300 group-hover:opacity-100"
-                                            x="9" y="18" width="6" height="2" rx="0.5" />
+                                        <!-- Left AirPod -->
+                                        <path class="transition-all duration-300 group-hover:fill-blue-400"
+                                            d="M7.5 4C5.567 4 4 5.79 4 8v6c0 2.21 1.567 4 3.5 4s3.5-1.79 3.5-4V8c0-2.21-1.567-4-3.5-4z" />
+                                        <circle
+                                            class="fill-slate-700 transition-all duration-300 group-hover:fill-blue-600"
+                                            cx="7.5" cy="7" r="1.2" />
+                                        <!-- Right AirPod -->
+                                        <path class="transition-all duration-300 group-hover:fill-blue-400"
+                                            d="M16.5 4C14.567 4 13 5.79 13 8v6c0 2.21 1.567 4 3.5 4s3.5-1.79 3.5-4V8c0-2.21-1.567-4-3.5-4z" />
+                                        <circle
+                                            class="fill-slate-700 transition-all duration-300 group-hover:fill-blue-600"
+                                            cx="16.5" cy="7" r="1.2" />
                                     </svg>
+                                    <!-- Battery glow on hover -->
+                                    <div
+                                        class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-green-400 rounded-full opacity-0 blur-sm transition-all duration-300 group-hover:opacity-60">
+                                    </div>
                                 </div>
                                 <h3 class="text-lg font-semibold">AirPods HUD</h3>
                             </div>

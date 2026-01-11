@@ -1016,10 +1016,15 @@ final class OnboardingWindowController: NSObject {
     }
     
     func show() {
-        guard window == nil else {
-            window?.makeKeyAndOrderFront(nil)
+        // If window exists and is visible, just bring to front
+        if let existingWindow = window, existingWindow.isVisible {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
+        
+        // Clear any stale reference before creating new window
+        window = nil
         
         let contentView = OnboardingView { [weak self] in
             // Defer to next runloop to avoid releasing view while callback is in progress
@@ -1032,32 +1037,35 @@ final class OnboardingWindowController: NSObject {
         
         let hostingView = NSHostingView(rootView: contentView)
         
-        window = NSWindow(
+        let newWindow = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 600),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         
-        window?.titlebarAppearsTransparent = true
-        window?.titleVisibility = .hidden
-        window?.backgroundColor = .black
-        window?.isMovableByWindowBackground = true
-        window?.contentView = hostingView
-        window?.center()
-        window?.level = .floating
+        newWindow.titlebarAppearsTransparent = true
+        newWindow.titleVisibility = .hidden
+        newWindow.backgroundColor = .black
+        newWindow.isMovableByWindowBackground = true
+        newWindow.contentView = hostingView
+        newWindow.center()
+        newWindow.level = .floating
+        
+        // Store reference AFTER setup
+        window = newWindow
         
         // Fade in - use deferred makeKey to avoid NotchWindow conflicts
-        window?.alphaValue = 0
-        window?.orderFront(nil)
-        DispatchQueue.main.async { [weak self] in
+        newWindow.alphaValue = 0
+        newWindow.orderFront(nil)
+        DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
-            self?.window?.makeKeyAndOrderFront(nil)
+            newWindow.makeKeyAndOrderFront(nil)
         }
         
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
-            window?.animator().alphaValue = 1.0
+            newWindow.animator().alphaValue = 1.0
         }
     }
     
