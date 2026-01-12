@@ -225,6 +225,84 @@
             border-color: rgba(56, 189, 248, 0.5);
             box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1);
         }
+
+        /* Category Pills */
+        .category-pills {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .category-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 18px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s ease-out;
+        }
+
+        .category-pill:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e2e8f0;
+        }
+
+        .category-pill.active {
+            background: rgba(59, 130, 246, 0.85);
+            border-color: rgba(59, 130, 246, 0.5);
+            color: white;
+        }
+
+        .category-pill svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        /* Featured Cards */
+        .featured-card {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 32px;
+            text-align: center;
+            transition: all 0.3s ease-out;
+            cursor: pointer;
+        }
+
+        .featured-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .featured-card .icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 18px;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .featured-card h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .featured-card p {
+            font-size: 14px;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
     </style>
 </head>
 
@@ -293,131 +371,150 @@
                     </p>
                 </div>
 
-                <!-- AI Section -->
-                <div class="category-section category-ai pl-6 mb-12" style="animation: fadeIn 0.6s ease-out 0.5s both;"
-                    id="section-ai">
-                    <div class="flex items-center gap-3 mb-6">
-                        <div
-                            class="h-10 w-10 rounded-xl bg-gradient-to-br from-fuchsia-400 to-purple-600 flex items-center justify-center">
-                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                    d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" />
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-bold">AI</h2>
-                        <span class="text-slate-500 text-sm">Intelligent tools powered by machine learning</span>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <!-- AI Background Removal -->
-                        <button onclick="openExtensionModal('ai-bg')"
-                            class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
-                            data-name="ai background removal" data-category="ai">
-                            <div
-                                class="h-12 w-12 rounded-xl bg-gradient-to-br from-fuchsia-400 to-purple-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
-                                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <!-- Featured Section -->
+                <div class="mb-16" style="animation: fadeIn 0.6s ease-out 0.45s both;">
+                    <h2 class="text-lg font-semibold text-slate-300 mb-2">Featured</h2>
+                    <p class="text-slate-500 text-sm mb-6">Our top picks to get you started</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                        <div class="featured-card" onclick="openExtensionModal('ai-bg')">
+                            <div class="icon bg-gradient-to-br from-fuchsia-400 to-purple-600">
+                                <svg class="w-9 h-9 text-white" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd"
                                         d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
                                         clip-rule="evenodd" />
                                 </svg>
                             </div>
-                            <h3 class="text-lg font-bold text-slate-100 mb-1">AI Background Removal</h3>
-                            <p class="text-slate-400 text-sm">Remove backgrounds instantly using local AI.</p>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Productivity Section -->
-                <div class="category-section category-productivity pl-6 mb-12"
-                    style="animation: fadeIn 0.6s ease-out 0.6s both;" id="section-productivity">
-                    <div class="flex items-center gap-3 mb-6">
-                        <div
-                            class="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center">
-                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd"
-                                    d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
-                                    clip-rule="evenodd" />
-                            </svg>
+                            <h3>AI Background Removal</h3>
+                            <p>Remove backgrounds instantly using local AI processing</p>
                         </div>
-                        <h2 class="text-2xl font-bold">Productivity</h2>
-                        <span class="text-slate-500 text-sm">Streamline your workflow</span>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <!-- Alfred Workflow -->
-                        <button onclick="openExtensionModal('alfred')"
-                            class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
-                            data-name="alfred workflow" data-category="productivity">
-                            <img src="assets/images/alfred_icon.png" alt="Alfred"
-                                class="h-12 w-12 rounded-xl mb-4 transition-transform duration-300 group-hover:scale-110">
-                            <h3 class="text-lg font-bold text-slate-100 mb-1">Alfred Workflow</h3>
-                            <p class="text-slate-400 text-sm">Add files via Alfred keyboard shortcuts.</p>
-                        </button>
-
-                        <!-- Finder Services -->
-                        <button onclick="openExtensionModal('finder')"
-                            class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
-                            data-name="finder services" data-category="productivity">
-                            <div
-                                class="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
-                                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                    <path
-                                        d="M3.5 5.5A1.5 1.5 0 015 4h14a1.5 1.5 0 011.5 1.5v13A1.5 1.5 0 0119 20H5a1.5 1.5 0 01-1.5-1.5v-13z" />
-                                    <circle cx="7" cy="7" r="1" class="fill-red-400" />
-                                    <circle cx="10" cy="7" r="1" class="fill-yellow-400" />
-                                    <circle cx="13" cy="7" r="1" class="fill-green-400" />
-                                </svg>
-                            </div>
-                            <h3 class="text-lg font-bold text-slate-100 mb-1">Finder Services</h3>
-                            <p class="text-slate-400 text-sm">Right-click integration in Finder.</p>
-                        </button>
-
-                        <!-- Element Capture -->
-                        <button onclick="openExtensionModal('element-capture')"
-                            class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
-                            data-name="element capture" data-category="productivity">
-                            <div
-                                class="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
-                                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <div class="featured-card" onclick="openExtensionModal('alfred')">
+                            <div class="icon"><img src="assets/images/alfred_icon.png"
+                                    class="w-full h-full rounded-[18px]"></div>
+                            <h3>Alfred Workflow</h3>
+                            <p>Add files to Droppy directly from Alfred</p>
+                        </div>
+                        <div class="featured-card" onclick="openExtensionModal('element-capture')">
+                            <div class="icon bg-gradient-to-br from-orange-400 to-amber-600">
+                                <svg class="w-9 h-9 text-white" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd"
                                         d="M3 4a1 1 0 011-1h3a1 1 0 010 2H5v2a1 1 0 01-2 0V4zM14 3a1 1 0 00-1 1v3a1 1 0 102 0V5h2a1 1 0 100-2h-3zM3 14a1 1 0 011-1h3a1 1 0 110 2H5v1a1 1 0 11-2 0v-2zM14 13a1 1 0 00-1 1v2a1 1 0 102 0v-1h2a1 1 0 100-2h-3z"
                                         clip-rule="evenodd" />
                                 </svg>
                             </div>
-                            <h3 class="text-lg font-bold text-slate-100 mb-1">Element Capture</h3>
-                            <p class="text-slate-400 text-sm">Capture screen elements with shortcuts.</p>
-                        </button>
+                            <h3>Element Capture</h3>
+                            <p>Capture screen elements with custom shortcuts</p>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Media Section -->
-                <div class="category-section category-media pl-6 mb-12"
-                    style="animation: fadeIn 0.6s ease-out 0.7s both;" id="section-media">
-                    <div class="flex items-center gap-3 mb-6">
+                <!-- Category Pills -->
+                <div class="category-pills mb-10" style="animation: fadeIn 0.6s ease-out 0.5s both;"
+                    id="category-filter">
+                    <button class="category-pill active" data-category="all" onclick="filterByCategory('all')">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                        </svg>
+                        All
+                    </button>
+                    <button class="category-pill" data-category="ai" onclick="filterByCategory('ai')">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" />
+                        </svg>
+                        AI
+                    </button>
+                    <button class="category-pill" data-category="productivity"
+                        onclick="filterByCategory('productivity')">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd"
+                                d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        Productivity
+                    </button>
+                    <button class="category-pill" data-category="media" onclick="filterByCategory('media')">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+                        </svg>
+                        Media
+                    </button>
+                </div>
+
+                <!-- All Extensions Grid -->
+                <div id="extensions-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12"
+                    style="animation: fadeIn 0.6s ease-out 0.55s both;">
+                    <!-- AI Background Removal -->
+                    <button onclick="openExtensionModal('ai-bg')"
+                        class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
+                        data-name="ai background removal" data-category="ai">
                         <div
-                            class="h-10 w-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
-                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                    d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+                            class="h-12 w-12 rounded-xl bg-gradient-to-br from-fuchsia-400 to-purple-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
+                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
+                                    clip-rule="evenodd" />
                             </svg>
                         </div>
-                        <h2 class="text-2xl font-bold">Media</h2>
-                        <span class="text-slate-500 text-sm">Control your music and media</span>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <!-- Spotify Integration -->
-                        <button onclick="openExtensionModal('spotify')"
-                            class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
-                            data-name="spotify integration" data-category="media">
-                            <div
-                                class="h-12 w-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
-                                <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                                    <path
-                                        d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-                                </svg>
-                            </div>
-                            <h3 class="text-lg font-bold text-slate-100 mb-1">Spotify Integration</h3>
-                            <p class="text-slate-400 text-sm">Playback controls with album art in notch.</p>
-                        </button>
-                    </div>
+                        <h3 class="text-lg font-bold text-slate-100 mb-1">AI Background Removal</h3>
+                        <p class="text-slate-400 text-sm">Remove backgrounds instantly using local AI.</p>
+                    </button>
+                    <!-- Alfred Workflow -->
+                    <button onclick="openExtensionModal('alfred')"
+                        class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
+                        data-name="alfred workflow" data-category="productivity">
+                        <img src="assets/images/alfred_icon.png" alt="Alfred"
+                            class="h-12 w-12 rounded-xl mb-4 transition-transform duration-300 group-hover:scale-110">
+                        <h3 class="text-lg font-bold text-slate-100 mb-1">Alfred Workflow</h3>
+                        <p class="text-slate-400 text-sm">Add files via Alfred keyboard shortcuts.</p>
+                    </button>
+                    <!-- Finder Services -->
+                    <button onclick="openExtensionModal('finder')"
+                        class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
+                        data-name="finder services" data-category="productivity">
+                        <div
+                            class="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
+                            <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                                <path
+                                    d="M3.5 5.5A1.5 1.5 0 015 4h14a1.5 1.5 0 011.5 1.5v13A1.5 1.5 0 0119 20H5a1.5 1.5 0 01-1.5-1.5v-13z" />
+                                <circle cx="7" cy="7" r="1" fill="#f87171" />
+                                <circle cx="10" cy="7" r="1" fill="#fbbf24" />
+                                <circle cx="13" cy="7" r="1" fill="#4ade80" />
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-100 mb-1">Finder Services</h3>
+                        <p class="text-slate-400 text-sm">Right-click integration in Finder.</p>
+                    </button>
+                    <!-- Element Capture -->
+                    <button onclick="openExtensionModal('element-capture')"
+                        class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
+                        data-name="element capture" data-category="productivity">
+                        <div
+                            class="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
+                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M3 4a1 1 0 011-1h3a1 1 0 010 2H5v2a1 1 0 01-2 0V4zM14 3a1 1 0 00-1 1v3a1 1 0 102 0V5h2a1 1 0 100-2h-3zM3 14a1 1 0 011-1h3a1 1 0 110 2H5v1a1 1 0 11-2 0v-2zM14 13a1 1 0 00-1 1v2a1 1 0 102 0v-1h2a1 1 0 100-2h-3z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-100 mb-1">Element Capture</h3>
+                        <p class="text-slate-400 text-sm">Capture screen elements with shortcuts.</p>
+                    </button>
+                    <!-- Spotify Integration -->
+                    <button onclick="openExtensionModal('spotify')"
+                        class="extension-card extension-item group p-6 rounded-2xl bg-slate-900/50 hover:bg-slate-800/60 text-left cursor-pointer"
+                        data-name="spotify integration" data-category="media">
+                        <div
+                            class="h-12 w-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110">
+                            <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                                <path
+                                    d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-100 mb-1">Spotify Integration</h3>
+                        <p class="text-slate-400 text-sm">Playback controls with album art in notch.</p>
+                    </button>
                 </div>
 
                 <!-- No Results Message -->
@@ -803,6 +900,24 @@
 
             // Show no results message
             noResults.classList.toggle('hidden', visibleCount > 0 || lowerQuery === '');
+        }
+
+        // Category filter functionality
+        function filterByCategory(category) {
+            const pills = document.querySelectorAll('.category-pill');
+            const items = document.querySelectorAll('.extension-item');
+
+            // Update active pill
+            pills.forEach(pill => {
+                pill.classList.toggle('active', pill.dataset.category === category);
+            });
+
+            // Filter items
+            items.forEach(item => {
+                const itemCategory = item.dataset.category || '';
+                const visible = category === 'all' || itemCategory === category;
+                item.style.display = visible ? '' : 'none';
+            });
         }
 
         // Close modal on Escape key
