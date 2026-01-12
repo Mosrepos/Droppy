@@ -2799,7 +2799,7 @@ struct AlfredExtensionCard: View {
             
             // Title & Description
             VStack(alignment: .leading, spacing: 4) {
-                Text("Alfred Integration")
+                Text("Alfred Workflow")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 
@@ -2906,7 +2906,7 @@ struct FinderExtensionCard: View {
             
             // Title & Description
             VStack(alignment: .leading, spacing: 4) {
-                Text("Finder Integration")
+                Text("Finder Services")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 
