@@ -44,8 +44,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let hostingView = NSHostingView(rootView: settingsView)
         
         // SettingsView uses macOS 26 Tahoe glass design
-        let windowWidth: CGFloat = 700
-        let windowHeight: CGFloat = 550
+        let windowWidth: CGFloat = 1050
+        let windowHeight: CGFloat = 825
         
         // Create the window
         let newWindow = NSWindow(
