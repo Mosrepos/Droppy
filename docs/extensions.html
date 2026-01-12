@@ -223,39 +223,19 @@
             box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1);
         }
 
-        /* Search hint animation */
-        .search-hint {
-            animation: hintFadeIn 0.6s ease-out 1.5s both, hintPulse 2s ease-in-out 2.5s 3;
-        }
-
-        @keyframes hintFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-5px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes hintPulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .search-morph-container:hover~.search-hint,
-        .search-morph-container:focus-within~.search-hint {
+        /* Search demo animation */
+        .search-morph-container.demo-active .search-morph-title {
             opacity: 0;
-            transition: opacity 0.2s ease-out;
+            transform: scale(0.95);
+        }
+
+        .search-morph-container.demo-active .search-morph-wrapper {
+            width: 420px;
+            opacity: 1;
+        }
+
+        .search-morph-container.demo-active .search-morph-icon {
+            opacity: 1;
         }
 
         /* Category Pills */
@@ -396,15 +376,7 @@
                                 id="extensionSearch" oninput="filterExtensions(this.value)">
                         </div>
                     </div>
-                    <!-- Hover hint -->
-                    <div class="search-hint flex items-center justify-center gap-2 mt-4 text-slate-500 text-sm">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <span>Hover title to search</span>
-                    </div>
-                    <p class="text-xl text-slate-400 mt-4 max-w-xl mx-auto">
+                    <p class="text-xl text-slate-400 mt-6 max-w-xl mx-auto">
                         Powerful integrations that extend Droppy's capabilities.
                     </p>
                 </div>
@@ -985,6 +957,34 @@
             document.querySelectorAll('.droppy-version').forEach(el => {
                 el.textContent = 'v' + DROPPY_VERSION;
             });
+
+            // Search demo animation
+            setTimeout(() => {
+                const container = document.querySelector('.search-morph-container');
+                const input = document.getElementById('extensionSearch');
+                const demoText = 'hover to search...';
+
+                // Morph to search
+                container.classList.add('demo-active');
+
+                // Type the hint text
+                setTimeout(() => {
+                    let i = 0;
+                    const typeInterval = setInterval(() => {
+                        if (i < demoText.length) {
+                            input.value = demoText.substring(0, i + 1);
+                            i++;
+                        } else {
+                            clearInterval(typeInterval);
+                            // Wait, then morph back
+                            setTimeout(() => {
+                                input.value = '';
+                                container.classList.remove('demo-active');
+                            }, 800);
+                        }
+                    }, 60);
+                }, 400);
+            }, 1500);
         });
     </script>
 </body>
