@@ -44,10 +44,9 @@ final class MediaKeyInterceptor {
     func start() -> Bool {
         guard !isRunning else { return true }
         
-        // Check for Accessibility permissions WITHOUT prompting
-        // Prompting via kAXTrustedCheckOptionPrompt causes TCC crash on macOS 14+
-        // The user must manually grant permission in System Settings > Privacy & Security > Accessibility
-        guard AXIsProcessTrusted() else {
+        // Check for Accessibility permissions using cached grant
+        // Avoids false negatives when TCC hasn't synced yet
+        guard PermissionManager.shared.isAccessibilityGranted else {
             print("MediaKeyInterceptor: Accessibility permissions not granted. Grant in System Settings > Privacy & Security > Accessibility")
             return false
         }

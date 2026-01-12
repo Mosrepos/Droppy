@@ -194,19 +194,18 @@ final class ElementCaptureManager: ObservableObject {
     // MARK: - Permission Checking
     
     private func checkPermissions() -> Bool {
-        // Check Accessibility
-        let accessibilityTrusted = AXIsProcessTrusted()
+        // Check Accessibility (with cache fallback)
+        let accessibilityOK = PermissionManager.shared.isAccessibilityGranted
         
-        // Check Screen Recording
-        // First preflight (no prompt), then request if needed
-        var screenRecordingOK = CGPreflightScreenCaptureAccess()
+        // Check Screen Recording (with cache fallback)
+        var screenRecordingOK = PermissionManager.shared.isScreenRecordingGranted
         
         if !screenRecordingOK {
             // This will show the system prompt for screen recording
-            screenRecordingOK = CGRequestScreenCaptureAccess()
+            screenRecordingOK = PermissionManager.shared.requestScreenRecording()
         }
         
-        return accessibilityTrusted && screenRecordingOK
+        return accessibilityOK && screenRecordingOK
     }
     
     private func showPermissionAlert() {
@@ -219,19 +218,10 @@ final class ElementCaptureManager: ObservableObject {
         
         if alert.runModal() == .alertFirstButtonReturn {
             // Check which permission is missing and open the right pane
-            let accessibilityTrusted = AXIsProcessTrusted()
-            let screenRecordingOK = CGPreflightScreenCaptureAccess()
-            
-            if !screenRecordingOK {
-                // Open Screen Recording settings
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                    NSWorkspace.shared.open(url)
-                }
-            } else if !accessibilityTrusted {
-                // Open Accessibility settings
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                    NSWorkspace.shared.open(url)
-                }
+            if !PermissionManager.shared.isScreenRecordingGranted {
+                PermissionManager.shared.openScreenRecordingSettings()
+            } else if !PermissionManager.shared.isAccessibilityGranted {
+                PermissionManager.shared.openAccessibilitySettings()
             }
         }
     }

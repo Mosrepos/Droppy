@@ -310,27 +310,12 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
     }
     
     private func checkPermissions() {
-        // First check WITHOUT prompting - use AXIsProcessTrusted() instead of AXIsProcessTrustedWithOptions with prompt
-        let isAccessibilityTrusted = AXIsProcessTrusted()
+        // Use centralized PermissionManager with caching
+        let accessibilityOk = PermissionManager.shared.isAccessibilityGranted
         
-        // Cache the grant if we just got accessibility
-        if isAccessibilityTrusted {
-            UserDefaults.standard.set(true, forKey: "accessibilityGranted")
-        }
-        
-        // Use cached grant to prevent re-prompting after user grants but before TCC syncs
-        let hasCachedAccessibility = UserDefaults.standard.bool(forKey: "accessibilityGranted")
-        let accessibilityOk = isAccessibilityTrusted || hasCachedAccessibility
-        
-        // Input Monitoring Check
-        // First check the runtime variable, then fall back to cached grant
-        // The cache persists across launches when IOHIDManager has successfully opened before
+        // Input Monitoring Check (uses runtime check + cache)
         let isInputMonitoringActive = globalHotKey?.isInputMonitoringActive ?? false
-        let hasCachedInputGrant = UserDefaults.standard.bool(forKey: "inputMonitoringGranted")
-        
-        // If either the runtime check passes OR we have a cached successful grant, consider it active
-        // This prevents repeated prompts when TCC is slow to respond
-        let inputMonitoringOk = isInputMonitoringActive || hasCachedInputGrant
+        let inputMonitoringOk = PermissionManager.shared.isInputMonitoringGranted(runtimeCheck: isInputMonitoringActive)
         
         // If all permissions are granted, return without prompting
         if accessibilityOk && inputMonitoringOk {
@@ -358,11 +343,9 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             
             if shouldOpen {
                 if needsInputMonitoring {
-                    // Open Input Monitoring (Privacy_ListenEvent)
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+                    PermissionManager.shared.openInputMonitoringSettings()
                 } else {
-                    // Open Accessibility
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                    PermissionManager.shared.openAccessibilitySettings()
                 }
             }
         }

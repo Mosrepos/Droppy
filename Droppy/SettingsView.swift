@@ -923,12 +923,10 @@ struct SettingsView: View {
             }
             .onChange(of: enableClipboard) { oldValue, newValue in
                 if newValue {
-                    // Check for Accessibility Permissions - first check WITHOUT prompting
-                    let isTrusted = AXIsProcessTrusted()
-                    
-                    if !isTrusted {
+                    // Check for Accessibility Permissions using centralized manager
+                    if !PermissionManager.shared.isAccessibilityGranted {
                         // Only prompt if not already trusted
-                        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+                        PermissionManager.shared.requestAccessibility()
                         print("Prompting for Accessibility permissions")
                     }
                     
