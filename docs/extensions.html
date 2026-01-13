@@ -717,53 +717,58 @@
     </section>
 
     <!-- Extension Modals -->
-
     <!-- AI Background Removal Modal -->
     <div id="modal-ai-bg"
         class="extension-modal fixed inset-0 z-50 hidden items-center justify-center p-4 overflow-y-auto">
         <div class="absolute inset-0 bg-black/80 modal-backdrop" onclick="closeExtensionModal('ai-bg')"></div>
         <div class="relative max-w-xl w-full py-8 modal-card" style="animation: scaleIn 0.3s ease-out;">
             <div class="bg-slate-800/80 rounded-[32px] shadow-2xl w-full p-8">
-                <div class="flex items-center gap-5 mb-6">
+                <!-- Centered Header -->
+                <div class="text-center mb-6">
                     <div
-                        class="h-16 w-16 rounded-2xl bg-gradient-to-br from-fuchsia-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+                        class="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-fuchsia-400 to-purple-600 flex items-center justify-center mb-4">
                         <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd"
                                 d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
                                 clip-rule="evenodd" />
                         </svg>
                     </div>
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span
-                                class="inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-fuchsia-500/20 text-fuchsia-300">AI</span>
-                            <!-- Stats row -->
-                            <span class="modal-stats text-xs text-slate-400 flex items-center gap-3"
-                                data-extension="aiBackgroundRemoval">
-                                <span class="flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor"
-                                        viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
-                                            clip-rule="evenodd" />
-                                    </svg><span class="modal-count">0</span></span>
-                                <span class="flex items-center gap-1 cursor-pointer hover:text-yellow-400"
-                                    onclick="showReviewsOverlay('aiBackgroundRemoval')"><svg
-                                        class="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                    </svg><span class="modal-rating">–</span></span>
-                            </span>
-                        </div>
-                        <h3 class="text-2xl font-bold text-slate-100">AI Background Removal</h3>
+                    <h3 class="text-2xl font-bold text-slate-100 mb-2">AI Background Removal</h3>
+                    <!-- Stats row centered below title -->
+                    <div class="modal-stats flex items-center justify-center gap-4 text-sm text-slate-400 mb-2"
+                        data-extension="aiBackgroundRemoval">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            <span class="modal-count">0</span> installs
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            <span class="modal-rating">–</span>
+                        </span>
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 text-xs font-semibold">AI</span>
                     </div>
+                    <p class="text-slate-400 text-sm">InSPyReNet - State of the Art Quality</p>
                 </div>
-                <p class="text-slate-300 mb-6 leading-relaxed">Remove backgrounds from images instantly using local AI
-                    processing. No internet connection required—all processing happens on your Mac using the InSPyReNet
-                    neural network.</p>
+
+                <!-- Description -->
+                <p class="text-slate-300 mb-6 leading-relaxed text-center">Remove backgrounds from images instantly
+                    using local AI processing. No internet connection required.</p>
+
+                <!-- Screenshot -->
                 <div class="rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden mb-6">
                     <img src="assets/images/ai-bg-screenshot.png" alt="AI Background Removal screenshot"
                         class="w-full h-auto">
                 </div>
+
+                <!-- Features List -->
                 <div class="space-y-3 mb-6">
                     <div class="flex items-center gap-3 text-slate-300">
                         <svg class="w-5 h-5 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -790,97 +795,82 @@
                         <span>Available via right-click context menu</span>
                     </div>
                 </div>
-                <!-- Rating Section -->
-                <div class="rating-section mb-6 p-4 rounded-xl bg-slate-700/30 border border-slate-600/30"
-                    data-extension-id="aiBackgroundRemoval">
-                    <div class="rating-form" id="rating-form-ai-bg">
-                        <p class="text-sm text-slate-400 text-center mb-3">Rate this extension</p>
-                        <div class="flex justify-center gap-2 mb-3">
-                            <button class="star-btn text-2xl text-slate-500 hover:text-yellow-400 transition-colors"
-                                data-rating="1">★</button>
-                            <button class="star-btn text-2xl text-slate-500 hover:text-yellow-400 transition-colors"
-                                data-rating="2">★</button>
-                            <button class="star-btn text-2xl text-slate-500 hover:text-yellow-400 transition-colors"
-                                data-rating="3">★</button>
-                            <button class="star-btn text-2xl text-slate-500 hover:text-yellow-400 transition-colors"
-                                data-rating="4">★</button>
-                            <button class="star-btn text-2xl text-slate-500 hover:text-yellow-400 transition-colors"
-                                data-rating="5">★</button>
-                        </div>
-                        <div class="feedback-section hidden">
-                            <textarea
-                                class="w-full bg-slate-800/50 border border-slate-600/50 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-500 resize-none"
-                                rows="2" placeholder="Optional feedback..."></textarea>
-                            <button
-                                class="submit-rating-btn mt-2 w-full bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-medium py-2 px-4 rounded-lg transition-colors">Submit</button>
-                        </div>
-                    </div>
-                    <div class="rating-thanks hidden text-center">
-                        <span class="text-green-400">✓</span>
-                        <span class="text-slate-300 text-sm ml-2">Thanks for your feedback!</span>
-                    </div>
+
+                <!-- Divider -->
+                <div class="border-t border-slate-700/50 my-6"></div>
+
+                <!-- Button Row (matching app layout: Close | Reviews | Action) -->
+                <div class="flex items-center gap-3">
+                    <button onclick="closeExtensionModal('ai-bg')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors">
+                        Close
+                    </button>
+                    <button onclick="showReviewsOverlay('aiBackgroundRemoval')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        Reviews
+                    </button>
+                    <div class="flex-1"></div>
+                    <a href="droppy://extension/ai-bg"
+                        class="px-6 py-2.5 rounded-xl bg-fuchsia-500 hover:bg-fuchsia-400 text-white font-semibold transition-colors flex items-center gap-2">
+                        Open in Droppy
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                    </a>
                 </div>
-                <a href="droppy://extension/ai-bg"
-                    class="group relative flex w-full items-center justify-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl pl-12">
-                    <div
-                        class="absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd"
-                                d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"
-                                clip-rule="evenodd" />
-                        </svg>
-                    </div>
-                    <span class="translate-x-0 transition duration-300 group-hover:-translate-x-3">Open in Droppy</span>
-                    <div
-                        class="absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
-                        <svg class="h-5 w-5 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
-                        </svg>
-                    </div>
-                </a>
             </div>
         </div>
     </div>
-
     <!-- Alfred Workflow Modal -->
     <div id="modal-alfred"
         class="extension-modal fixed inset-0 z-50 hidden items-center justify-center p-4 overflow-y-auto">
         <div class="absolute inset-0 bg-black/80 modal-backdrop" onclick="closeExtensionModal('alfred')"></div>
         <div class="relative max-w-xl w-full py-8 modal-card" style="animation: scaleIn 0.3s ease-out;">
             <div class="bg-slate-800/80 rounded-[32px] shadow-2xl w-full p-8">
-                <div class="flex items-center gap-5 mb-6">
-                    <img src="assets/images/alfred_icon.png" alt="Alfred" class="h-16 w-16 rounded-2xl flex-shrink-0">
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span
-                                class="inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-500/20 text-purple-300">Productivity</span>
-                            <span class="modal-stats text-xs text-slate-400 flex items-center gap-3"
-                                data-extension="alfred">
-                                <span class="flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor"
-                                        viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
-                                            clip-rule="evenodd" />
-                                    </svg><span class="modal-count">0</span></span>
-                                <span class="flex items-center gap-1 cursor-pointer hover:text-yellow-400"
-                                    onclick="showReviewsOverlay('alfred')"><svg class="w-3 h-3 text-yellow-400"
-                                        fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                    </svg><span class="modal-rating">–</span></span>
-                            </span>
-                        </div>
-                        <h3 class="text-2xl font-bold text-slate-100">Alfred Workflow</h3>
+                <!-- Centered Header -->
+                <div class="text-center mb-6">
+                    <img src="assets/images/alfred_icon.png" alt="Alfred" class="h-16 w-16 mx-auto rounded-2xl mb-4">
+                    <h3 class="text-2xl font-bold text-slate-100 mb-2">Alfred Workflow</h3>
+                    <!-- Stats row centered below title -->
+                    <div class="modal-stats flex items-center justify-center gap-4 text-sm text-slate-400 mb-2"
+                        data-extension="alfred">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            <span class="modal-count">0</span> installs
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            <span class="modal-rating">–</span>
+                        </span>
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs font-semibold">Productivity</span>
                     </div>
+                    <p class="text-slate-400 text-sm">Keyboard-first file management</p>
                 </div>
-                <p class="text-slate-300 mb-6 leading-relaxed">Seamlessly add files to Droppy's Shelf or Basket directly
-                    from Alfred. Use keyboard shortcuts to quickly send selected files without leaving your keyboard
-                    workflow.</p>
+
+                <!-- Description -->
+                <p class="text-slate-300 mb-6 leading-relaxed text-center">Seamlessly add files to Droppy's Shelf or
+                    Basket directly from Alfred using keyboard shortcuts.</p>
+
+                <!-- Screenshot -->
                 <div class="rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden mb-6">
                     <img src="assets/images/alfred-screenshot.png" alt="Alfred workflow screenshot"
                         class="w-full h-auto">
                 </div>
+
+                <!-- Features List -->
                 <div class="space-y-3 mb-6">
                     <div class="flex items-center gap-3 text-slate-300">
                         <svg class="w-5 h-5 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -907,81 +897,88 @@
                         <span>Supports bulk file operations</span>
                     </div>
                 </div>
-                <div class="flex gap-3">
+
+                <!-- Divider -->
+                <div class="border-t border-slate-700/50 my-6"></div>
+
+                <!-- Button Row -->
+                <div class="flex items-center gap-3">
+                    <button onclick="closeExtensionModal('alfred')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors">
+                        Close
+                    </button>
+                    <button onclick="showReviewsOverlay('alfred')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        Reviews
+                    </button>
+                    <div class="flex-1"></div>
                     <a href="droppy://extension/alfred"
-                        class="group relative flex flex-1 items-center justify-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl pl-12">
-                        <div
-                            class="absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
-                            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                    d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" />
-                            </svg>
-                        </div>
-                        <span class="translate-x-0 transition duration-300 group-hover:-translate-x-3">Open in
-                            Droppy</span>
-                        <div
-                            class="absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
-                            <svg class="h-5 w-5 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
-                            </svg>
-                        </div>
-                    </a>
-                    <a href="https://github.com/iordv/Droppy/releases" target="_blank"
-                        class="flex-1 block text-center bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold py-3 px-6 rounded-[28px] transition-colors duration-200">
-                        Download Workflow
+                        class="px-6 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-semibold transition-colors flex items-center gap-2">
+                        Open in Droppy
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
                     </a>
                 </div>
             </div>
         </div>
     </div>
-
     <!-- Finder Services Modal -->
     <div id="modal-finder"
         class="extension-modal fixed inset-0 z-50 hidden items-center justify-center p-4 overflow-y-auto">
         <div class="absolute inset-0 bg-black/80 modal-backdrop" onclick="closeExtensionModal('finder')"></div>
         <div class="relative max-w-xl w-full py-8 modal-card" style="animation: scaleIn 0.3s ease-out;">
             <div class="bg-slate-800/80 rounded-[32px] shadow-2xl w-full p-8">
-                <div class="flex items-center gap-5 mb-6">
+                <!-- Centered Header -->
+                <div class="text-center mb-6">
                     <div
-                        class="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center flex-shrink-0">
+                        class="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-blue-400 to-cyan-600 flex items-center justify-center mb-4">
                         <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                             <path
                                 d="M3.5 5.5A1.5 1.5 0 015 4h14a1.5 1.5 0 011.5 1.5v13A1.5 1.5 0 0119 20H5a1.5 1.5 0 01-1.5-1.5v-13z" />
-                            <circle cx="7" cy="7" r="1" class="fill-red-400" />
-                            <circle cx="10" cy="7" r="1" class="fill-yellow-400" />
-                            <circle cx="13" cy="7" r="1" class="fill-green-400" />
                         </svg>
                     </div>
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span
-                                class="inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-300">Productivity</span>
-                            <span class="modal-stats text-xs text-slate-400 flex items-center gap-3"
-                                data-extension="finder">
-                                <span class="flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor"
-                                        viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
-                                            clip-rule="evenodd" />
-                                    </svg><span class="modal-count">0</span></span>
-                                <span class="flex items-center gap-1 cursor-pointer hover:text-yellow-400"
-                                    onclick="showReviewsOverlay('finder')"><svg class="w-3 h-3 text-yellow-400"
-                                        fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                    </svg><span class="modal-rating">–</span></span>
-                            </span>
-                        </div>
-                        <h3 class="text-2xl font-bold text-slate-100">Finder Services</h3>
+                    <h3 class="text-2xl font-bold text-slate-100 mb-2">Finder Services</h3>
+                    <!-- Stats row centered below title -->
+                    <div class="modal-stats flex items-center justify-center gap-4 text-sm text-slate-400 mb-2"
+                        data-extension="finder">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            <span class="modal-count">0</span> installs
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            <span class="modal-rating">–</span>
+                        </span>
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold">Productivity</span>
                     </div>
+                    <p class="text-slate-400 text-sm">Right-click → Add to Droppy</p>
                 </div>
-                <p class="text-slate-300 mb-6 leading-relaxed">Access Droppy's power directly from Finder's right-click
-                    menu. Add selected files to the Shelf or Basket without switching apps.</p>
+
+                <!-- Description -->
+                <p class="text-slate-300 mb-6 leading-relaxed text-center">Access Droppy directly from Finder's
+                    right-click menu. Add selected files to the Shelf or Basket without switching apps.</p>
+
+                <!-- Screenshot -->
                 <div class="rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden mb-6">
                     <img src="assets/images/finder-screenshot.png" alt="Finder Services screenshot"
                         class="w-full h-auto">
                 </div>
+
+                <!-- Features List -->
                 <div class="space-y-3 mb-6">
                     <div class="flex items-center gap-3 text-slate-300">
                         <svg class="w-5 h-5 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -1008,23 +1005,34 @@
                         <span>Configurable keyboard shortcuts</span>
                     </div>
                 </div>
-                <a href="droppy://extension/finder"
-                    class="group relative flex w-full items-center justify-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl pl-12">
-                    <div
-                        class="absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+
+                <!-- Divider -->
+                <div class="border-t border-slate-700/50 my-6"></div>
+
+                <!-- Button Row -->
+                <div class="flex items-center gap-3">
+                    <button onclick="closeExtensionModal('finder')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors">
+                        Close
+                    </button>
+                    <button onclick="showReviewsOverlay('finder')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                         </svg>
-                    </div>
-                    <span class="translate-x-0 transition duration-300 group-hover:-translate-x-3">Open in Droppy</span>
-                    <div
-                        class="absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
-                        <svg class="h-5 w-5 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
+                        Reviews
+                    </button>
+                    <div class="flex-1"></div>
+                    <a href="droppy://extension/finder"
+                        class="px-6 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-semibold transition-colors flex items-center gap-2">
+                        Open in Droppy
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3" />
                         </svg>
-                    </div>
-                </a>
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -1035,44 +1043,53 @@
         <div class="absolute inset-0 bg-black/80 modal-backdrop" onclick="closeExtensionModal('element-capture')"></div>
         <div class="relative max-w-xl w-full py-8 modal-card" style="animation: scaleIn 0.3s ease-out;">
             <div class="bg-slate-800/80 rounded-[32px] shadow-2xl w-full p-8">
-                <div class="flex items-center gap-5 mb-6">
+                <!-- Centered Header -->
+                <div class="text-center mb-6">
                     <div
-                        class="h-16 w-16 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center flex-shrink-0">
+                        class="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center mb-4">
                         <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd"
                                 d="M3 4a1 1 0 011-1h3a1 1 0 010 2H5v2a1 1 0 01-2 0V4zM14 3a1 1 0 00-1 1v3a1 1 0 102 0V5h2a1 1 0 100-2h-3zM3 14a1 1 0 011-1h3a1 1 0 110 2H5v1a1 1 0 11-2 0v-2zM14 13a1 1 0 00-1 1v2a1 1 0 102 0v-1h2a1 1 0 100-2h-3z"
                                 clip-rule="evenodd" />
                         </svg>
                     </div>
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span
-                                class="inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-500/20 text-orange-300">Productivity</span>
-                            <span class="modal-stats text-xs text-slate-400 flex items-center gap-3"
-                                data-extension="elementCapture">
-                                <span class="flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor"
-                                        viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
-                                            clip-rule="evenodd" />
-                                    </svg><span class="modal-count">0</span></span>
-                                <span class="flex items-center gap-1 cursor-pointer hover:text-yellow-400"
-                                    onclick="showReviewsOverlay('elementCapture')"><svg class="w-3 h-3 text-yellow-400"
-                                        fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                    </svg><span class="modal-rating">–</span></span>
-                            </span>
-                        </div>
-                        <h3 class="text-2xl font-bold text-slate-100">Element Capture</h3>
+                    <h3 class="text-2xl font-bold text-slate-100 mb-2">Element Capture</h3>
+                    <!-- Stats row centered below title -->
+                    <div class="modal-stats flex items-center justify-center gap-4 text-sm text-slate-400 mb-2"
+                        data-extension="elementCapture">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            <span class="modal-count">0</span> installs
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            <span class="modal-rating">–</span>
+                        </span>
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 text-xs font-semibold">Productivity</span>
                     </div>
+                    <p class="text-slate-400 text-sm">Capture any screen element instantly</p>
                 </div>
-                <p class="text-slate-300 mb-6 leading-relaxed">Capture specific screen elements and copy them to
-                    clipboard or add to Droppy. Perfect for grabbing UI components, icons, or any visual element.</p>
+
+                <!-- Description -->
+                <p class="text-slate-300 mb-6 leading-relaxed text-center">Capture specific screen elements and copy
+                    them to clipboard or add to Droppy. Perfect for grabbing UI components, icons, or any visual
+                    element.</p>
+
+                <!-- Screenshot -->
                 <div class="rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden mb-6">
                     <img src="assets/images/element-capture-screenshot.png" alt="Element Capture screenshot"
                         class="w-full h-auto">
                 </div>
+
+                <!-- Features List -->
                 <div class="space-y-3 mb-6">
                     <div class="flex items-center gap-3 text-slate-300">
                         <svg class="w-5 h-5 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -1099,72 +1116,88 @@
                         <span>Settings sync instantly across shortcuts</span>
                     </div>
                 </div>
-                <a href="droppy://extension/element-capture"
-                    class="group relative flex w-full items-center justify-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl pl-12">
-                    <div
-                        class="absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd"
-                                d="M3 4a1 1 0 011-1h3a1 1 0 010 2H5v2a1 1 0 01-2 0V4zM14 3a1 1 0 00-1 1v3a1 1 0 102 0V5h2a1 1 0 100-2h-3zM3 14a1 1 0 011-1h3a1 1 0 110 2H5v1a1 1 0 11-2 0v-2zM14 13a1 1 0 00-1 1v2a1 1 0 102 0v-1h2a1 1 0 100-2h-3z"
-                                clip-rule="evenodd" />
+
+                <!-- Divider -->
+                <div class="border-t border-slate-700/50 my-6"></div>
+
+                <!-- Button Row -->
+                <div class="flex items-center gap-3">
+                    <button onclick="closeExtensionModal('element-capture')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors">
+                        Close
+                    </button>
+                    <button onclick="showReviewsOverlay('elementCapture')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                                d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                         </svg>
-                    </div>
-                    <span class="translate-x-0 transition duration-300 group-hover:-translate-x-3">Open in Droppy</span>
-                    <div
-                        class="absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
-                        <svg class="h-5 w-5 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
+                        Reviews
+                    </button>
+                    <div class="flex-1"></div>
+                    <a href="droppy://extension/element-capture"
+                        class="px-6 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-white font-semibold transition-colors flex items-center gap-2">
+                        Open in Droppy
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3" />
                         </svg>
-                    </div>
-                </a>
+                    </a>
+                </div>
             </div>
         </div>
     </div>
-
     <!-- Spotify Integration Modal -->
     <div id="modal-spotify"
         class="extension-modal fixed inset-0 z-50 hidden items-center justify-center p-4 overflow-y-auto">
         <div class="absolute inset-0 bg-black/80 modal-backdrop" onclick="closeExtensionModal('spotify')"></div>
         <div class="relative max-w-xl w-full py-8 modal-card" style="animation: scaleIn 0.3s ease-out;">
             <div class="bg-slate-800/80 rounded-[32px] shadow-2xl w-full p-8">
-                <div class="flex items-center gap-5 mb-6">
+                <!-- Centered Header -->
+                <div class="text-center mb-6">
                     <div
-                        class="h-16 w-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center flex-shrink-0">
+                        class="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-4">
                         <svg class="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
                             <path
                                 d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
                         </svg>
                     </div>
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span
-                                class="inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-green-500/20 text-green-300">Media</span>
-                            <span class="modal-stats text-xs text-slate-400 flex items-center gap-3"
-                                data-extension="spotify">
-                                <span class="flex items-center gap-1"><svg class="w-3 h-3" fill="currentColor"
-                                        viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
-                                            clip-rule="evenodd" />
-                                    </svg><span class="modal-count">0</span></span>
-                                <span class="flex items-center gap-1 cursor-pointer hover:text-yellow-400"
-                                    onclick="showReviewsOverlay('spotify')"><svg class="w-3 h-3 text-yellow-400"
-                                        fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                    </svg><span class="modal-rating">–</span></span>
-                            </span>
-                        </div>
-                        <h3 class="text-2xl font-bold text-slate-100">Spotify Integration</h3>
+                    <h3 class="text-2xl font-bold text-slate-100 mb-2">Spotify Integration</h3>
+                    <!-- Stats row centered below title -->
+                    <div class="modal-stats flex items-center justify-center gap-4 text-sm text-slate-400 mb-2"
+                        data-extension="spotify">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 11.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            <span class="modal-count">0</span> installs
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                            <span class="modal-rating">–</span>
+                        </span>
+                        <span
+                            class="px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 text-xs font-semibold">Media</span>
                     </div>
+                    <p class="text-slate-400 text-sm">Control playback from your notch</p>
                 </div>
-                <p class="text-slate-300 mb-6 leading-relaxed">Control Spotify playback directly from your notch. See
-                    album art, track info, and playback controls without switching apps.</p>
+
+                <!-- Description -->
+                <p class="text-slate-300 mb-6 leading-relaxed text-center">Control Spotify playback directly from your
+                    notch. See album art, track info, and playback controls without switching apps.</p>
+
+                <!-- Screenshot -->
                 <div class="rounded-2xl bg-slate-800/50 border border-slate-700/50 overflow-hidden mb-6">
                     <img src="assets/images/spotify-screenshot.jpg" alt="Spotify integration screenshot"
                         class="w-full h-auto">
                 </div>
+
+                <!-- Features List -->
                 <div class="space-y-3 mb-6">
                     <div class="flex items-center gap-3 text-slate-300">
                         <svg class="w-5 h-5 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -1191,24 +1224,34 @@
                         <span>Works with Spotify Connect devices</span>
                     </div>
                 </div>
-                <a href="droppy://extension/spotify"
-                    class="group relative flex w-full items-center justify-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl pl-12">
-                    <div
-                        class="absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
-                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+
+                <!-- Divider -->
+                <div class="border-t border-slate-700/50 my-6"></div>
+
+                <!-- Button Row -->
+                <div class="flex items-center gap-3">
+                    <button onclick="closeExtensionModal('spotify')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors">
+                        Close
+                    </button>
+                    <button onclick="showReviewsOverlay('spotify')"
+                        class="px-4 py-2.5 rounded-xl bg-slate-700/50 hover:bg-slate-600/50 text-slate-300 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
+                                d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                         </svg>
-                    </div>
-                    <span class="translate-x-0 transition duration-300 group-hover:-translate-x-3">Open in Droppy</span>
-                    <div
-                        class="absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
-                        <svg class="h-5 w-5 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
+                        Reviews
+                    </button>
+                    <div class="flex-1"></div>
+                    <a href="droppy://extension/spotify"
+                        class="px-6 py-2.5 rounded-xl bg-green-500 hover:bg-green-400 text-white font-semibold transition-colors flex items-center gap-2">
+                        Open in Droppy
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3" />
                         </svg>
-                    </div>
-                </a>
+                    </a>
+                </div>
             </div>
         </div>
     </div>
