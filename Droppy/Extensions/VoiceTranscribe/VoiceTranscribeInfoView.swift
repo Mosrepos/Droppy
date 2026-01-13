@@ -13,6 +13,7 @@ struct VoiceTranscribeInfoView: View {
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
     @State private var isHoveringReviews = false
+    @State private var isHoveringDownload = false
     @State private var showReviewsSheet = false
     @State private var isDownloading = false
     
@@ -258,11 +259,17 @@ struct VoiceTranscribeInfoView: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue)
+                    .background(Color.blue.opacity(isHoveringDownload ? 1.0 : 0.85))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .scaleEffect(isHoveringDownload ? 1.02 : 1.0)
                 }
                 .buttonStyle(.plain)
                 .disabled(manager.isDownloading)
+                .onHover { h in
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                        isHoveringDownload = h
+                    }
+                }
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
