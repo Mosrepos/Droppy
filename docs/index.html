@@ -405,16 +405,22 @@
                                 </svg>
                             </div>
                         </a>
-                        <a class="group relative inline-flex items-center justify-center rounded-[28px] px-5 py-4 text-lg font-bold outline-none transition-all duration-300 bg-slate-800 pl-6 overflow-hidden"
+                        <a class="group relative inline-flex max-h-[3.75rem] items-center justify-center rounded-[28px] px-5 py-4 text-lg font-bold outline-none transition duration-300 bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-xl shadow-purple-900/30 hover:from-purple-500 hover:to-fuchsia-500 pl-[3.25rem]"
                             href="extensions.html">
-                            <!-- Purple gradient fill background (fills the button from bottom) -->
                             <div
-                                class="absolute inset-0 bg-gradient-to-r from-purple-500 to-fuchsia-500 origin-bottom transition-transform duration-500 ease-out scale-y-0 group-hover:scale-y-100">
+                                class="ease absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
+                                <img src="assets/icons/extensions.png" alt="Extensions" class="h-6 w-6">
                             </div>
-                            <!-- Extensions droplet icon -->
-                            <img src="assets/icons/extensions.png" alt="Extensions"
-                                class="relative z-10 w-6 h-6 mr-2.5 transition-all duration-300">
-                            <span class="relative z-10 transition-colors duration-300">Droppy Extensions</span>
+                            <div class="ease translate-x-0 transition duration-300 group-hover:-translate-x-8">Droppy
+                                Extensions
+                            </div>
+                            <div
+                                class="ease absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
+                                <svg class="h-6 w-6 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
+                                </svg>
+                            </div>
                         </a>
                         <a class="group relative inline-flex items-center justify-center rounded-[28px] px-5 py-4 text-lg font-bold outline-none transition-all duration-300 bg-slate-800 pl-6 overflow-hidden"
                             href="https://buymeacoffee.com/droppy" target="_blank">
