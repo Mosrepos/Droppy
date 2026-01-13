@@ -526,7 +526,7 @@ struct AudioVisualizerBars: View {
 /// Small Spotify logo badge for album art overlay
 struct SpotifyBadge: View {
     var body: some View {
-        AsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/spotify.png")) { phase in
+        AsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/spotify.jpg")) { phase in
             switch phase {
             case .success(let image):
                 image

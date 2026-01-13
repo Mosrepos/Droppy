@@ -177,7 +177,7 @@ enum ExtensionType: String, CaseIterable, Identifiable {
             }
             .frame(width: 64, height: 64)
         case .spotify:
-            AsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/spotify.png")) { phase in
+            AsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/spotify.jpg")) { phase in
                 switch phase {
                 case .success(let image):
                     image.resizable().aspectRatio(contentMode: .fill)

@@ -19,7 +19,7 @@ struct SpotifyExtensionCard: View {
             // Header with icon, stats, and badge
             HStack(alignment: .top) {
                 // Official Spotify icon from remote URL (keeps app binary small)
-                AsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/spotify.png")) { phase in
+                AsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/spotify.jpg")) { phase in
                     switch phase {
                     case .success(let image):
                         image
