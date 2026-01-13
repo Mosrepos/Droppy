@@ -31,10 +31,7 @@
         rel="stylesheet">
 
     <!-- Droppy Version Config - Single source of truth -->
-    <script>
-        const DROPPY_VERSION = '7.1';
-        const DROPPY_DMG_URL = `https://github.com/iordv/Droppy/releases/latest/download/Droppy-${DROPPY_VERSION}.dmg`;
-    </script>
+    <script src="assets/js/version.js"></script>
 
     <!-- Block copy/zoom keyboard shortcuts -->
     <script>
@@ -432,12 +429,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             // Update all version display spans
             document.querySelectorAll('.droppy-version').forEach(el => {
-                el.textContent = 'v' + DROPPY_VERSION;
+                el.textContent = 'v' + DROPPY_CONFIG.version;
             });
             // Set DMG download link
             const dmgLink = document.getElementById('dmg-download-link');
             if (dmgLink) {
-                dmgLink.href = DROPPY_DMG_URL;
+                dmgLink.href = DROPPY_CONFIG.dmgUrl;
             }
         });
     </script>

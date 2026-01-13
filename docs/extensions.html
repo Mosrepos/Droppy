@@ -30,10 +30,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
 
-    <!-- Droppy Version Config -->
-    <script>
-        const DROPPY_VERSION = '7.1';
-    </script>
+    <!-- Droppy Version Config - Single source of truth -->
+    <script src="assets/js/version.js"></script>
 
     <!-- Block copy/zoom keyboard shortcuts -->
     <script>
@@ -327,8 +325,24 @@
         <header
             class="fixed top-0 z-40 flex w-full justify-center bg-slate-950 px-8 py-5 outline outline-1 outline-droppy-400/0 duration-300 sm:py-7"
             id="header">
-            <div class="flex w-full max-w-screen-2xl items-center justify-center">
+            <div class="flex w-full max-w-screen-2xl items-center justify-between">
+                <!-- Left: GitHub -->
                 <div class="flex items-center opacity-100" style="animation: fadeIn 0.5s ease-out 0.1s both;">
+                    <a class="group inline-flex items-center justify-center outline-none transition duration-300 hover:bg-slate-800 rounded-[28px] px-5 py-4 text-lg font-bold bg-slate-800/50 sm:bg-transparent"
+                        href="https://github.com/iordv/Droppy" target="_blank">
+                        <svg class="size-[22px] origin-bottom fill-current transition duration-300 group-hover:-rotate-12 sm:mr-2"
+                            viewBox="0 0 24 24">
+                            <path fill-rule="evenodd"
+                                d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                                clip-rule="evenodd" />
+                        </svg>
+                        <span class="hidden sm:block">GitHub</span>
+                    </a>
+                </div>
+
+                <!-- Center: Logo -->
+                <div class="absolute left-1/2 -translate-x-1/2 flex items-center opacity-100"
+                    style="animation: fadeIn 0.5s ease-out 0.1s both;">
                     <a href="/Droppy/" class="group flex items-center outline-none" aria-label="Go home">
                         <div
                             class="relative mr-3 h-10 w-10 overflow-hidden rounded-xl border-[2.5px] border-slate-500 bg-slate-800">
@@ -349,7 +363,30 @@
                     <a href="https://github.com/iordv/Droppy/releases"
                         class="group ml-2 mt-2.5 flex items-center justify-center self-start whitespace-nowrap rounded-lg border-[1.5px] border-slate-600 bg-slate-800 px-1.5 py-0.5 text-center text-xs font-bold text-slate-400"
                         target="_blank">
-                        <span class="droppy-version">v6.3</span>
+                        <span class="droppy-version">v7.1</span>
+                    </a>
+                </div>
+
+                <!-- Right: Download -->
+                <div class="flex items-center opacity-100" style="animation: fadeIn 0.5s ease-out 0.1s both;">
+                    <a class="group relative inline-flex max-h-[3.75rem] items-center justify-center rounded-[28px] px-5 py-4 text-lg font-bold outline-none transition duration-300 bg-slate-800 hidden pl-[3.25rem] sm:flex hover:bg-slate-700"
+                        href="download.html">
+                        <div
+                            class="ease absolute left-5 translate-x-0 opacity-100 transition duration-300 group-hover:-translate-x-full group-hover:scale-x-50 group-hover:opacity-0 group-hover:blur-sm">
+                            <svg class="h-6 w-6 fill-current" viewBox="0 0 24 24">
+                                <path
+                                    d="M19.37 7.648c-.114.088-2.11 1.213-2.11 3.715 0 2.894 2.54 3.918 2.616 3.944-.011.062-.403 1.402-1.34 2.767-.834 1.201-1.706 2.4-3.032 2.4s-1.667-.77-3.198-.77c-1.492 0-2.022.796-3.235.796-1.214 0-2.06-1.112-3.033-2.477C4.911 16.42 4 13.93 4 11.566c0-3.791 2.465-5.802 4.891-5.802 1.29 0 2.364.847 3.173.847.77 0 1.972-.897 3.438-.897.556 0 2.553.05 3.867 1.934Zm-4.564-3.54c.607-.719 1.036-1.718 1.036-2.716 0-.138-.012-.279-.037-.392-.987.037-2.161.657-2.87 1.478-.555.632-1.074 1.63-1.074 2.643 0 .152.026.304.037.353.063.011.164.025.266.025.885 0 1.998-.593 2.642-1.39Z" />
+                            </svg>
+                        </div>
+                        <div class="ease translate-x-0 transition duration-300 group-hover:-translate-x-8">Download
+                        </div>
+                        <div
+                            class="ease absolute right-5 translate-x-full scale-x-50 opacity-0 blur-sm transition duration-300 group-hover:translate-x-0 group-hover:scale-x-100 group-hover:opacity-100 group-hover:blur-none">
+                            <svg class="h-6 w-6 fill-transparent stroke-current stroke-2" viewBox="0 0 24 24"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
+                            </svg>
+                        </div>
                     </a>
                 </div>
             </div>
@@ -633,7 +670,7 @@
                     </div>
                 </div>
                 <a href="droppy://extension/ai-bg"
-                    class="block w-full text-center bg-gradient-to-r from-fuchsia-500 to-purple-600 hover:from-fuchsia-400 hover:to-purple-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-fuchsia-500/25">
+                    class="block w-full text-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl">
                     Open in Droppy →
                 </a>
             </div>
@@ -689,11 +726,11 @@
                 </div>
                 <div class="flex gap-3">
                     <a href="droppy://extension/alfred"
-                        class="flex-1 block text-center bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-purple-500/25">
+                        class="flex-1 block text-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl">
                         Open in Droppy →
                     </a>
                     <a href="https://github.com/iordv/Droppy/releases" target="_blank"
-                        class="flex-1 block text-center bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold py-3 px-6 rounded-2xl transition-colors duration-200">
+                        class="flex-1 block text-center bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold py-3 px-6 rounded-[28px] transition-colors duration-200">
                         Download Workflow
                     </a>
                 </div>
@@ -757,7 +794,7 @@
                     </div>
                 </div>
                 <a href="droppy://extension/finder"
-                    class="block w-full text-center bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-400 hover:to-cyan-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-blue-500/25">
+                    class="block w-full text-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl">
                     Open in Droppy →
                 </a>
             </div>
@@ -818,7 +855,7 @@
                     </div>
                 </div>
                 <a href="droppy://extension/element-capture"
-                    class="block w-full text-center bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-400 hover:to-amber-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-orange-500/25">
+                    class="block w-full text-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl">
                     Open in Droppy →
                 </a>
             </div>
@@ -878,7 +915,7 @@
                     </div>
                 </div>
                 <a href="droppy://extension/spotify"
-                    class="block w-full text-center bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-semibold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-green-500/25">
+                    class="block w-full text-center bg-slate-100 hover:bg-white text-slate-900 font-semibold py-3 px-6 rounded-[28px] transition-all duration-200 shadow-lg hover:shadow-xl">
                     Open in Droppy →
                 </a>
             </div>
