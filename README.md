@@ -80,11 +80,17 @@ Droppy's built-in Extension Store lets you add powerful features on demand. Ever
 
 **Available extensions:**
 
-- **AI Background Removal** — Remove backgrounds from images locally using machine learning
-- **Alfred Workflow** — Add files to Droppy directly from Alfred  
-- **Finder Services** — Right-click any file in Finder to send it to Droppy
-- **Spotify Integration** — Full playback control with lyrics and album art
-- **Element Capture** — Screenshot any UI element with customizable shortcuts
+<img src="https://iordv.github.io/Droppy/assets/icons/ai-bg.jpg" height="20" style="vertical-align: middle; border-radius: 4px;"> **AI Background Removal** — Remove backgrounds from images locally using machine learning
+
+<img src="https://iordv.github.io/Droppy/assets/icons/alfred.jpg" height="20" style="vertical-align: middle; border-radius: 4px;"> **Alfred Workflow** — Add files to Droppy directly from Alfred
+
+<img src="https://iordv.github.io/Droppy/assets/icons/finder.jpg" height="20" style="vertical-align: middle; border-radius: 4px;"> **Finder Services** — Right-click any file in Finder to send it to Droppy
+
+<img src="https://iordv.github.io/Droppy/assets/icons/spotify.jpg" height="20" style="vertical-align: middle; border-radius: 4px;"> **Spotify Integration** — Full playback control with lyrics and album art
+
+<img src="https://iordv.github.io/Droppy/assets/icons/element-capture.jpg" height="20" style="vertical-align: middle; border-radius: 4px;"> **Element Capture** — Screenshot any UI element with customizable shortcuts
+
+<img src="https://iordv.github.io/Droppy/assets/icons/window-snap.jpg" height="20" style="vertical-align: middle; border-radius: 4px;"> **Window Snap** — Snap windows to screen edges and corners with keyboard shortcuts
 
 <p align="center">
   <a href="https://iordv.github.io/Droppy/extensions.html">
