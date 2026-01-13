@@ -2929,11 +2929,16 @@ struct AlfredExtensionCard: View {
             showInfoSheet = true
         }
         .sheet(isPresented: $showInfoSheet) {
-            ExtensionInfoView(extensionType: .alfred, installCount: installCount, rating: rating) {
-                if let workflowPath = Bundle.main.path(forResource: "Droppy", ofType: "alfredworkflow") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: workflowPath))
-                }
-            }
+            ExtensionInfoView(
+                extensionType: .alfred,
+                onAction: {
+                    if let workflowPath = Bundle.main.path(forResource: "Droppy", ofType: "alfredworkflow") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: workflowPath))
+                    }
+                },
+                installCount: installCount,
+                rating: rating
+            )
         }
     }
 }
@@ -3035,10 +3040,15 @@ struct FinderExtensionCard: View {
             FinderServicesSetupSheetView()
         }
         .sheet(isPresented: $showInfoSheet) {
-            ExtensionInfoView(extensionType: .finder, installCount: installCount, rating: rating) {
-                showInfoSheet = false
-                showSetupSheet = true
-            }
+            ExtensionInfoView(
+                extensionType: .finder,
+                onAction: {
+                    showInfoSheet = false
+                    showSetupSheet = true
+                },
+                installCount: installCount,
+                rating: rating
+            )
         }
     }
 }

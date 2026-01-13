@@ -470,6 +470,7 @@ struct ElementCaptureInfoView: View {
     @State private var isRecording = false
     @State private var recordMonitor: Any?
     @State private var showReviewsSheet = false
+    @State private var isHoveringReviews = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -694,6 +695,29 @@ struct ElementCaptureInfoView: View {
             .onHover { h in
                 withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                     isHoveringClose = h
+                }
+            }
+            
+            // Reviews button
+            Button {
+                showReviewsSheet = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "star.bubble")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Reviews")
+                }
+                .fontWeight(.medium)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(isHoveringReviews ? 0.15 : 0.1))
+                .foregroundStyle(.secondary)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { h in
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                    isHoveringReviews = h
                 }
             }
             
