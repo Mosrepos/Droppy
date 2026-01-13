@@ -21,9 +21,10 @@ struct WindowSnapCard: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color(white: 0.15))
-                    Image(systemName: "rectangle.split.2x2")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(.cyan)
+                    Image("WindowSnapIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .padding(2)
                 }
                 .frame(width: 44, height: 44)
                 
