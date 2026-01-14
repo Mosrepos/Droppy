@@ -63,6 +63,11 @@ struct UpdaterView: View {
     @State private var showSuccessGlow = false
     @State private var showConfetti = false
     
+    // Read transparency setting from shared UserDefaults
+    private var useTransparentBackground: Bool {
+        UserDefaults.standard.bool(forKey: "useTransparentBackground")
+    }
+    
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -211,8 +216,12 @@ struct UpdaterView: View {
         }
         .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
-        .clipped()
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 
@@ -393,16 +402,19 @@ class UpdaterWindowController: NSObject {
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.frame = NSRect(x: 0, y: 0, width: 320, height: 400)
         
-        window = NSWindow(
+        // Use NSPanel with borderless style to match main app windows
+        window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 400),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         
         window?.titlebarAppearsTransparent = true
         window?.titleVisibility = .hidden
-        window?.backgroundColor = .black
+        window?.backgroundColor = .clear  // Clear for transparency support
+        window?.isOpaque = false
+        window?.hasShadow = true
         window?.isMovableByWindowBackground = true
         window?.contentView = hostingView
         window?.center()
