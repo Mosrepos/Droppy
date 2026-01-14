@@ -67,7 +67,7 @@ struct ElementCaptureCard: View {
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
-                                .fill(currentShortcut != nil ? Color.green.opacity(0.15) : Color.white.opacity(0.1))
+                                .fill(currentShortcut != nil ? Color.green.opacity(0.15) : AdaptiveColors.subtleBorderAuto)
                         )
                 }
             }

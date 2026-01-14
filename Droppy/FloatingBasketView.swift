@@ -70,8 +70,14 @@ struct FloatingBasketView: View {
     @AppStorage("showClipboardButton") private var showClipboardButton = false
     @AppStorage("enableNotchShelf") private var enableNotchShelf = true
     @AppStorage("enableAutoClean") private var enableAutoClean = false
+    @AppStorage("enableAirDropZone") private var enableAirDropZone = true
     
     @State private var dashPhase: CGFloat = 0
+    
+    /// Dash phase freezes when any zone is targeted (animation pause effect)
+    private var effectiveDashPhase: CGFloat {
+        (state.isBasketTargeted || state.isAirDropZoneTargeted) ? 0 : dashPhase
+    }
     
     // Drag-to-select state
     @State private var isDragSelecting = false
@@ -90,6 +96,9 @@ struct FloatingBasketView: View {
     private let horizontalPadding: CGFloat = 24
     private let columnsPerRow: Int = 4
     
+    // AirDrop zone width (30% of total when enabled)
+    private let airDropZoneWidth: CGFloat = 90
+    
     private var currentHeight: CGFloat {
         if state.basketItems.isEmpty {
             return 130
@@ -100,13 +109,21 @@ struct FloatingBasketView: View {
         }
     }
     
-    private var currentWidth: CGFloat {
+    /// Base width without AirDrop zone
+    private var baseWidth: CGFloat {
         if state.basketItems.isEmpty {
             return 200
         } else {
             // Width for exactly 4 items: 4 * itemWidth + 3 * spacing + padding
             return CGFloat(columnsPerRow) * itemWidth + CGFloat(columnsPerRow - 1) * itemSpacing + horizontalPadding * 2
         }
+    }
+    
+    /// Total width including AirDrop zone when enabled AND basket is empty
+    private var currentWidth: CGFloat {
+        // AirDrop zone only shows when basket is empty
+        let showAirDropZone = enableAirDropZone && state.basketItems.isEmpty
+        return baseWidth + (showAirDropZone ? airDropZoneWidth : 0)
     }
     
     // Compute selection rectangle from start/current points
@@ -244,17 +261,27 @@ struct FloatingBasketView: View {
     }
     
     /// Basket background with glass effect and dashed border (extracted for type-checker)
+    @ViewBuilder
     private var basketBackground: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(useTransparentBackground ? Color.clear : Color.black)
-            .frame(width: currentWidth, height: currentHeight)
-            .background {
-                if useTransparentBackground {
-                    Color.clear
-                        .liquidGlass(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                }
-            }
-            .overlay(
+        // AirDrop zone only shows when basket is empty
+        let showAirDropZone = enableAirDropZone && state.basketItems.isEmpty
+        
+        if showAirDropZone {
+            // Wider basket with AirDrop zone on right (only when empty)
+            ZStack(alignment: .leading) {
+                // Single background for the whole basket
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(useTransparentBackground ? Color.clear : Color.black)
+                    .frame(width: currentWidth, height: currentHeight)
+                    .background {
+                        if useTransparentBackground {
+                            Color.clear
+                                .liquidGlass(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                
+                // Left zone outline (main basket - blue when targeted)
                 RoundedRectangle(cornerRadius: cornerRadius - 8, style: .continuous)
                     .stroke(
                         state.isBasketTargeted ? Color.blue : Color.white.opacity(0.2),
@@ -262,26 +289,105 @@ struct FloatingBasketView: View {
                             lineWidth: state.isBasketTargeted ? 2 : 1.5,
                             lineCap: .round,
                             dash: [6, 8],
-                            dashPhase: dashPhase
+                            dashPhase: effectiveDashPhase
                         )
                     )
-                    .padding(12)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    .frame(width: baseWidth - 24, height: currentHeight - 24)
+                    .offset(x: 12)
+                
+                // Right zone outline (AirDrop - cyan when targeted)
+                RoundedRectangle(cornerRadius: cornerRadius - 8, style: .continuous)
+                    .stroke(
+                        state.isAirDropZoneTargeted ? Color.red : Color.white.opacity(0.2),
+                        style: StrokeStyle(
+                            lineWidth: state.isAirDropZoneTargeted ? 2 : 1.5,
+                            lineCap: .round,
+                            dash: [6, 8],
+                            dashPhase: effectiveDashPhase
+                        )
+                    )
+                    .frame(width: airDropZoneWidth - 24, height: currentHeight - 24)
+                    .offset(x: baseWidth + 12)
+                
+                // AirDrop icon and label in the right zone (identical style to basket zone but red)
+                VStack(spacing: 6) {
+                    Image(systemName: state.isAirDropZoneTargeted ? "wifi" : "wifi")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(state.isAirDropZoneTargeted ? .red : .secondary)
+                        .symbolEffect(.bounce, value: state.isAirDropZoneTargeted)
+                    
+                    Text(state.isAirDropZoneTargeted ? "Drop!" : "AirDrop")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(state.isAirDropZoneTargeted ? .primary : .secondary)
+                }
+                .frame(width: airDropZoneWidth, height: currentHeight)
+                .offset(x: baseWidth)
+            }
+        } else {
+            // Normal basket layout (AirDrop disabled OR basket has items)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(useTransparentBackground ? Color.clear : Color.black)
+                .frame(width: currentWidth, height: currentHeight)
+                .background {
+                    if useTransparentBackground {
+                        Color.clear
+                            .liquidGlass(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    }
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius - 8, style: .continuous)
+                        .stroke(
+                            state.isBasketTargeted ? Color.blue : Color.white.opacity(0.2),
+                            style: StrokeStyle(
+                                lineWidth: state.isBasketTargeted ? 2 : 1.5,
+                                lineCap: .round,
+                                dash: [6, 8],
+                                dashPhase: effectiveDashPhase
+                            )
+                        )
+                        .padding(12)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
     }
     
+    @ViewBuilder
     private var emptyContent: some View {
-        VStack(spacing: 12) {
-            Image(systemName: state.isBasketTargeted ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
-                .font(.system(size: 32, weight: .light))
-                .foregroundStyle(state.isBasketTargeted ? .blue : .primary.opacity(0.7))
-                .symbolEffect(.bounce, value: state.isBasketTargeted)
-            
-            Text(state.isBasketTargeted ? "Drop!" : "Drop files here")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(state.isBasketTargeted ? .primary : .secondary)
+        if enableAirDropZone {
+            // Split layout when AirDrop zone is enabled
+            HStack(spacing: 0) {
+                // Main basket zone content
+                VStack(spacing: 12) {
+                    Image(systemName: state.isBasketTargeted ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundStyle(state.isBasketTargeted ? .blue : .primary.opacity(0.7))
+                        .symbolEffect(.bounce, value: state.isBasketTargeted)
+                    
+                    Text(state.isBasketTargeted ? "Drop!" : "Drop files here")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(state.isBasketTargeted ? .primary : .secondary)
+                }
+                .frame(width: baseWidth)
+                
+                // Empty space - the icon is already in airDropZoneBackground
+                Color.clear
+                    .frame(width: airDropZoneWidth)
+            }
+            .allowsHitTesting(false)
+        } else {
+            // Original layout when AirDrop zone is disabled - unchanged from before
+            VStack(spacing: 12) {
+                Image(systemName: state.isBasketTargeted ? "tray.and.arrow.down.fill" : "tray.and.arrow.down")
+                    .font(.system(size: 32, weight: .light))
+                    .foregroundStyle(state.isBasketTargeted ? .blue : .primary.opacity(0.7))
+                    .symbolEffect(.bounce, value: state.isBasketTargeted)
+                
+                Text(state.isBasketTargeted ? "Drop!" : "Drop files here")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(state.isBasketTargeted ? .primary : .secondary)
+            }
+            .allowsHitTesting(false)
         }
-        .allowsHitTesting(false) // Don't block drag gestures
     }
     
     private var itemsContent: some View {

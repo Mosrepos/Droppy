@@ -32,6 +32,7 @@ class UpdateWindowController: NSObject, NSWindowDelegate {
             
             // Create the SwiftUI view
             let updateView = UpdateView()
+                .preferredColorScheme(.dark) // Force dark mode always
             let hostingView = NSHostingView(rootView: updateView)
             
             // Compact window size - height determined by content

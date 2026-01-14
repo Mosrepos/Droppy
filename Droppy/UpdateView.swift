@@ -97,11 +97,11 @@ struct UpdateView: View {
                             .padding(.horizontal, 20)
                             .padding(.vertical, 8)
                             .background(Color.blue.opacity(isOkHovering ? 1.0 : 0.8))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                             )
                     }
                     .buttonStyle(.plain)
@@ -118,12 +118,12 @@ struct UpdateView: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.white.opacity(isLaterHovering ? 0.15 : 0.08))
+                            .background((isLaterHovering ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                             .foregroundStyle(.primary)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                             )
                     }
                     .buttonStyle(.plain)
@@ -150,11 +150,11 @@ struct UpdateView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(Color.blue.opacity(isUpdateHovering ? 1.0 : 0.8))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)

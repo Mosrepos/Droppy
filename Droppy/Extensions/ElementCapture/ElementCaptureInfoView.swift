@@ -12,6 +12,7 @@ struct ElementCaptureInfoView: View {
     var installCount: Int?
     var rating: AnalyticsService.ExtensionRating?
     
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
     @State private var isHoveringClose = false
@@ -42,7 +43,7 @@ struct ElementCaptureInfoView: View {
         }
         .frame(width: 510)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
         .onDisappear {
             stopRecording()
@@ -70,7 +71,7 @@ struct ElementCaptureInfoView: View {
             
             Text("Element Capture")
                 .font(.title2.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             // Stats row: installs + rating + category badge
             HStack(spacing: 12) {
@@ -147,7 +148,7 @@ struct ElementCaptureInfoView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                            .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                     .padding(.top, 8)
             } placeholder: {
@@ -175,7 +176,7 @@ struct ElementCaptureInfoView: View {
         VStack(spacing: 12) {
             Text("Keyboard Shortcut")
                 .font(.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             Button {
                 if isRecording {
@@ -203,13 +204,13 @@ struct ElementCaptureInfoView: View {
                             .font(.system(size: 14, weight: .medium))
                     }
                 }
-                .foregroundStyle(isRecording ? .white : (currentShortcut != nil ? .primary : .white))
+                .foregroundStyle(isRecording ? .primary : (currentShortcut != nil ? .primary : .secondary))
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(isRecording ? Color.red.opacity(0.85) : (currentShortcut != nil ? Color.white.opacity(0.1) : Color.blue.opacity(0.85)))
+                        .fill(isRecording ? Color.red.opacity(0.85) : (currentShortcut != nil ? AdaptiveColors.subtleBorderAuto : Color.blue.opacity(0.85)))
                 )
             }
             .buttonStyle(.plain)
@@ -227,7 +228,7 @@ struct ElementCaptureInfoView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(isHoveringClose ? 0.15 : 0.1))
+                    .background((isHoveringClose ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                     .foregroundStyle(.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -250,7 +251,7 @@ struct ElementCaptureInfoView: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(isHoveringReviews ? 0.15 : 0.1))
+                .background((isHoveringReviews ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                 .foregroundStyle(.secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }

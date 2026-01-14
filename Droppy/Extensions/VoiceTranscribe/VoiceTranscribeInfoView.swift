@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct VoiceTranscribeInfoView: View {
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @ObservedObject private var manager = VoiceTranscribeManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
@@ -40,7 +41,7 @@ struct VoiceTranscribeInfoView: View {
         }
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .voiceTranscribe)
@@ -63,7 +64,7 @@ struct VoiceTranscribeInfoView: View {
             
             Text("Voice Transcribe")
                 .font(.title2.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             // Stats row
             HStack(spacing: 12) {
@@ -154,7 +155,7 @@ struct VoiceTranscribeInfoView: View {
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.1))
+                        .background(AdaptiveColors.subtleBorderAuto)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .menuStyle(.borderlessButton)
@@ -198,14 +199,14 @@ struct VoiceTranscribeInfoView: View {
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.1))
+                        .background(AdaptiveColors.subtleBorderAuto)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .menuStyle(.borderlessButton)
                 }
                 .padding(16)
             }
-            .background(Color.white.opacity(0.03))
+            .background(AdaptiveColors.buttonBackgroundAuto)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             
             // Screenshot loaded from web (cached to prevent flashing)
@@ -216,7 +217,7 @@ struct VoiceTranscribeInfoView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                            .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
             } placeholder: {
                 EmptyView()
@@ -253,7 +254,7 @@ struct VoiceTranscribeInfoView: View {
                             Text("Downloading \(Int(manager.downloadProgress * 100))%")
                                 .fontWeight(.semibold)
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .frame(height: 44)
@@ -263,7 +264,7 @@ struct VoiceTranscribeInfoView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 22))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(Color(NSColor.labelColor).opacity(0.7))
                     }
                     .buttonStyle(.plain)
                 }
@@ -278,7 +279,7 @@ struct VoiceTranscribeInfoView: View {
                         Text("Download Model")
                     }
                     .fontWeight(.semibold)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.blue.opacity(isHoveringDownload ? 1.0 : 0.85))
@@ -342,7 +343,7 @@ struct VoiceTranscribeInfoView: View {
                         }
                     }
                     .padding(14)
-                    .background(Color.white.opacity(0.03))
+                    .background(AdaptiveColors.buttonBackgroundAuto)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
             }
@@ -363,7 +364,7 @@ struct VoiceTranscribeInfoView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(isHoveringCancel ? 0.15 : 0.1))
+                    .background((isHoveringCancel ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                     .foregroundStyle(.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -386,7 +387,7 @@ struct VoiceTranscribeInfoView: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(isHoveringReviews ? 0.15 : 0.1))
+                .background((isHoveringReviews ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                 .foregroundStyle(.secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -434,7 +435,7 @@ struct VoiceTranscribeInfoView: View {
                             : Color.green.opacity(isHoveringAction ? 1.0 : 0.85))
                         : Color.gray.opacity(0.5)
                 )
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.plain)

@@ -66,7 +66,8 @@ final class VoiceRecordingWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         
-        let contentView = NSHostingView(rootView: VoiceRecordingOverlayView(controller: self))
+        let contentView = NSHostingView(rootView: VoiceRecordingOverlayView(controller: self)
+            .preferredColorScheme(.dark)) // Force dark mode always
         panel.contentView = contentView
         
         window = panel
@@ -131,6 +132,7 @@ final class VoiceRecordingWindowController {
 
 struct VoiceRecordingOverlayView: View {
     let controller: VoiceRecordingWindowController
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @ObservedObject var manager = VoiceTranscribeManager.shared
     @State private var isPulsing = false
     @State private var isHoveringButton = false
@@ -149,11 +151,11 @@ struct VoiceRecordingOverlayView: View {
             }
         }
         .padding(padding)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
         )
         .onAppear {
             isPulsing = true
@@ -183,14 +185,14 @@ struct VoiceRecordingOverlayView: View {
                     Text(formatDuration(manager.recordingDuration))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Color.red.opacity(0.8))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        .stroke(AdaptiveColors.hoverBackgroundAuto, lineWidth: 1)
                 )
             }
             
@@ -207,11 +209,11 @@ struct VoiceRecordingOverlayView: View {
             .frame(height: 60)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(Color.white.opacity(0.05))
+            .background(AdaptiveColors.buttonBackgroundAuto)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    .stroke(AdaptiveColors.hoverBackgroundAuto, lineWidth: 1)
             )
             
             // Stop button (full width, Droppy hover style)
@@ -224,14 +226,14 @@ struct VoiceRecordingOverlayView: View {
                     Text("Stop Recording")
                         .font(.system(size: 12, weight: .semibold))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(Color.red.opacity(isHoveringButton ? 1.0 : 0.85))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        .stroke(AdaptiveColors.hoverBackgroundAuto, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -298,11 +300,11 @@ struct VoiceRecordingOverlayView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(0.05))
+            .background(AdaptiveColors.buttonBackgroundAuto)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    .stroke(AdaptiveColors.hoverBackgroundAuto, lineWidth: 1)
             )
             
             // AI badge

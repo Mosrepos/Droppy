@@ -12,7 +12,7 @@ import SwiftUI
 /// Features: Material background, specular rim lighting, expand-on-drag animation
 struct LiquidSlider: View {
     @Binding var value: CGFloat // 0.0 to 1.0
-    var accentColor: Color = .white
+    var accentColor: Color = .primary
     var showPercentage: Bool = false
     var isActive: Bool = false // External active state (for keyboard-triggered thickening)
     var onChange: ((CGFloat) -> Void)?
@@ -39,7 +39,7 @@ struct LiquidSlider: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         Capsule()
-                            .fill(Color.white.opacity(0.05))
+                            .fill(AdaptiveColors.buttonBackgroundAuto)
                     )
                     // Concave lighting: shadow on top, highlight on bottom
                     .overlay(
@@ -172,7 +172,7 @@ enum HUDContentType: String, CaseIterable {
         // Volume slider
         HStack(spacing: 12) {
             Image(systemName: "speaker.wave.2.fill")
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             LiquidSlider(value: .constant(0.7))
                 .frame(width: 200)
             Text("70%")

@@ -26,6 +26,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
                 self.resetWindowSize()
             }
         )
+        .preferredColorScheme(.dark) // Force dark mode always
         
         // Use NSHostingView like SettingsWindowController for native sidebar appearance
         let hostingView = NSHostingView(rootView: clipboardView)
@@ -145,6 +146,9 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         
         // Stop monitoring immediately
         stopClickMonitoring()
+        
+        // Reset editing state to ensure shortcuts work correctly next time
+        ClipboardManager.shared.isEditingContent = false
         
         isAnimating = true
         print("⌨️ Droppy: Fading Out Clipboard Window (Duration: 0.35s)...")

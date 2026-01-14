@@ -38,6 +38,7 @@ final class VoiceTranscriptionResultController: NSObject {
         let contentView = VoiceTranscriptionResultView(text: text) { [weak self] in
             self?.hideWindow()
         }
+        .preferredColorScheme(.dark) // Force dark mode always
         let hostingView = NSHostingView(rootView: contentView)
         
         let newWindow = NSPanel(
@@ -151,12 +152,12 @@ struct VoiceTranscriptionResultView: View {
                         .fontWeight(.medium)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(isCloseHovering ? 0.15 : 0.08))
+                        .background((isCloseHovering ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                         .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -190,11 +191,11 @@ struct VoiceTranscriptionResultView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background((showCopiedFeedback ? Color.green : Color.blue).opacity(isCopyHovering ? 1.0 : 0.8))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)

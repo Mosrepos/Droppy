@@ -1,6 +1,21 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import LinkPresentation
+import Quartz
+
+// MARK: - Quick Look Data Source for Clipboard Images
+class QuickLookDataSource: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    static let shared = QuickLookDataSource()
+    var urls: [URL] = []
+    
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        urls.count
+    }
+    
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
+        urls[index] as NSURL
+    }
+}
 
 struct ClipboardManagerView: View {
     @ObservedObject var manager = ClipboardManager.shared
@@ -139,22 +154,35 @@ struct ClipboardManagerView: View {
             Button("") { deleteSelectedItems() }.keyboardShortcut(KeyEquivalent("\u{08}"), modifiers: []) // Backspace
             Button("") { deleteSelectedItems() }.keyboardShortcut("d", modifiers: .command) // Cmd+D
             
-            // 3. Command+C -> Copy Selected to Clipboard
-            Button("") { copySelectedToClipboard() }.keyboardShortcut("c", modifiers: .command)
-            
-            // 4. Command+V -> Paste Selected Item (same as Return)
-            Button("") {
-                for item in selectedItemsArray {
-                    onPaste(item)
-                }
-            }.keyboardShortcut("v", modifiers: .command)
-            
-            // 5. Command+A -> Select All
+            // 5. Command+A -> Select All (always works)
             Button("") {
                 selectedItems = Set(sortedHistory.map { $0.id })
             }.keyboardShortcut("a", modifiers: .command)
+            
+            // CONDITIONAL SHORTCUTS: Only register when NOT editing
+            // This allows native Cmd+C, Cmd+V, Space to work in text fields
+            if !manager.isEditingContent {
+                // Command+C -> Copy Selected to Clipboard
+                Button("") { copySelectedToClipboard() }.keyboardShortcut("c", modifiers: .command)
+                
+                // Command+V -> Paste Selected Item
+                Button("") {
+                    for item in selectedItemsArray {
+                        onPaste(item)
+                    }
+                }.keyboardShortcut("v", modifiers: .command)
+                
+                // Spacebar -> Quick Look for images
+                Button("") { showQuickLookForSelected() }.keyboardShortcut(.space, modifiers: [])
+                
+                // Command+S -> Bulk Save selected items
+                Button("") { bulkSaveSelectedItems() }.keyboardShortcut("s", modifiers: .command)
+            }
         }
         .opacity(0)
+        // Force SwiftUI to rebuild this view when editing state changes
+        // This ensures keyboard shortcuts are properly registered/unregistered
+        .id("shortcuts-\(manager.isEditingContent)")
     }
     
     private func handleOnAppear() {
@@ -241,6 +269,116 @@ struct ClipboardManagerView: View {
             } else {
                 selectedItems = []
             }
+        }
+    }
+    
+    /// Show Quick Look preview for selected image items
+    private func showQuickLookForSelected() {
+        // Get image items that have file URLs
+        let imageItems = selectedItemsArray.filter { $0.type == .image }
+        guard !imageItems.isEmpty else { return }
+        
+        // Create temp files for Quick Look
+        var urls: [URL] = []
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("DroppyQuickLook", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        
+        for item in imageItems {
+            if let data = item.loadImageData() {
+                let fileName = "\(item.id.uuidString).png"
+                let fileURL = tempDir.appendingPathComponent(fileName)
+                try? data.write(to: fileURL)
+                urls.append(fileURL)
+            }
+        }
+        
+        guard !urls.isEmpty else { return }
+        
+        // Show Quick Look panel
+        if let panel = QLPreviewPanel.shared() {
+            QuickLookDataSource.shared.urls = urls
+            panel.dataSource = QuickLookDataSource.shared
+            panel.delegate = QuickLookDataSource.shared
+            panel.makeKeyAndOrderFront(nil)
+            panel.reloadData()
+        }
+    }
+    
+    /// Bulk save all selected items to Downloads folder
+    private func bulkSaveSelectedItems() {
+        guard !selectedItems.isEmpty else { return }
+        
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        var savedCount = 0
+        
+        for item in selectedItemsArray {
+            let fileName: String
+            let fileExtension: String
+            let data: Data?
+            
+            switch item.type {
+            case .image:
+                fileName = item.customTitle ?? "Image_\(Int(Date().timeIntervalSince1970))_\(savedCount)"
+                fileExtension = "png"
+                if let imgData = item.loadImageData(),
+                   let nsImage = NSImage(data: imgData),
+                   let tiffData = nsImage.tiffRepresentation,
+                   let bitmap = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmap.representation(using: .png, properties: [:]) {
+                    data = pngData
+                } else {
+                    data = nil
+                }
+            case .text:
+                fileName = item.customTitle ?? "Text_\(Int(Date().timeIntervalSince1970))_\(savedCount)"
+                fileExtension = "txt"
+                data = item.content?.data(using: .utf8)
+            case .url:
+                fileName = item.customTitle ?? "Link_\(Int(Date().timeIntervalSince1970))_\(savedCount)"
+                fileExtension = "txt"
+                data = item.content?.data(using: .utf8)
+            case .file:
+                // For files, copy the original
+                if let path = item.content {
+                    let sourceURL = URL(fileURLWithPath: path)
+                    var destURL = downloads.appendingPathComponent(sourceURL.lastPathComponent)
+                    // Handle collision
+                    var counter = 1
+                    while FileManager.default.fileExists(atPath: destURL.path) {
+                        let name = sourceURL.deletingPathExtension().lastPathComponent
+                        let ext = sourceURL.pathExtension
+                        destURL = downloads.appendingPathComponent("\(name)_\(counter).\(ext)")
+                        counter += 1
+                    }
+                    try? FileManager.default.copyItem(at: sourceURL, to: destURL)
+                    savedCount += 1
+                }
+                continue
+            case .color:
+                continue
+            }
+            
+            guard let saveData = data else { continue }
+            
+            var destURL = downloads.appendingPathComponent(fileName).appendingPathExtension(fileExtension)
+            // Handle collision
+            var counter = 1
+            while FileManager.default.fileExists(atPath: destURL.path) {
+                destURL = downloads.appendingPathComponent("\(fileName)_\(counter)").appendingPathExtension(fileExtension)
+                counter += 1
+            }
+            
+            do {
+                try saveData.write(to: destURL)
+                savedCount += 1
+            } catch {
+                print("Failed to save: \(error)")
+            }
+        }
+        
+        if savedCount > 0 {
+            // Show feedback
+            print("📁 Saved \(savedCount) item(s) to Downloads")
         }
     }
     
@@ -401,6 +539,11 @@ struct ClipboardManagerView: View {
                                             copySelectedToClipboard()
                                         } label: {
                                             Label("Copy All (\(selectedItems.count))", systemImage: "doc.on.doc")
+                                        }
+                                        Button {
+                                            bulkSaveSelectedItems()
+                                        } label: {
+                                            Label("Save All (\(selectedItems.count))", systemImage: "square.and.arrow.down")
                                         }
                                         Divider()
                                         Button(role: .destructive) {
@@ -729,6 +872,7 @@ struct ClipboardManagerView: View {
                         }
                     },
                     onCopyAll: copySelectedToClipboard,
+                    onSaveAll: bulkSaveSelectedItems,
                     onDeleteAll: deleteSelectedItems
                 )
             } else if let firstId = selectedItems.first,
@@ -1281,6 +1425,8 @@ struct ClipboardPreviewView: View {
             )
             .animation(.easeInOut(duration: 0.3), value: isEditing)
             .onChange(of: isEditing) { _, editing in
+                // Sync with shared state so Cmd+V shortcut is disabled during editing
+                manager.isEditingContent = editing
                 if editing {
                     dashPhase = 0
                     withAnimation(.linear(duration: 0.5).repeatForever(autoreverses: false)) {
@@ -1695,10 +1841,12 @@ struct MultiSelectPreviewView: View {
     let items: [ClipboardItem]
     let onPasteAll: () -> Void
     let onCopyAll: () -> Void
+    let onSaveAll: () -> Void
     let onDeleteAll: () -> Void
     
     @State private var isPasteHovering = false
     @State private var isCopyHovering = false
+    @State private var isSaveHovering = false
     @State private var isDeleteHovering = false
     
     var body: some View {
@@ -1787,6 +1935,30 @@ struct MultiSelectPreviewView: View {
                 .onHover { hovering in
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                         isCopyHovering = hovering
+                    }
+                }
+                
+                // Save All Button
+                Button(action: onSaveAll) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("Save All")
+                    }
+                    .fontWeight(.medium)
+                    .frame(width: 110)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(isSaveHovering ? 0.2 : 0.1))
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                        isSaveHovering = hovering
                     }
                 }
                 

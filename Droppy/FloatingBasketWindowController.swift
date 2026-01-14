@@ -37,6 +37,9 @@ final class FloatingBasketWindowController: NSObject {
     /// Whether basket is currently in peek mode (collapsed at edge)
     private(set) var isInPeekMode: Bool = false
     
+    /// Whether peek animation is currently running (prevents cursor interruption)
+    private var isPeekAnimating: Bool = false
+    
     /// Work item for delayed auto-hide (0.5 second delay)
     private var hideDelayWorkItem: DispatchWorkItem?
     
@@ -198,6 +201,7 @@ final class FloatingBasketWindowController: NSObject {
         
         // Create SwiftUI view
         let basketView = FloatingBasketView(state: DroppyState.shared)
+            .preferredColorScheme(.dark) // Force dark mode always
         let hostingView = NSHostingView(rootView: basketView)
         
         // Create drag container
@@ -358,6 +362,9 @@ final class FloatingBasketWindowController: NSObject {
     private func handleMouseMovement() {
         guard let panel = basketWindow, panel.isVisible, !isShowingOrHiding else { return }
         
+        // Don't interrupt during peek animations
+        guard !isPeekAnimating else { return }
+        
         let mouseLocation = NSEvent.mouseLocation
         let currentFrame = panel.frame
         
@@ -406,7 +413,7 @@ final class FloatingBasketWindowController: NSObject {
     
     /// Slides the basket to the configured edge in peek mode
     func slideToEdge() {
-        guard let panel = basketWindow, !isInPeekMode, !isShowingOrHiding else { return }
+        guard let panel = basketWindow, !isInPeekMode, !isShowingOrHiding, !isPeekAnimating else { return }
         
         // Don't slide away during file operations
         guard !DroppyState.shared.isFileOperationInProgress else { return }
@@ -454,6 +461,7 @@ final class FloatingBasketWindowController: NSObject {
         transform = CATransform3DScale(transform, 0.92, 0.92, 1.0)
         
         isInPeekMode = true
+        isPeekAnimating = true
         
         // Ensure layer is optimized for animation
         layer.drawsAsynchronously = true
@@ -471,19 +479,21 @@ final class FloatingBasketWindowController: NSObject {
             
             panel.animator().setFrame(peekFrame, display: true)
             layer.transform = transform
-        } completionHandler: {
+        } completionHandler: { [weak self] in
             // Reset rasterization after animation to save memory
             layer.shouldRasterize = false
+            self?.isPeekAnimating = false
         }
     }
     
     /// Reveals the basket from peek mode back to full size
     func revealFromEdge() {
-        guard let panel = basketWindow, isInPeekMode else { return }
+        guard let panel = basketWindow, isInPeekMode, !isPeekAnimating else { return }
         guard fullSizeFrame.width > 0 else { return }
         guard let contentView = panel.contentView, let layer = contentView.layer else { return }
         
         isInPeekMode = false
+        isPeekAnimating = true
         
         // Pre-warm layer for immediate response
         layer.drawsAsynchronously = true
@@ -501,8 +511,9 @@ final class FloatingBasketWindowController: NSObject {
             
             panel.animator().setFrame(fullSizeFrame, display: true)
             layer.transform = CATransform3DIdentity
-        } completionHandler: {
+        } completionHandler: { [weak self] in
             layer.shouldRasterize = false
+            self?.isPeekAnimating = false
         }
     }
     
@@ -527,13 +538,45 @@ final class FloatingBasketWindowController: NSObject {
         }
     }
 }
-
 // MARK: - Basket Drag Container
 
 class BasketDragContainer: NSView {
     
     /// Track if a drop occurred during current drag session
     private var dropDidOccur = false
+    
+    /// AirDrop zone width (must match FloatingBasketView.airDropZoneWidth)
+    private let airDropZoneWidth: CGFloat = 90
+    
+    /// Base width constants (must match FloatingBasketView)
+    private let itemWidth: CGFloat = 76
+    private let itemSpacing: CGFloat = 8
+    private let horizontalPadding: CGFloat = 24
+    private let columnsPerRow: Int = 4
+    
+    /// Whether AirDrop zone is enabled
+    private var isAirDropZoneEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "enableAirDropZone")
+    }
+    
+    /// Whether AirDrop zone should be shown (enabled AND basket is empty)
+    private var showAirDropZone: Bool {
+        isAirDropZoneEnabled && DroppyState.shared.basketItems.isEmpty
+    }
+    
+    /// Calculate base width (without AirDrop zone)
+    private var baseWidth: CGFloat {
+        if DroppyState.shared.basketItems.isEmpty {
+            return 200
+        } else {
+            return CGFloat(columnsPerRow) * itemWidth + CGFloat(columnsPerRow - 1) * itemSpacing + horizontalPadding * 2
+        }
+    }
+    
+    /// Calculate current basket width
+    private var currentBasketWidth: CGFloat {
+        baseWidth + (showAirDropZone ? airDropZoneWidth : 0)
+    }
     
     private var filePromiseQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -561,21 +604,72 @@ class BasketDragContainer: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
     
+    /// Check if point is in the AirDrop zone (right side of basket)
+    private func isPointInAirDropZone(_ point: NSPoint) -> Bool {
+        guard showAirDropZone else { return false }
+        // Calculate offset from center of window to basket edge
+        let windowCenterX = bounds.width / 2
+        let basketRightEdge = windowCenterX + currentBasketWidth / 2
+        let airDropLeftEdge = basketRightEdge - airDropZoneWidth
+        
+        // Point is in AirDrop zone if it's within basket bounds AND in the right portion
+        return point.x >= airDropLeftEdge && point.x <= basketRightEdge
+    }
+    
+    /// Check if point is in the main basket zone (left side)
+    private func isPointInBasketZone(_ point: NSPoint) -> Bool {
+        let windowCenterX = bounds.width / 2
+        let basketLeftEdge = windowCenterX - currentBasketWidth / 2
+        
+        if showAirDropZone {
+            let basketRightEdge = windowCenterX + currentBasketWidth / 2
+            let airDropLeftEdge = basketRightEdge - airDropZoneWidth
+            // Main basket is the left portion (not including AirDrop zone)
+            return point.x >= basketLeftEdge && point.x < airDropLeftEdge
+        } else {
+            let basketRightEdge = windowCenterX + currentBasketWidth / 2
+            return point.x >= basketLeftEdge && point.x <= basketRightEdge
+        }
+    }
+    
+    /// Update zone targeting state based on cursor position
+    private func updateZoneTargeting(for sender: NSDraggingInfo) {
+        let point = convert(sender.draggingLocation, from: nil)
+        
+        if showAirDropZone {
+            let isOverAirDrop = isPointInAirDropZone(point)
+            let isOverBasket = isPointInBasketZone(point)
+            // Synchronous update for responsive feedback
+            DroppyState.shared.isAirDropZoneTargeted = isOverAirDrop
+            DroppyState.shared.isBasketTargeted = isOverBasket
+        } else {
+            DroppyState.shared.isBasketTargeted = true
+            DroppyState.shared.isAirDropZoneTargeted = false
+        }
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         // Reset flag at start of new drag
         dropDidOccur = false
-        DroppyState.shared.isBasketTargeted = true
+        updateZoneTargeting(for: sender)
+        return .copy
+    }
+    
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        // Update targeting as cursor moves between zones
+        updateZoneTargeting(for: sender)
         return .copy
     }
     
     override func draggingExited(_ sender: NSDraggingInfo?) {
         DroppyState.shared.isBasketTargeted = false
+        DroppyState.shared.isAirDropZoneTargeted = false
     }
     
     override func draggingEnded(_ sender: NSDraggingInfo) {
         DroppyState.shared.isBasketTargeted = false
+        DroppyState.shared.isAirDropZoneTargeted = false
         
         // Don't hide during file operations
         guard !DroppyState.shared.isFileOperationInProgress else { return }
@@ -587,13 +681,62 @@ class BasketDragContainer: NSView {
         }
     }
     
+    /// Handle AirDrop sharing for dropped files
+    private func handleAirDropShare(_ pasteboard: NSPasteboard) -> Bool {
+        // Try to read all file URLs from pasteboard
+        var urls: [URL] = []
+        
+        // Method 1: Read objects
+        if let readUrls = pasteboard.readObjects(forClasses: [NSURL.self], 
+            options: [.urlReadingFileURLsOnly: true]) as? [URL] {
+            urls = readUrls
+        }
+        
+        // Method 2: Fallback - read from pasteboardItems
+        if urls.isEmpty, let items = pasteboard.pasteboardItems {
+            for item in items {
+                if let urlString = item.string(forType: .fileURL),
+                   let url = URL(string: urlString) {
+                    urls.append(url)
+                }
+            }
+        }
+        
+        guard !urls.isEmpty else { return false }
+        
+        print("📡 AirDrop: Sharing \(urls.count) file(s)")
+        
+        guard let airDropService = NSSharingService(named: .sendViaAirDrop) else {
+            print("📡 AirDrop service not available")
+            return false
+        }
+        
+        if airDropService.canPerform(withItems: urls) {
+            airDropService.perform(withItems: urls)
+            // Hide basket immediately after triggering AirDrop
+            FloatingBasketWindowController.shared.hideBasket()
+            return true
+        }
+        return false
+    }
+    
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let point = convert(sender.draggingLocation, from: nil)
+        
         DroppyState.shared.isBasketTargeted = false
+        DroppyState.shared.isAirDropZoneTargeted = false
         
         // Mark that a drop occurred - don't hide on drag end
         dropDidOccur = true
         
         let pasteboard = sender.draggingPasteboard
+        
+        // Check if drop is in AirDrop zone
+        if isPointInAirDropZone(point) {
+            return handleAirDropShare(pasteboard)
+        }
+        
+        // Normal basket behavior below...
         
         // Handle Mail.app emails directly via AppleScript
         let mailTypes: [NSPasteboard.PasteboardType] = [

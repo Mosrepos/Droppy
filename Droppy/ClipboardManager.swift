@@ -136,6 +136,7 @@ class ClipboardManager: ObservableObject {
     }
     @Published var hasAccessibilityPermission: Bool = false
     @Published var showPasteFeedback: Bool = false
+    @Published var isEditingContent: Bool = false  // Track if user is editing text content
     
     // MARK: - Settings (UserDefaults)
     // Using direct UserDefaults access instead of @AppStorage to avoid crashes in Timer callbacks

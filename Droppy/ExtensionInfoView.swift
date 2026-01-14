@@ -16,6 +16,7 @@ struct ExtensionInfoView: View {
     var installCount: Int?
     var rating: AnalyticsService.ExtensionRating?
     
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
     @State private var isHoveringClose = false
@@ -39,7 +40,7 @@ struct ExtensionInfoView: View {
         }
         .frame(width: 510)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: extensionType)
@@ -57,7 +58,7 @@ struct ExtensionInfoView: View {
             // Title
             Text(extensionType.title)
                 .font(.title2.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             // Stats row: installs + rating + category badge
             HStack(spacing: 12) {
@@ -140,7 +141,7 @@ struct ExtensionInfoView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                                .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                         .padding(.top, 8)
                 } placeholder: {
@@ -177,7 +178,7 @@ struct ExtensionInfoView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(isHoveringClose ? 0.15 : 0.1))
+                    .background((isHoveringClose ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                     .foregroundStyle(.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -200,7 +201,7 @@ struct ExtensionInfoView: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(isHoveringReviews ? 0.15 : 0.1))
+                .background((isHoveringReviews ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                 .foregroundStyle(.secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -229,11 +230,11 @@ struct ExtensionInfoView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .background(extensionType.categoryColor.opacity(isHoveringAction ? 1.0 : 0.85))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -284,6 +285,7 @@ struct ExtensionInfoView: View {
 
 struct ExtensionReviewsSheet: View {
     let extensionType: ExtensionType
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @Environment(\.dismiss) private var dismiss
     @State private var reviews: [ExtensionReview] = []
     @State private var isLoading = true
@@ -376,7 +378,7 @@ struct ExtensionReviewsSheet: View {
             }
         }
         .frame(width: 450, height: 500)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .onAppear {
             Task {
                 await loadReviews()
@@ -445,14 +447,14 @@ struct ExtensionReviewsSheet: View {
                                                 .font(.callout.weight(.semibold))
                                         }
                                     }
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.primary)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 8)
                                     .background(extensionType.categoryColor.opacity(isHoveringSubmit ? 1.0 : 0.85))
                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                            .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -568,7 +570,7 @@ struct ReviewCard: View {
             }
         }
         .padding(16)
-        .background(Color.white.opacity(0.05))
+        .background(AdaptiveColors.buttonBackgroundAuto)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

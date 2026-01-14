@@ -41,6 +41,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         
         // Create the SwiftUI view
         let settingsView = SettingsView()
+            .preferredColorScheme(.dark) // Force dark mode always
         let hostingView = NSHostingView(rootView: settingsView)
         
         // SettingsView uses macOS 26 Tahoe glass design

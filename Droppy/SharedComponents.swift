@@ -60,7 +60,7 @@ struct AnimatedHUDToggle: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isOn ? color.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isOn ? color.opacity(0.2) : AdaptiveColors.buttonBackgroundAuto)
                     Image(systemName: icon)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(isOn ? color : .secondary)
@@ -71,7 +71,7 @@ struct AnimatedHUDToggle: View {
                 
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(isOn ? .white : .secondary)
+                    .foregroundStyle(isOn ? .primary : .secondary)
                 
                 Spacer()
                 
@@ -83,11 +83,11 @@ struct AnimatedHUDToggle: View {
             .padding(.vertical, 12)
             .frame(width: fixedWidth)
             .frame(maxWidth: fixedWidth == nil ? .infinity : nil)
-            .background(Color.white.opacity(isOn ? 0.08 : 0.04))
+            .background((isOn ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isOn ? color.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isOn ? color.opacity(0.3) : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
             .animation(.spring(response: DesignConstants.springResponse, dampingFraction: DesignConstants.springDamping), value: isHovering)
@@ -132,7 +132,7 @@ struct AnimatedHUDToggleWithSubtitle: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isOn ? color.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isOn ? color.opacity(0.2) : AdaptiveColors.buttonBackgroundAuto)
                     Image(systemName: icon)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(isOn ? color : .secondary)
@@ -144,7 +144,7 @@ struct AnimatedHUDToggleWithSubtitle: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(isOn ? .white : .secondary)
+                        .foregroundStyle(isOn ? .primary : .secondary)
                     Text(subtitle)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -159,11 +159,11 @@ struct AnimatedHUDToggleWithSubtitle: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(isOn ? 0.08 : 0.04))
+            .background((isOn ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isOn ? color.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isOn ? color.opacity(0.3) : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .opacity(isEnabled ? 1 : 0.4)
             .scaleEffect(isHovering && isEnabled ? 1.02 : 1.0)
@@ -215,13 +215,13 @@ struct VolumeAndBrightnessToggle: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isEnabled ? Color.white.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isEnabled ? AdaptiveColors.subtleBorderAuto : AdaptiveColors.buttonBackgroundAuto)
                     
                     ZStack {
                         // Volume icon
                         Image(systemName: "speaker.wave.2.fill")
                             .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(isEnabled ? .white : .secondary)
+                            .foregroundStyle(isEnabled ? .primary : .secondary)
                             .opacity(showBrightnessIcon ? 0 : 1)
                             .scaleEffect(showBrightnessIcon ? 0.5 : 1)
                         
@@ -239,7 +239,7 @@ struct VolumeAndBrightnessToggle: View {
                 
                 Text("Volume & Brightness")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(isEnabled ? .white : .secondary)
+                    .foregroundStyle(isEnabled ? .primary : .secondary)
                 
                 Spacer()
                 
@@ -250,11 +250,11 @@ struct VolumeAndBrightnessToggle: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(isEnabled ? 0.08 : 0.04))
+            .background((isEnabled ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isEnabled ? Color.white.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isEnabled ? AdaptiveColors.subtleBorderAuto : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
             .animation(.spring(response: DesignConstants.springResponse, dampingFraction: DesignConstants.springDamping), value: isHovering)
@@ -307,7 +307,7 @@ struct DisplayModeButton<Icon: View>: View {
                 // Icon preview area
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isSelected ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isSelected ? Color.blue.opacity(0.2) : AdaptiveColors.buttonBackgroundAuto)
                     
                     icon
                         .scaleEffect(iconBounce ? 1.2 : 1.0)
@@ -318,7 +318,7 @@ struct DisplayModeButton<Icon: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(isSelected ? .white : .secondary)
+                        .foregroundStyle(isSelected ? .primary : .secondary)
                     if let subtitle = subtitle {
                         Text(subtitle)
                             .font(.system(size: 10))
@@ -335,11 +335,11 @@ struct DisplayModeButton<Icon: View>: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(isSelected ? 0.08 : 0.04))
+            .background((isSelected ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isSelected ? Color.blue.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isSelected ? Color.blue.opacity(0.3) : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .scaleEffect(isPressed ? 0.97 : (isHovering ? 1.02 : 1.0))
             .animation(.spring(response: DesignConstants.springResponse, dampingFraction: DesignConstants.springDamping), value: isHovering)
@@ -387,7 +387,7 @@ struct AnimatedSubSettingToggle: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isOn ? color.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isOn ? color.opacity(0.2) : AdaptiveColors.buttonBackgroundAuto)
                     Image(systemName: icon)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(isOn ? color : .secondary)
@@ -399,7 +399,7 @@ struct AnimatedSubSettingToggle: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(isOn ? .white : .secondary)
+                        .foregroundStyle(isOn ? .primary : .secondary)
                     Text(subtitle)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -414,11 +414,11 @@ struct AnimatedSubSettingToggle: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .background(Color.white.opacity(isOn ? 0.08 : 0.04))
+            .background((isOn ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isOn ? color.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isOn ? color.opacity(0.3) : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
             .animation(.spring(response: DesignConstants.springResponse, dampingFraction: DesignConstants.springDamping), value: isHovering)

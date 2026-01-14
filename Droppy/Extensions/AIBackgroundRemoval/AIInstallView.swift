@@ -38,6 +38,7 @@ enum AIInstallStep: Int, CaseIterable {
 // MARK: - Install View
 
 struct AIInstallView: View {
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @ObservedObject var manager = AIInstallManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
@@ -82,7 +83,7 @@ struct AIInstallView: View {
         }
         .frame(width: 510)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .aiBackgroundRemoval)
@@ -155,7 +156,7 @@ struct AIInstallView: View {
             
             Text(statusTitle)
                 .font(.title2.bold())
-                .foregroundStyle(manager.isInstalled ? .green : .white)
+                .foregroundStyle(manager.isInstalled ? .green : .primary)
                 .animation(.easeInOut(duration: 0.3), value: manager.isInstalled)
             
             // Stats row: installs + rating + category badge
@@ -268,7 +269,7 @@ struct AIInstallView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                            .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                     .padding(.top, 8)
             } placeholder: {
@@ -322,7 +323,7 @@ struct AIInstallView: View {
                         .fontWeight(.medium)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.white.opacity(isHoveringCancel ? 0.15 : 0.1))
+                        .background((isHoveringCancel ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                         .foregroundStyle(.secondary)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
@@ -346,7 +347,7 @@ struct AIInstallView: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(isHoveringReviews ? 0.15 : 0.1))
+                .background((isHoveringReviews ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                 .foregroundStyle(.secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -377,11 +378,11 @@ struct AIInstallView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .background(Color.red.opacity(isHoveringAction ? 1.0 : 0.8))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -407,11 +408,11 @@ struct AIInstallView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                     .background(Color.blue.opacity(isHoveringAction ? 1.0 : 0.85))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -472,11 +473,11 @@ struct AIStepRow: View {
                     }
                 } else {
                     Circle()
-                        .fill(Color.white.opacity(0.15))
+                        .fill(AdaptiveColors.hoverBackgroundAuto)
                         .frame(width: 16, height: 16)
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                         .transition(.opacity)
                 }
@@ -487,7 +488,7 @@ struct AIStepRow: View {
             
             Text(step.title)
                 .font(.system(size: 13, weight: isComplete ? .medium : (isCurrent ? .semibold : .regular)))
-                .foregroundColor(isPending ? Color.secondary : (isComplete ? Color.green : Color.white))
+                .foregroundColor(isPending ? Color.secondary : (isComplete ? Color.green : Color.primary))
             
             Spacer()
         }

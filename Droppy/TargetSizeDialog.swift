@@ -69,7 +69,7 @@ struct TargetSizeDialogView: View {
                         .frame(width: 120)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AdaptiveColors.buttonBackgroundAuto)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -104,12 +104,12 @@ struct TargetSizeDialogView: View {
                         .fontWeight(.medium)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(isCancelButtonHovering ? 0.15 : 0.08))
+                        .background((isCancelButtonHovering ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                         .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -133,11 +133,11 @@ struct TargetSizeDialogView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(Color.blue.opacity(isCompressButtonHovering ? 1.0 : 0.8))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -192,7 +192,7 @@ private struct TargetSizeTextField: NSViewRepresentable {
         textField.isBordered = false
         textField.drawsBackground = false
         textField.backgroundColor = .clear
-        textField.textColor = .white
+        textField.textColor = NSColor.white // Fixed dark mode text color
         textField.font = .systemFont(ofSize: 16, weight: .medium)
         textField.alignment = .left
         textField.focusRingType = .none
@@ -290,7 +290,7 @@ class TargetSizeDialogController {
                 }
             )
             
-            let hostingView = NSHostingView(rootView: dialogView)
+            let hostingView = NSHostingView(rootView: dialogView.preferredColorScheme(.dark)) // Force dark mode
             
             // Use custom CompressPanel that can become key (like BasketPanel)
             let panel = CompressPanel(

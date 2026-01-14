@@ -24,6 +24,7 @@ final class OCRWindowController: NSObject {
         let contentView = OCRResultView(text: text) { [weak self] in
             self?.close()
         }
+        .preferredColorScheme(.dark) // Force dark mode always
         let hostingView = NSHostingView(rootView: contentView)
         
         let newWindow = NSPanel(

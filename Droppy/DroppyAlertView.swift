@@ -102,12 +102,12 @@ struct DroppyAlertView: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.white.opacity(isSecondaryHovering ? 0.15 : 0.08))
+                            .background((isSecondaryHovering ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                             .foregroundStyle(.primary)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                             )
                     }
                     .buttonStyle(.plain)
@@ -128,11 +128,11 @@ struct DroppyAlertView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(Color.blue.opacity(isPrimaryHovering ? 1.0 : 0.8))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -185,7 +185,7 @@ class DroppyAlertController {
                 }
             )
             
-            let hostingView = NSHostingView(rootView: alertView)
+            let hostingView = NSHostingView(rootView: alertView.preferredColorScheme(.dark)) // Force dark mode
             
             let panel = NSPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 420, height: 150),

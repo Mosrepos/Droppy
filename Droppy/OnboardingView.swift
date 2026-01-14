@@ -49,7 +49,7 @@ struct OnboardingToggle: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isOn ? color.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isOn ? color.opacity(0.2) : AdaptiveColors.buttonBackgroundAuto)
                     Image(systemName: icon)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(isOn ? color : .secondary)
@@ -60,7 +60,7 @@ struct OnboardingToggle: View {
                 
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(isOn ? .white : .secondary)
+                    .foregroundStyle(isOn ? .primary : .secondary)
                 
                 Spacer()
                 
@@ -70,11 +70,11 @@ struct OnboardingToggle: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(isOn ? 0.08 : 0.04))
+            .background((isOn ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isOn ? color.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isOn ? color.opacity(0.3) : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
         }
@@ -123,7 +123,7 @@ struct OnboardingDisplayModeButton<Icon: View>: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isSelected ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
+                        .fill(isSelected ? Color.blue.opacity(0.2) : AdaptiveColors.buttonBackgroundAuto)
                     
                     icon
                         .scaleEffect(iconBounce ? 1.2 : 1.0)
@@ -133,7 +133,7 @@ struct OnboardingDisplayModeButton<Icon: View>: View {
                 
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(isSelected ? .white : .secondary)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
                 
                 Spacer()
                 
@@ -143,11 +143,11 @@ struct OnboardingDisplayModeButton<Icon: View>: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(isSelected ? 0.08 : 0.04))
+            .background((isSelected ? AdaptiveColors.buttonBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isSelected ? Color.blue.opacity(0.3) : Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(isSelected ? Color.blue.opacity(0.3) : AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
         }
@@ -169,6 +169,7 @@ struct OnboardingView: View {
     @AppStorage("enableClipboardBeta") private var enableClipboard = true  // ON by default
     @AppStorage("enableHUDReplacement") private var enableHUDs = true
     @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     
     @State private var currentPage: OnboardingPage = .welcome
     @State private var isNextHovering = false
@@ -218,7 +219,7 @@ struct OnboardingView: View {
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .background(Color.white.opacity(isBackHovering ? 0.15 : 0.1))
+                            .background((isBackHovering ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                             .foregroundStyle(.secondary)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
@@ -236,7 +237,7 @@ struct OnboardingView: View {
                     HStack(spacing: 6) {
                         ForEach(OnboardingPage.allCases, id: \.rawValue) { page in
                             Circle()
-                                .fill(page == currentPage ? Color.blue : Color.white.opacity(0.3))
+                                .fill(page == currentPage ? Color.blue : AdaptiveColors.subtleBorderAuto)
                                 .frame(width: 8, height: 8)
                                 .scaleEffect(page == currentPage ? 1.2 : 1.0)
                                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentPage)
@@ -275,11 +276,11 @@ struct OnboardingView: View {
                             (currentPage == .ready ? Color.green : Color.blue)
                                 .opacity(isNextHovering ? 1.0 : 0.85)
                         )
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
@@ -299,8 +300,12 @@ struct OnboardingView: View {
             }
         }
         .frame(width: 680, height: 580)
-        .background(Color.black)
-        .clipped()
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
     
     @ViewBuilder
@@ -350,10 +355,10 @@ struct OnboardingView: View {
             VStack(spacing: 10) {
                 Text("Your all-in-one Mac")
                     .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                 Text("productivity companion")
                     .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             
             VStack(spacing: 8) {
@@ -385,7 +390,7 @@ struct OnboardingView: View {
             
             Text("Everything in one place")
                 .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             // Feature cards - staggered animation
             VStack(spacing: 12) {
@@ -441,7 +446,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Extensions")
                             .font(.headline)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                         Text("AI background removal, Alfred, Spotify, and more")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -452,11 +457,11 @@ struct OnboardingView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color.white.opacity(0.05))
+                .background(AdaptiveColors.buttonBackgroundAuto)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
                 )
                 .opacity(featuresAnimated ? 1 : 0)
                 .offset(y: featuresAnimated ? 0 : 10)
@@ -490,7 +495,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                 Text(description)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -501,11 +506,11 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.white.opacity(0.05))
+        .background(AdaptiveColors.buttonBackgroundAuto)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(AdaptiveColors.buttonBackgroundAuto, lineWidth: 1)
         )
         .opacity(featuresAnimated ? 1 : 0)
         .offset(y: featuresAnimated ? 0 : 10)
@@ -520,7 +525,7 @@ struct OnboardingView: View {
             
             Text("Quick Setup")
                 .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             Text("Toggle the features you want. You can always change these in Settings.")
                 .font(.body)
@@ -557,7 +562,7 @@ struct OnboardingView: View {
                         ) {
                             // Notch icon (simple rounded rectangle)
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(!useDynamicIslandStyle ? Color.blue : Color.white.opacity(0.5))
+                                .fill(!useDynamicIslandStyle ? Color.blue : AdaptiveColors.buttonBackgroundAuto)
                                 .frame(width: 50, height: 16)
                         }
                         
@@ -568,7 +573,7 @@ struct OnboardingView: View {
                         ) {
                             // Dynamic Island icon
                             Capsule()
-                                .fill(useDynamicIslandStyle ? Color.blue : Color.white.opacity(0.5))
+                                .fill(useDynamicIslandStyle ? Color.blue : AdaptiveColors.buttonBackgroundAuto)
                                 .frame(width: 44, height: 14)
                         }
                     }
@@ -605,11 +610,11 @@ struct OnboardingView: View {
             .font(.system(size: 11, weight: .medium, design: .rounded))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.white.opacity(0.12))
+            .background(AdaptiveColors.hoverBackgroundAuto)
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                    .stroke(AdaptiveColors.hoverBackgroundAuto, lineWidth: 0.5)
             )
     }
     
@@ -669,7 +674,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Explore Extensions")
                             .font(.headline)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                         Text("AI background removal, Alfred, Spotify & more")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -682,11 +687,11 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(16)
-                .background(Color.white.opacity(0.06))
+                .background(AdaptiveColors.buttonBackgroundAuto)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -828,19 +833,23 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
                 self?.close()
             }
         }
+        .preferredColorScheme(.dark) // Force dark mode always
         
         let hostingView = NSHostingView(rootView: contentView)
         
-        let newWindow = NSWindow(
+        // Use NSPanel with borderless style to match extension windows (no traffic lights)
+        let newWindow = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 680, height: 580),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         
         newWindow.titlebarAppearsTransparent = true
         newWindow.titleVisibility = .hidden
-        newWindow.backgroundColor = .black
+        newWindow.backgroundColor = .clear  // Clear to allow SwiftUI transparency mode
+        newWindow.isOpaque = false
+        newWindow.hasShadow = true
         newWindow.isMovableByWindowBackground = true
         newWindow.isReleasedWhenClosed = false  // Prevent premature deallocation
         newWindow.delegate = self  // Handle window close

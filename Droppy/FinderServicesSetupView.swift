@@ -12,6 +12,7 @@ import AppKit
 // MARK: - Finder Services Setup View
 
 struct FinderServicesSetupView: View {
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
     @State private var hasOpenedSettings = false
@@ -34,7 +35,7 @@ struct FinderServicesSetupView: View {
         }
         .frame(width: 340)  // Same width as AIInstallView
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.3), radius: 12, y: 6)
     }
@@ -55,7 +56,7 @@ struct FinderServicesSetupView: View {
             
             Text("Enable Finder Services")
                 .font(.title2.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             Text("One-time setup in System Settings")
                 .font(.subheadline)
@@ -82,7 +83,7 @@ struct FinderServicesSetupView: View {
         HStack(spacing: 12) {
             Text("\(number)")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 22, height: 22)
                 .background(Color.blue.opacity(0.6))
                 .clipShape(Circle())
@@ -105,7 +106,7 @@ struct FinderServicesSetupView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(isHoveringCancel ? 0.15 : 0.1))
+                    .background((isHoveringCancel ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                     .foregroundStyle(.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -134,11 +135,11 @@ struct FinderServicesSetupView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
                 .background((hasOpenedSettings ? Color.green : Color.blue).opacity(isHoveringAction ? 1.0 : 0.85))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -164,6 +165,7 @@ struct FinderServicesSetupView: View {
 
 /// Sheet-compatible version that uses @Environment(\.dismiss) like AIInstallView
 struct FinderServicesSetupSheetView: View {
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
@@ -185,7 +187,7 @@ struct FinderServicesSetupSheetView: View {
         }
         .frame(width: 340)  // Same width as AIInstallView
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()  // Same as AIInstallView
     }
     
@@ -205,7 +207,7 @@ struct FinderServicesSetupSheetView: View {
             
             Text("Enable Finder Services")
                 .font(.title2.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             Text("One-time setup in System Settings")
                 .font(.subheadline)
@@ -232,7 +234,7 @@ struct FinderServicesSetupSheetView: View {
         HStack(spacing: 12) {
             Text("\(number)")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 22, height: 22)
                 .background(Color.blue.opacity(0.6))
                 .clipShape(Circle())
@@ -255,7 +257,7 @@ struct FinderServicesSetupSheetView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(isHoveringCancel ? 0.15 : 0.1))
+                    .background((isHoveringCancel ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                     .foregroundStyle(.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -284,11 +286,11 @@ struct FinderServicesSetupSheetView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
                 .background((hasOpenedSettings ? Color.green : Color.blue).opacity(isHoveringAction ? 1.0 : 0.85))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -335,6 +337,7 @@ final class FinderServicesSetupWindowController: NSObject, NSWindowDelegate {
             let view = FinderServicesSetupView {
                 self.close()
             }
+            .preferredColorScheme(.dark) // Force dark mode always
             let hostingView = NSHostingView(rootView: view)
             
             // Create the window - exact same style as sheet presentation

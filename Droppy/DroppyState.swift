@@ -47,6 +47,9 @@ final class DroppyState {
     /// Whether files are being hovered over the basket
     var isBasketTargeted: Bool = false
     
+    /// Whether files are being hovered over the AirDrop zone in the basket
+    var isAirDropZoneTargeted: Bool = false
+    
     /// Whether any rename text field is currently active (blocks spacebar Quick Look)
     var isRenaming: Bool = false
     

@@ -50,7 +50,7 @@ struct DroppedItemView: View {
                     .frame(width: 64, height: 64)
                     .overlay {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
+                            .strokeBorder(Color(NSColor.labelColor).opacity(0.2), lineWidth: 0.5)
                     }
                     .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
                 
@@ -95,7 +95,7 @@ struct DroppedItemView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(width: 72)
-                .foregroundStyle(.primary.opacity(0.9))
+                .foregroundStyle(Color(NSColor.labelColor).opacity(0.9))
         }
         .padding(8)
         .background {
@@ -217,7 +217,7 @@ struct DroppedItemView: View {
         if isSelected {
             return Color.accentColor.opacity(0.15)
         } else if isHovering {
-            return Color.primary.opacity(0.05)
+            return Color(NSColor.labelColor).opacity(0.05)
         }
         return .clear
     }
@@ -226,7 +226,7 @@ struct DroppedItemView: View {
         if isSelected {
             return Color.accentColor.opacity(0.6)
         } else if isHovering {
-            return Color.primary.opacity(0.1)
+            return Color(NSColor.labelColor).opacity(0.1)
         }
         return .clear
     }

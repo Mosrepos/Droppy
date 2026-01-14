@@ -66,7 +66,7 @@ struct AIBackgroundRemovalCard: View {
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
-                                .fill(isInstalled ? Color.green.opacity(0.15) : Color.white.opacity(0.1))
+                                .fill(isInstalled ? Color.green.opacity(0.15) : AdaptiveColors.subtleBorderAuto)
                         )
                 }
             }

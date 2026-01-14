@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 import Combine
 import WhisperKit
 import CoreML
@@ -733,7 +733,7 @@ final class VoiceTranscribeManager: ObservableObject {
         }
         
         // Create export session
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+        guard let _ = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
             // Can't convert, just copy
             return nil
         }
@@ -749,7 +749,7 @@ final class VoiceTranscribeManager: ObservableObject {
         let outputFile = try AVAudioFile(forWriting: destination, settings: format.settings)
         
         let bufferCapacity: AVAudioFrameCount = 4096
-        let inputBuffer = AVAudioPCMBuffer(pcmFormat: sourceFile.processingFormat, frameCapacity: bufferCapacity)!
+        nonisolated(unsafe) let inputBuffer = AVAudioPCMBuffer(pcmFormat: sourceFile.processingFormat, frameCapacity: bufferCapacity)!
         let outputBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: bufferCapacity)!
         
         while true {

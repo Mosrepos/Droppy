@@ -59,7 +59,7 @@ struct ShelfView: View {
         VStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.primary.opacity(0.05))
+                    .fill(Color(NSColor.labelColor).opacity(0.05))
                     .frame(width: 60, height: 60)
                 
                 Image(systemName: "tray.and.arrow.down")

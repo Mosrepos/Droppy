@@ -31,7 +31,8 @@ final class SnapPreviewWindow: NSWindow {
         collectionBehavior = [.canJoinAllSpaces, .stationary]
         
         // Set up SwiftUI content
-        contentView = NSHostingView(rootView: SnapPreviewView())
+        contentView = NSHostingView(rootView: SnapPreviewView()
+            .preferredColorScheme(.dark)) // Force dark mode always
     }
     
     /// Show preview at the given screen-coordinate frame (Y=0 at top)

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct WindowSnapInfoView: View {
+    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
     @State private var shortcuts: [SnapAction: SavedShortcut] = [:]
     @State private var recordingAction: SnapAction?
     @State private var recordMonitor: Any?
@@ -48,7 +49,7 @@ struct WindowSnapInfoView: View {
         }
         .frame(width: 920)  // Wide horizontal layout for shortcut grid
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color.black)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
         .onAppear {
             loadShortcuts()
@@ -79,7 +80,7 @@ struct WindowSnapInfoView: View {
             
             Text("Window Snap")
                 .font(.title2.bold())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             
             // Stats row: installs + rating + category badge
             HStack(spacing: 12) {
@@ -156,7 +157,7 @@ struct WindowSnapInfoView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                            .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
                     )
                     .padding(.top, 8)
             } placeholder: {
@@ -184,7 +185,7 @@ struct WindowSnapInfoView: View {
             HStack {
                 Text("Keyboard Shortcuts")
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 
@@ -262,19 +263,19 @@ struct WindowSnapInfoView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .foregroundStyle(recordingAction == action ? .white : (shortcuts[action] != nil ? .primary : .secondary))
+                .foregroundStyle(recordingAction == action ? .primary : (shortcuts[action] != nil ? .primary : .secondary))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(recordingAction == action ? Color.red.opacity(0.85) : Color.white.opacity(0.08))
+                        .fill(recordingAction == action ? Color.red.opacity(0.85) : AdaptiveColors.buttonBackgroundAuto)
                 )
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.03))
+        .background(AdaptiveColors.buttonBackgroundAuto)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     
@@ -287,7 +288,7 @@ struct WindowSnapInfoView: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(isHoveringClose ? 0.15 : 0.1))
+                    .background((isHoveringClose ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                     .foregroundStyle(.secondary)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -310,7 +311,7 @@ struct WindowSnapInfoView: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(isHoveringReviews ? 0.15 : 0.1))
+                .background((isHoveringReviews ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto))
                 .foregroundStyle(.secondary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }

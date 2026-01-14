@@ -77,6 +77,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         // Set up the view hierarchy
         // 1. Create the SwiftUI view
         let notchView = NotchShelfView(state: DroppyState.shared)
+            .preferredColorScheme(.dark) // Force dark mode always
         let hostingView = NSHostingView(rootView: notchView)
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = CGColor.clear

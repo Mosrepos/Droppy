@@ -66,7 +66,7 @@ struct VoiceTranscribeCard: View {
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
-                                .fill(manager.isModelDownloaded ? Color.green.opacity(0.15) : Color.white.opacity(0.1))
+                                .fill(manager.isModelDownloaded ? Color.green.opacity(0.15) : AdaptiveColors.subtleBorderAuto)
                         )
                 }
             }
@@ -90,7 +90,7 @@ struct VoiceTranscribeCard: View {
                 // Status indicator
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(manager.isModelDownloaded ? Color.green : Color.white.opacity(0.3))
+                        .fill(manager.isModelDownloaded ? Color.green : AdaptiveColors.subtleBorderAuto)
                         .frame(width: 8, height: 8)
                         .overlay(
                             Circle()
