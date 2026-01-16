@@ -738,7 +738,14 @@ struct NotchShelfView: View {
     
     // MARK: - HUD Helper Functions
     
+    /// Check if Settings window is currently visible
+    /// HUDs should not trigger when Settings is open to prevent SwiftUI animation conflicts
+    private var isSettingsWindowVisible: Bool {
+        NSApp.windows.contains { $0.title == "Settings" && $0.isVisible }
+    }
+    
     private func triggerVolumeHUD() {
+        guard !isSettingsWindowVisible else { return }
         hudWorkItem?.cancel()
         hudType = .volume
         // Show 0% when muted to display muted icon, otherwise show actual volume
@@ -757,6 +764,7 @@ struct NotchShelfView: View {
     }
     
     private func triggerBrightnessHUD() {
+        guard !isSettingsWindowVisible else { return }
         hudWorkItem?.cancel()
         hudType = .brightness
         hudValue = CGFloat(brightnessManager.rawBrightness)
@@ -774,6 +782,7 @@ struct NotchShelfView: View {
     }
     
     private func triggerBatteryHUD() {
+        guard !isSettingsWindowVisible else { return }
         batteryHUDWorkItem?.cancel()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             batteryHUDIsVisible = true
@@ -789,6 +798,7 @@ struct NotchShelfView: View {
     }
     
     private func triggerCapsLockHUD() {
+        guard !isSettingsWindowVisible else { return }
         capsLockHUDWorkItem?.cancel()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             capsLockHUDIsVisible = true
@@ -804,6 +814,7 @@ struct NotchShelfView: View {
     }
     
     private func triggerAirPodsHUD() {
+        guard !isSettingsWindowVisible else { return }
         airPodsHUDWorkItem?.cancel()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             airPodsHUDIsVisible = true
@@ -820,6 +831,7 @@ struct NotchShelfView: View {
     }
     
     private func triggerLockScreenHUD() {
+        guard !isSettingsWindowVisible else { return }
         lockScreenHUDWorkItem?.cancel()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             lockScreenHUDIsVisible = true
