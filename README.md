@@ -19,7 +19,7 @@
 ---
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/9e22f125-c4ca-4fa4-836c-9804f36662ef" alt="Droppy Demo" width="100%">
+  <img src="https://github.com/user-attachments/assets/8092ed59-dd49-4f83-978e-7adfeb4f28ff" alt="Droppy Demo" width="100%">
 </p>
 
 <p align="center">
