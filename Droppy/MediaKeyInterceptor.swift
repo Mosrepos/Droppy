@@ -218,7 +218,10 @@ private func mediaKeyCallback(
     }
     
     // Extract data in a controlled scope - the NSEvent is released when scope ends
-    let keyData: MediaKeyData = {
+    // CRITICAL: NSEvent(cgEvent:) must be called on main thread because it internally
+    // calls TSM (Text Services Manager) functions like TSMGetInputSourceProperty for
+    // caps lock handling, which assert main queue. Use sync to avoid race conditions.
+    let keyData: MediaKeyData = DispatchQueue.main.sync {
         guard let nsEvent = NSEvent(cgEvent: event) else {
             return MediaKeyData()
         }
@@ -241,7 +244,7 @@ private func mediaKeyCallback(
         let shouldProcess = (keyDown || keyRepeat) && !keyUp
         
         return MediaKeyData(isValid: true, keyCode: keyCode, shouldProcess: shouldProcess)
-    }()
+    }
     
     // If extraction failed, pass through
     guard keyData.isValid else {
