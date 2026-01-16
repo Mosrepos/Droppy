@@ -32,8 +32,17 @@ struct VoiceTranscribeInfoView: View {
             Divider()
                 .padding(.horizontal, 20)
             
-            // Content - Setup flow
-            setupContent
+            // Main content: HStack with screenshot left, settings right
+            HStack(alignment: .top, spacing: 24) {
+                // Left: Screenshot + Features
+                screenshotSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                
+                // Right: Settings (config, download, shortcuts)
+                settingsSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .padding(.horizontal, 24)
             
             Divider()
                 .padding(.horizontal, 20)
@@ -41,12 +50,15 @@ struct VoiceTranscribeInfoView: View {
             // Action Buttons
             buttonSection
         }
-        .frame(width: 420)
+        .frame(width: 700)  // Wide horizontal layout
         .fixedSize(horizontal: false, vertical: true)
         .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .voiceTranscribe)
+        }
+        .onDisappear {
+            stopRecording()
         }
     }
     
@@ -116,9 +128,49 @@ struct VoiceTranscribeInfoView: View {
         .padding(.bottom, 20)
     }
     
-    // MARK: - Setup Content
+    // MARK: - Screenshot Section (Left)
     
-    private var setupContent: some View {
+    private var screenshotSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Feature rows
+            featureRow(icon: "waveform", text: "On-device transcription using Whisper")
+            featureRow(icon: "bolt.fill", text: "Fast and accurate speech recognition")
+            featureRow(icon: "lock.fill", text: "100% private, no data leaves your Mac")
+            
+            // Screenshot
+            CachedAsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/images/voice-transcribe-screenshot.png")) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
+                    )
+                    .padding(.top, 8)
+            } placeholder: {
+                EmptyView()
+            }
+        }
+        .padding(.vertical, 20)
+    }
+    
+    private func featureRow(icon: String, text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.blue)
+                .frame(width: 24)
+            
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.primary)
+        }
+    }
+    
+    // MARK: - Settings Section (Right)
+    
+    private var settingsSection: some View {
         VStack(spacing: 16) {
             // Configuration Card (Menu Bar + Model + Language)
             VStack(spacing: 0) {
@@ -232,20 +284,7 @@ struct VoiceTranscribeInfoView: View {
             .background(AdaptiveColors.buttonBackgroundAuto)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             
-            // Screenshot loaded from web (cached to prevent flashing)
-            CachedAsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/images/voice-transcribe-screenshot.png")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(AdaptiveColors.subtleBorderAuto, lineWidth: 1)
-                    )
-            } placeholder: {
-                EmptyView()
-            }
-            
+
             // Download Section
             if manager.isDownloading {
                 // Progress bar with cancel button

@@ -26,14 +26,20 @@ struct ElementCaptureInfoView: View {
             // Header
             headerSection
             
-            // Features
-            featuresSection
-            
             Divider()
                 .padding(.horizontal, 20)
             
-            // Shortcut recording section
-            shortcutSection
+            // Main content: HStack with features/screenshot left, shortcuts right
+            HStack(alignment: .top, spacing: 24) {
+                // Left: Features + Screenshot
+                featuresSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                
+                // Right: Keyboard Shortcut
+                shortcutSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .padding(.horizontal, 24)
             
             Divider()
                 .padding(.horizontal, 20)
@@ -41,7 +47,7 @@ struct ElementCaptureInfoView: View {
             // Buttons
             buttonSection
         }
-        .frame(width: 510)
+        .frame(width: 700)  // Wide horizontal layout
         .fixedSize(horizontal: false, vertical: true)
         .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipped()
@@ -155,8 +161,7 @@ struct ElementCaptureInfoView: View {
                 EmptyView()
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 20)
+        .padding(.vertical, 20)
     }
     
     private func featureRow(icon: String, text: String) -> some View {
@@ -215,8 +220,7 @@ struct ElementCaptureInfoView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.vertical, 20)
     }
     
     private var buttonSection: some View {
