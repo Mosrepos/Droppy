@@ -31,6 +31,7 @@ struct SettingsView: View {
     @AppStorage("showMediaPlayer") private var showMediaPlayer = true
     @AppStorage("autoFadeMediaHUD") private var autoFadeMediaHUD = true
     @AppStorage("debounceMediaChanges") private var debounceMediaChanges = false  // Delay media HUD for rapid changes
+    @AppStorage("enableRealAudioVisualizer") private var enableRealAudioVisualizer = false  // Opt-in: requires Screen Recording
     @AppStorage("autoShrinkShelf") private var autoShrinkShelf = true
     @AppStorage("autoShrinkDelay") private var autoShrinkDelay = 3  // Seconds (1-10)
     @AppStorage("autoExpandShelf") private var autoExpandShelf = false  // Auto-expand on hover
@@ -404,6 +405,26 @@ struct SettingsView: View {
                                 Text("Delay preview by 1 second to prevent flickering")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                            }
+                        }
+                        
+                        // Real Audio Visualizer (opt-in for Screen Recording permission)
+                        if #available(macOS 13.0, *) {
+                            Toggle(isOn: $enableRealAudioVisualizer) {
+                                VStack(alignment: .leading) {
+                                    Text("Real Audio Visualizer")
+                                    Text("Requires Screen Recording permission")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .onChange(of: enableRealAudioVisualizer) { _, newValue in
+                                if newValue {
+                                    // Request Screen Recording permission when enabled
+                                    Task {
+                                        await SystemAudioAnalyzer.shared.requestPermission()
+                                    }
+                                }
                             }
                         }
                     }

@@ -214,6 +214,16 @@ struct MediaPlayerView: View {
         .onChange(of: capsLockManager.lastChangeAt) { _, _ in
             triggerInlineHUD(.capsLock, value: capsLockManager.isCapsLockOn ? 1.0 : 0.0)
         }
+        // Right-click context menu to hide the notch/island (same as notch background)
+        .contextMenu {
+            Button("Hide Dynamic Island") {
+                NotchWindowController.shared.setTemporarilyHidden(true)
+            }
+            Divider()
+            Button("Settings...") {
+                SettingsWindowController.shared.showSettings()
+            }
+        }
     }
     
     // MARK: - Universal Inline HUD Trigger

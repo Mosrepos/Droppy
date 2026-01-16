@@ -90,12 +90,25 @@ struct AudioVisualizerBars: View {
 }
 
 /// Shared observer for SystemAudioAnalyzer - manages observer lifecycle
+/// Only uses real audio capture if user has enabled it in Settings (opt-in for privacy)
 @MainActor
 private class AudioVisualizerState: ObservableObject {
     @Published var audioLevel: CGFloat? = nil
     private var cancellable: AnyCancellable?
     
+    /// Whether real audio visualizer is enabled (opt-in for Screen Recording permission)
+    private var enableRealAudioVisualizer: Bool {
+        UserDefaults.standard.bool(forKey: "enableRealAudioVisualizer")
+    }
+    
     func startObserving() {
+        // Only use real audio capture if explicitly enabled by user
+        // This requires Screen Recording permission which we don't want to request by default
+        guard enableRealAudioVisualizer else {
+            audioLevel = nil  // Will use simulation fallback in AudioSpectrumView
+            return
+        }
+        
         if #available(macOS 13.0, *) {
             let analyzer = SystemAudioAnalyzer.shared
             analyzer.addObserver()
@@ -111,8 +124,11 @@ private class AudioVisualizerState: ObservableObject {
     }
     
     func stopObserving() {
-        if #available(macOS 13.0, *) {
-            SystemAudioAnalyzer.shared.removeObserver()
+        // Only remove observer if we actually added one
+        if enableRealAudioVisualizer {
+            if #available(macOS 13.0, *) {
+                SystemAudioAnalyzer.shared.removeObserver()
+            }
         }
         cancellable = nil
         audioLevel = nil
