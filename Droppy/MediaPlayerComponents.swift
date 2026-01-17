@@ -8,17 +8,38 @@ struct InlineHUDView: View {
     let type: InlineHUDType
     let value: CGFloat
     
+    /// Animation trigger value for CapsLock/Focus (boolean-based)
+    private var boolTrigger: Bool {
+        value > 0
+    }
+    
     var body: some View {
         // Equal spacing: Icon (32px) | 10px | Slider | 10px | Text (32px)
         HStack(spacing: 10) {
-            // Icon with smooth symbol transition
-            Image(systemName: type.icon(for: value))
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(type.accentColor)
-                .frame(width: 32, alignment: .trailing) // Same width as text for symmetry
-                .contentTransition(.symbolEffect(.replace.byLayer))
-                .symbolEffect(.bounce, value: value)
-                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: type.icon(for: value))
+            // Icon with smooth symbol transition - matches regular HUD animations
+            Group {
+                switch type {
+                case .capsLock, .focus:
+                    // Toggle-based: bounce.up with downUp transition (same as CapsLock/DND HUDs)
+                    Image(systemName: type.icon(for: value))
+                        .symbolEffect(.bounce.up, value: boolTrigger)
+                        .contentTransition(.symbolEffect(.replace.byLayer.downUp))
+                case .battery:
+                    // State-based: bounce on charging (same as Battery HUD)
+                    Image(systemName: type.icon(for: value))
+                        .symbolEffect(.bounce, value: value)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
+                case .volume, .brightness:
+                    // Value-based: bounce on value change (same as Volume/Brightness HUD)
+                    Image(systemName: type.icon(for: value))
+                        .symbolEffect(.bounce, value: value)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
+                }
+            }
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(type.accentColor)
+            .frame(width: 32, alignment: .trailing) // Same width as text for symmetry
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: type.icon(for: value))
             
             // Slider (visual only) - matches HUDSlider style
             if type.showsSlider {
@@ -57,7 +78,7 @@ struct InlineHUDView: View {
                 .lineLimit(1)
                 .frame(width: 32, alignment: .leading) // Same width as icon for symmetry
                 .contentTransition(.numericText(value: value))
-                .animation(.spring(response: 0.2, dampingFraction: 0.8), value: value)
+                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: value)
         }
         // Match width of center controls
         .frame(width: type.showsSlider ? 160 : 80)
