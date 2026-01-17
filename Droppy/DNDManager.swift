@@ -26,7 +26,6 @@ final class DNDManager: ObservableObject {
     // MARK: - Private State
     private var pollingSource: DispatchSourceTimer?
     private var hasInitialized = false
-    private var pollCount = 0
     
     // Focus mode file path (requires Full Disk Access)
     private let dndPath: String
@@ -101,19 +100,13 @@ final class DNDManager: ObservableObject {
     }
     
     private func checkDNDState() {
-        pollCount += 1
         let (_, newState) = readDNDState()
-        
-        // Log periodically or on change
-        if pollCount % 20 == 0 {
-            print("DNDManager: [\(pollCount)] isDND: \(newState)")
-        }
         
         if isDNDActive != newState {
             isDNDActive = newState
             if hasInitialized {
                 lastChangeAt = Date()
-                print("DNDManager: Focus changed to \(newState ? "ON" : "OFF") - triggering HUD")
+                print("DNDManager: Focus changed to \(newState ? "ON" : "OFF")")
             }
         }
     }
