@@ -127,14 +127,14 @@ struct AirPodsHUDView: View {
             
             // Icon (left) and Battery (right)
             HStack {
-                airPodsIconView(size: 20)
+                airPodsIconView(size: 18)  // Standardized: 18pt for DI
                 Spacer()
-                batteryRingView(size: 22)
+                batteryRingView(size: 20)  // Standardized: 20px for DI
             }
             .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(height: notchHeight)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 14)  // Standardized DI padding
     }
     
     // MARK: - Notch Mode Layout
@@ -143,10 +143,10 @@ struct AirPodsHUDView: View {
         HStack(spacing: 0) {
             // Left wing: AirPods icon near left edge
             HStack {
-                airPodsIconView(size: 24)
+                airPodsIconView(size: 20)  // Standardized: 20pt for notch
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 8)
+            .padding(.leading, 8)  // Standardized notch padding
             .frame(width: wingWidth)
             
             // Camera notch area (spacer)
@@ -156,9 +156,9 @@ struct AirPodsHUDView: View {
             // Right wing: Battery ring near right edge
             HStack {
                 Spacer(minLength: 0)
-                batteryRingView(size: 28)
+                batteryRingView(size: 26)  // Standardized: 26px for notch
             }
-            .padding(.trailing, 8)
+            .padding(.trailing, 8)  // Standardized notch padding
             .frame(width: wingWidth)
         }
         .frame(height: notchHeight)
