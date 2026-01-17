@@ -28,6 +28,7 @@ struct SettingsView: View {
     @AppStorage("enableCapsLockHUD") private var enableCapsLockHUD = true  // Caps Lock indicator
     @AppStorage("enableAirPodsHUD") private var enableAirPodsHUD = true  // AirPods connection HUD
     @AppStorage("enableLockScreenHUD") private var enableLockScreenHUD = true  // Lock/Unlock HUD
+    @AppStorage("enableDNDHUD") private var enableDNDHUD = false  // Focus/DND HUD (requires Full Disk Access)
     @AppStorage("showMediaPlayer") private var showMediaPlayer = true
     @AppStorage("autoFadeMediaHUD") private var autoFadeMediaHUD = true
     @AppStorage("debounceMediaChanges") private var debounceMediaChanges = false  // Delay media HUD for rapid changes
@@ -573,12 +574,29 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    
+                    // Focus/DND HUD
+                    HUDToggleButton(
+                        title: "Focus Mode",
+                        icon: "moon.fill",
+                        isEnabled: $enableDNDHUD,
+                        color: Color(red: 0.55, green: 0.35, blue: 0.95)
+                    )
+                    .onChange(of: enableDNDHUD) { _, newValue in
+                        if newValue {
+                            NotchWindowController.shared.setupNotchWindow()
+                        } else {
+                            if !enableNotchShelf && !enableHUDReplacement && !showMediaPlayer && !enableBatteryHUD && !enableCapsLockHUD && !enableAirPodsHUD && !enableLockScreenHUD {
+                                NotchWindowController.shared.closeWindow()
+                            }
+                        }
+                    }
                 }
                 .padding(.vertical, 4)
             } header: {
                 Text("System HUDs")
             } footer: {
-                Text("Tap to toggle. System HUD requires Accessibility permissions.")
+                Text("Tap to toggle. System HUD requires Accessibility. Focus Mode requires Full Disk Access to detect Focus state changes.")
             }
             
             // MARK: Clipboard (merged from separate tab)
