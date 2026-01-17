@@ -73,13 +73,13 @@ struct CapsLockHUDView: View {
                     Image(systemName: capsLockIcon)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(dynamicIslandColor)
-                        .symbolEffect(.pulse, options: .repeating, value: capsLockManager.isCapsLockOn)
-                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: capsLockManager.isCapsLockOn)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
                         .symbolVariant(.fill)
                         .frame(width: 20, height: 20)
                     
-                    // ON/OFF text - white in transparent mode for readability
-                    Text(capsLockManager.isCapsLockOn ? "ON" : "OFF")
+                    // On/Off text - title case
+                    Text(capsLockManager.isCapsLockOn ? "On" : "Off")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(dynamicIslandColor)
                         .monospacedDigit()
@@ -96,8 +96,8 @@ struct CapsLockHUDView: View {
                         Image(systemName: capsLockIcon)
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(accentColor)
-                            .symbolEffect(.pulse, options: .repeating, value: capsLockManager.isCapsLockOn)
-                            .contentTransition(.symbolEffect(.replace))
+                            .symbolEffect(.bounce, value: capsLockManager.isCapsLockOn)
+                            .contentTransition(.symbolEffect(.replace.byLayer))
                             .symbolVariant(.fill)
                             .frame(width: 26, height: 26)
                         Spacer(minLength: 0)
@@ -112,12 +112,11 @@ struct CapsLockHUDView: View {
                     // Right wing: ON/OFF near right edge
                     HStack {
                         Spacer(minLength: 0)
-                        Text(capsLockManager.isCapsLockOn ? "ON" : "OFF")
+                        Text(capsLockManager.isCapsLockOn ? "On" : "Off")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(accentColor)
-                            .monospacedDigit()
                             .contentTransition(.interpolate)
-                            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: capsLockManager.isCapsLockOn)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: capsLockManager.isCapsLockOn)
                     }
                     .padding(.trailing, 8)  // Balanced with vertical padding
                     .frame(width: wingWidth)

@@ -79,8 +79,8 @@ struct BatteryHUDView: View {
                     Image(systemName: batteryIcon)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(accentColor)
-                        .symbolEffect(.pulse, options: .repeating, value: batteryManager.isCharging)
-                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: batteryManager.isCharging)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
                         .symbolVariant(.fill)
                         .frame(width: 20, height: 20)
                     
@@ -102,8 +102,8 @@ struct BatteryHUDView: View {
                         Image(systemName: batteryIcon)
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(accentColor)
-                            .symbolEffect(.pulse, options: .repeating, value: batteryManager.isCharging)
-                            .contentTransition(.symbolEffect(.replace))
+                            .symbolEffect(.bounce, value: batteryManager.isCharging)
+                            .contentTransition(.symbolEffect(.replace.byLayer))
                             .symbolVariant(.fill)
                             .frame(width: 26, height: 26)
                         Spacer(minLength: 0)
@@ -123,7 +123,7 @@ struct BatteryHUDView: View {
                             .foregroundStyle(accentColor)
                             .monospacedDigit()
                             .contentTransition(.numericText(value: Double(batteryManager.batteryLevel)))
-                            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: batteryManager.batteryLevel)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: batteryManager.batteryLevel)
                     }
                     .padding(.trailing, 8)  // Balanced with vertical padding
                     .frame(width: wingWidth)

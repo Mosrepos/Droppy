@@ -66,17 +66,16 @@ struct DNDHUDView: View {
                 // DYNAMIC ISLAND: Compact horizontal layout
                 // EXACT COPY of CapsLockHUDView Dynamic Island layout
                 HStack(spacing: 12) {
-                    // Focus icon - white in transparent mode for readability
                     Image(systemName: focusIcon)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(dynamicIslandColor)
-                        .symbolEffect(.pulse, options: .repeating, value: dndManager.isDNDActive)
-                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: dndManager.isDNDActive)
+                        .contentTransition(.symbolEffect(.replace.byLayer))
                         .symbolVariant(.fill)
                         .frame(width: 20, height: 20)
                     
-                    // ON/OFF text - white in transparent mode for readability
-                    Text(dndManager.isDNDActive ? "ON" : "OFF")
+                    // On/Off text - title case
+                    Text(dndManager.isDNDActive ? "On" : "Off")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(dynamicIslandColor)
                         .monospacedDigit()
@@ -93,8 +92,8 @@ struct DNDHUDView: View {
                         Image(systemName: focusIcon)
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(accentColor)
-                            .symbolEffect(.pulse, options: .repeating, value: dndManager.isDNDActive)
-                            .contentTransition(.symbolEffect(.replace))
+                            .symbolEffect(.bounce, value: dndManager.isDNDActive)
+                            .contentTransition(.symbolEffect(.replace.byLayer))
                             .symbolVariant(.fill)
                             .frame(width: 26, height: 26)
                         Spacer(minLength: 0)
@@ -109,12 +108,11 @@ struct DNDHUDView: View {
                     // Right wing: ON/OFF near right edge
                     HStack {
                         Spacer(minLength: 0)
-                        Text(dndManager.isDNDActive ? "ON" : "OFF")
+                        Text(dndManager.isDNDActive ? "On" : "Off")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(accentColor)
-                            .monospacedDigit()
                             .contentTransition(.interpolate)
-                            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: dndManager.isDNDActive)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: dndManager.isDNDActive)
                     }
                     .padding(.trailing, 8)  // Balanced with vertical padding
                     .frame(width: wingWidth)

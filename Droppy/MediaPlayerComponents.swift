@@ -16,7 +16,8 @@ struct InlineHUDView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(type.accentColor)
                 .frame(width: 32, alignment: .trailing) // Same width as text for symmetry
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(.symbolEffect(.replace.byLayer))
+                .symbolEffect(.bounce, value: value)
                 .animation(.spring(response: 0.25, dampingFraction: 0.8), value: type.icon(for: value))
             
             // Slider (visual only) - matches HUDSlider style

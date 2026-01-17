@@ -169,7 +169,7 @@ struct NotchShelfView: View {
     
     /// Fixed wing sizes (area left/right of notch for content)  
     /// Using fixed sizes ensures consistent content positioning across all screen resolutions
-    private let volumeWingWidth: CGFloat = 68   // For volume/brightness icons + percentage
+    private let volumeWingWidth: CGFloat = 90   // For volume/brightness - wider for icon + label + slider
     private let batteryWingWidth: CGFloat = 55  // For battery icon + percentage  
     private let mediaWingWidth: CGFloat = 50    // For album art + visualizer
     
@@ -177,7 +177,7 @@ struct NotchShelfView: View {
     /// This ensures wings are FIXED size regardless of notch size
     private var volumeHudWidth: CGFloat {
         if isDynamicIslandMode {
-            return 280  // Smaller for Dynamic Island
+            return 320  // Wider for icon + label + slider layout
         }
         return notchWidth + (volumeWingWidth * 2)
     }

@@ -59,14 +59,14 @@ enum InlineHUDType: Equatable {
         switch self {
         case .volume, .brightness:
             let percent = Int(value * 100)
-            return percent >= 100 ? "MAX" : "\(percent)%"
+            return percent >= 100 ? "Max" : "\(percent)%"
         case .battery:
             let percent = Int(value * 100)
-            return percent >= 100 ? "MAX" : "\(percent)%"
+            return percent >= 100 ? "Full" : "\(percent)%"
         case .capsLock:
-            return value > 0 ? "ON" : "OFF"
+            return value > 0 ? "On" : "Off"
         case .focus:
-            return value > 0 ? "ON" : "OFF"
+            return value > 0 ? "On" : "Off"
         }
     }
     

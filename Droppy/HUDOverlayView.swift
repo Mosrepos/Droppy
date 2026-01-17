@@ -57,18 +57,27 @@ struct NotchHUDView: View {
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
             if isDynamicIslandMode {
-                // DYNAMIC ISLAND: Compact horizontal layout, all content in one row
-                // Standardized sizing: 18px icons, 13pt text, 14px horizontal padding
-                HStack(spacing: 12) {
-                    // Icon - red when muted, yellow for brightness, white for volume
-                    Image(systemName: hudType.icon(for: value))
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(isMuted ? .red : (hudType == .brightness ? .yellow : .white))
-                        .contentTransition(.symbolEffect(.replace))
-                        .symbolVariant(.fill)
-                        .frame(width: 20, height: 20)
+                // DYNAMIC ISLAND: Wide horizontal layout - icon + label on left, slider on right
+                HStack(spacing: 0) {
+                    // Left side: Icon + Label
+                    HStack(spacing: 8) {
+                        Image(systemName: hudType.icon(for: value))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(isMuted ? .red : (hudType == .brightness ? .yellow : .white))
+                            .contentTransition(.symbolEffect(.replace.byLayer))
+                            .symbolEffect(.bounce, value: hudType)
+                            .symbolVariant(.fill)
+                            .frame(width: 20, height: 20)
+                        
+                        Text(hudType == .brightness ? "Brightness" : "Volume")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 110, alignment: .leading)
                     
-                    // Mini slider - expands to fill available space
+                    Spacer(minLength: 16)
+                    
+                    // Right side: Slider
                     HUDSlider(
                         value: $value,
                         accentColor: isMuted ? .red : (hudType == .brightness ? .yellow : .white),
@@ -77,67 +86,54 @@ struct NotchHUDView: View {
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 16)
-                    
-                    // Percentage
-                    Text(hudPercentageText(value))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .monospacedDigit()
-                        .contentTransition(.numericText(value: value))
-                        .frame(width: 40, alignment: .trailing)
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .frame(height: notchHeight)
             } else {
-                // NOTCH MODE: Main HUD - Two wings separated by the notch space
-                // Icons use fixed 16px padding to align with slider edges below
+                // NOTCH MODE: Wide layout - icon + label on left wing, slider on right wing
                 HStack(spacing: 0) {
-                    // Left wing: Icon aligned with slider left edge
-                    HStack {
+                    // Left wing: Icon + Label
+                    HStack(spacing: 8) {
                         Image(systemName: hudType.icon(for: value))
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(isMuted ? .red : (hudType == .brightness ? .yellow : .white))
-                            .contentTransition(.symbolEffect(.replace))
+                            .contentTransition(.symbolEffect(.replace.byLayer))
+                            .symbolEffect(.bounce, value: hudType)
                             .symbolVariant(.fill)
                             .frame(width: 26, height: 26)
-                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hudType.icon(for: value))
+                        
+                        Text(hudType == .brightness ? "Brightness" : "Volume")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        
                         Spacer(minLength: 0)
                     }
-                    .padding(.leading, 16)  // Align with slider's 16px left padding
+                    .padding(.leading, 12)
                     .frame(width: wingWidth)
                     
                     // Camera notch area (spacer)
                     Spacer()
                         .frame(width: notchWidth)
                     
-                    // Right wing: Percentage aligned with slider right edge
+                    // Right wing: Slider
                     HStack {
-                        Spacer(minLength: 0)
-                        Text(hudPercentageText(value))
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .monospacedDigit()
-                            .contentTransition(.numericText(value: value))
-                            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: value)
+                        HUDSlider(
+                            value: $value,
+                            accentColor: isMuted ? .red : (hudType == .brightness ? .yellow : .white),
+                            isActive: isActive,
+                            onChange: onValueChange
+                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 16)
                     }
-                    .padding(.trailing, 16)  // Align with slider's 16px right padding
+                    .padding(.horizontal, 12)
                     .frame(width: wingWidth)
                 }
                 .frame(height: notchHeight)
-                
-                // Below notch: Slider (same style as seek slider in expanded media player)
-                HUDSlider(
-                    value: $value,
-                    accentColor: isMuted ? .red : (hudType == .brightness ? .yellow : .white),
-                    isActive: isActive,
-                    onChange: onValueChange
-                )
-                .frame(height: 20)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 4)
-                .animation(.spring(response: 0.15, dampingFraction: 0.8), value: value)
             }
         }
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: value)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: hudType)
     }
 }
 
