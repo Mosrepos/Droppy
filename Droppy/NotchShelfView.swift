@@ -899,7 +899,9 @@ struct NotchShelfView: View {
     
     /// Starts the auto-shrink timer when the shelf is expanded
     private func startAutoShrinkTimer() {
-        guard autoShrinkShelf && isExpandedOnThisScreen else { return }
+        // v8.1.2: REMOVED autoShrinkShelf check - auto-collapse is always enabled now
+        // The legacy setting may still be `false` for older users, which broke auto-collapse
+        guard isExpandedOnThisScreen else { return }
         
         // Cancel any existing timer
         autoShrinkWorkItem?.cancel()
