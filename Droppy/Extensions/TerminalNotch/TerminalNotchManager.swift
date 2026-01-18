@@ -234,7 +234,7 @@ class TerminalNotchManager: ObservableObject {
             let process = Process()
             let pipe = Pipe()
             
-            process.executableURL = URL(fileURLWithPath: shellPath)
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             // Use -l for login shell (sources profile with PATH including brew)
             // and -c to run the command
             process.arguments = ["-l", "-c", command]
