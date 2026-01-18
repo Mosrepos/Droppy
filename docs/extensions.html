@@ -800,6 +800,29 @@
             <div class="extension-tags"><span class="extension-tag">Video</span><span
                     class="extension-tag">Compression</span></div>
         </div>
+
+        <div class="extension-card" data-extension="termi-notch" data-category="productivity">
+            <div class="extension-header">
+                <img src="assets/icons/termi-notch.jpg" alt="Termi-Notch" class="extension-icon">
+                <div class="extension-meta">
+                    <h3>Termi-Notch</h3><span>Productivity</span>
+                </div>
+            </div>
+            <div class="extension-stats">
+                <div class="stat-item"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg><span class="stat-value" data-install-count="termi-notch">0</span> installs</div>
+                <div class="stat-item"><svg fill="currentColor" viewBox="0 0 24 24">
+                        <path
+                            d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg><span class="stat-value" data-rating="termi-notch">—</span><span
+                        data-rating-count="termi-notch">(0)</span></div>
+            </div>
+            <p class="extension-description">Quick terminal access from your notch. Run commands instantly with a custom
+                shortcut or by clicking the terminal icon in the expanded shelf.</p>
+            <div class="extension-tags"><span class="extension-tag">Terminal</span><span
+                    class="extension-tag">Productivity</span></div>
+        </div>
     </div>
 
     <div class="modal-overlay" id="modal">
@@ -881,7 +904,8 @@
             'spotify': 'spotify',
             'voice-transcribe': 'voiceTranscribe',
             'window-snap': 'windowSnap',
-            'video-target-size': 'ffmpegVideoCompression'
+            'video-target-size': 'ffmpegVideoCompression',
+            'termi-notch': 'terminalNotch'
         };
 
         // Extension data with screenshots
@@ -893,7 +917,8 @@
             'spotify': { icon: 'assets/icons/spotify.png', title: 'Spotify Integration', category: 'Media', deepUrl: 'droppy://extension/spotify', screenshot: 'assets/images/spotify-screenshot.jpg', description: 'Control Spotify playback directly from your notch. See album art, track info, and playback controls without switching apps.', features: ['Now Playing widget in notch', 'Playback controls', 'Volume adjustment', 'Album artwork display', 'Keyboard shortcuts'] },
             'voice-transcribe': { icon: 'assets/icons/voice-transcribe.jpg', title: 'Voice Transcribe', category: 'AI', deepUrl: 'droppy://extension/voice-transcribe', screenshot: 'assets/images/voice-transcribe-screenshot.png', description: 'Transcribe audio recordings to text using WhisperKit AI. 100% on-device processing means your voice never leaves your Mac—completely private.', features: ['On-device Whisper AI', 'Multiple language support', 'Audio file upload', 'Real-time transcription', 'Export to text'] },
             'window-snap': { icon: 'assets/icons/window-snap.jpg', title: 'Window Snap', category: 'Productivity', deepUrl: 'droppy://extension/window-snap', screenshot: 'assets/images/window-snap-screenshot.png', description: 'Snap windows to halves, quarters, thirds, or full screen with customizable keyboard shortcuts. Multi-monitor support included.', features: ['Keyboard shortcuts', 'Custom snap areas', 'Multi-monitor support', 'Edge snapping', 'Remembers positions'] },
-            'video-target-size': { icon: 'assets/icons/video-target-size.png', title: 'Video Target Size', category: 'Media', deepUrl: 'droppy://extension/video-target-size', screenshot: 'assets/images/video-target-size-screenshot.png', description: 'Compress videos to exact file sizes using FFmpeg two-pass encoding. Perfect for Discord, email, or social media limits.', features: ['Exact file size targeting', 'Two-pass encoding', 'H.264/AAC output', 'One-time FFmpeg install', 'Fast processing'] }
+            'video-target-size': { icon: 'assets/icons/video-target-size.png', title: 'Video Target Size', category: 'Media', deepUrl: 'droppy://extension/video-target-size', screenshot: 'assets/images/video-target-size-screenshot.png', description: 'Compress videos to exact file sizes using FFmpeg two-pass encoding. Perfect for Discord, email, or social media limits.', features: ['Exact file size targeting', 'Two-pass encoding', 'H.264/AAC output', 'One-time FFmpeg install', 'Fast processing'] },
+            'termi-notch': { icon: 'assets/icons/termi-notch.jpg', title: 'Termi-Notch', category: 'Productivity', deepUrl: 'droppy://extension/termi-notch', screenshot: 'assets/images/terminal-notch-screenshot.png', description: 'Quick terminal access from your notch. Run commands instantly with a custom shortcut or by clicking the terminal icon in the expanded shelf.', features: ['Full terminal emulation', 'Custom keyboard shortcut', 'Quick command mode', 'Expanded mode for output', 'Open in Terminal.app'] }
         };
 
         let installCounts = {}, ratings = {}, currentExtension = null;
