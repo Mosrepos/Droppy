@@ -1050,18 +1050,19 @@ struct NotchShelfView: View {
             .zIndex(7)
         }
         
-        // Pomodoro Timer HUD
-        if pomodoroManager.showHUD && enablePomodoroTimer && !hudIsVisible && !batteryHUDIsVisible && !isExpandedOnThisScreen {
+        // Pomodoro Timer HUD - uses same width as Volume/Brightness for proper full-width display
+        // Exclude from all other HUDs to prevent overlap
+        if pomodoroManager.showHUD && enablePomodoroTimer && !hudIsVisible && !batteryHUDIsVisible && !capsLockHUDIsVisible && !airPodsHUDIsVisible && !lockScreenHUDIsVisible && !dndHUDIsVisible && !isExpandedOnThisScreen {
             PomodoroHUDView(
                 pomodoroManager: pomodoroManager,
                 notchWidth: notchWidth,
                 notchHeight: notchHeight,
-                hudWidth: batteryHudWidth,
+                hudWidth: currentHudTypeWidth,  // Use full Volume/Brightness width
                 targetScreen: targetScreen
             )
-            .frame(width: batteryHudWidth, height: notchHeight)
+            .frame(width: currentHudTypeWidth, height: notchHeight)
             .transition(.scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.25, dampingFraction: 0.8)))
-            .zIndex(4.5) // Between Battery (4) and Caps Lock (5)
+            .zIndex(3.5) // Just above media (3), below battery (4)
         }
     }
     
@@ -1092,7 +1093,7 @@ struct NotchShelfView: View {
     
     // MARK: - Pomodoro Reveal Overlay
     
-    /// Invisible hit zone on right edge of expanded shelf - drag left to reveal Pomodoro timer
+    /// Invisible hit zone on right edge of expanded shelf - drag RIGHT to "pull out" the timer
     private var pomodoroRevealOverlay: some View {
         HStack {
             Spacer()
@@ -1104,7 +1105,7 @@ struct NotchShelfView: View {
                     .frame(width: 50)
                     .contentShape(Rectangle())
                 
-                // Timer icon that follows the drag
+                // Timer icon that follows the drag (moves right as you pull)
                 if isRevealingPomodoro {
                     PomodoroRevealView(offset: pomodoroRevealOffset, isRevealing: isRevealingPomodoro)
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
@@ -1122,18 +1123,18 @@ struct NotchShelfView: View {
             .gesture(
                 DragGesture(minimumDistance: 5)
                     .onChanged { value in
-                        // Only respond to leftward drags
-                        if value.translation.width < 0 {
+                        // Only respond to RIGHTWARD drags (pulling OUT of shelf)
+                        if value.translation.width > 0 {
                             withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.7)) {
                                 isRevealingPomodoro = true
-                                // Clamp the offset (negative = dragging left)
-                                pomodoroRevealOffset = max(value.translation.width, -120)
+                                // Clamp the offset (positive = dragging right)
+                                pomodoroRevealOffset = min(value.translation.width, 120)
                             }
                         }
                     }
                     .onEnded { value in
-                        // If dragged far enough left, trigger the timer
-                        if value.translation.width < -60 {
+                        // If dragged far enough right, trigger the timer
+                        if value.translation.width > 60 {
                             // Success - start timer with default preset
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                                 pomodoroManager.start()
