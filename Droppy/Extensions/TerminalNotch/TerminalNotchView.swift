@@ -79,7 +79,7 @@ struct TerminalNotchView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                 }
-                .frame(maxHeight: 120)
+                .frame(maxHeight: 200)
             }
         }
     }

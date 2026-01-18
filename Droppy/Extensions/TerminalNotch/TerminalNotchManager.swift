@@ -221,15 +221,9 @@ class TerminalNotchManager: ObservableObject {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 let output = String(data: data, encoding: .utf8) ?? ""
                 
-                // Trim and limit output for quick mode
+                // Return full output - the view will handle scrolling
                 let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                let lines = trimmed.components(separatedBy: "\n")
-                if lines.count > 10 {
-                    let preview = lines.prefix(10).joined(separator: "\n")
-                    continuation.resume(returning: preview + "\n... (\(lines.count - 10) more lines)")
-                } else {
-                    continuation.resume(returning: trimmed)
-                }
+                continuation.resume(returning: trimmed)
             } catch {
                 continuation.resume(throwing: error)
             }
