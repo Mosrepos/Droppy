@@ -448,7 +448,7 @@ struct TerminalNotchInfoView: View {
         
         // Track installation
         Task {
-            await AnalyticsService.shared.trackExtensionActivation(extensionId: "terminalNotch")
+            AnalyticsService.shared.trackExtensionActivation(extensionId: "terminalNotch")
         }
         
         // Post notification
