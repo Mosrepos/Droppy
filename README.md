@@ -68,7 +68,7 @@ Never lose a copy again. Your **full clipboard history** with instant search, fa
 **Jiggle your mouse** to summon a floating basket anywhere on screen. Drop files in, push to shelf, convert formats, compress, extract text, remove backgrounds, share—all from a beautiful context menu. Enable drag-to-summon for instant access, and enjoy smooth **peek and hide** animations.
 
 <p align="center">
-  <img src="docs/assets/images/floating-basket.png" alt="Floating Basket" width="100%">
+  <img src="docs/assets/images/basket-demo.gif" alt="Floating Basket" width="100%">
 </p>
 
 ---
