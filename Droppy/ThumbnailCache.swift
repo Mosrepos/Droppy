@@ -8,6 +8,7 @@
 
 import AppKit
 import Foundation
+import QuickLookThumbnailing
 
 /// Centralized cache for clipboard image thumbnails
 /// Uses NSCache for automatic memory pressure eviction
@@ -38,6 +39,29 @@ final class ThumbnailCache {
         // Icon cache (very small, just file icons)
         iconCache.countLimit = 200
         iconCache.totalCostLimit = 512 * 1024 // 512KB max
+        
+        // Preload QuickLook's Metal shaders to eliminate first-drop lag
+        warmupQuickLook()
+    }
+    
+    /// Warms up QuickLook's thumbnail generator to preload Metal shaders
+    /// This eliminates the ~1 second lag on first file drop by forcing the
+    /// IconRendering.framework Metal shaders to load during app startup
+    private func warmupQuickLook() {
+        Task.detached(priority: .background) {
+            // Use a system file that always exists for warmup
+            let warmupURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+            
+            let request = QLThumbnailGenerator.Request(
+                fileAt: warmupURL,
+                size: CGSize(width: 32, height: 32),
+                scale: 1.0,
+                representationTypes: .thumbnail
+            )
+            
+            // Generate a throwaway thumbnail to trigger Metal shader compilation
+            _ = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+        }
     }
     
     /// Get or create a thumbnail for the given clipboard item

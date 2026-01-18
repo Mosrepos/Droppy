@@ -186,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = UpdateChecker.shared
         _ = ClipboardManager.shared
         _ = ClipboardWindowController.shared
+        _ = ThumbnailCache.shared  // Warmup QuickLook Metal shaders early
         
         // Load Element Capture and Window Snap shortcuts (after all other singletons are ready)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
