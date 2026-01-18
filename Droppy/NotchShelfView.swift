@@ -341,6 +341,20 @@ struct NotchShelfView: View {
     }
     
     private var currentExpandedHeight: CGFloat {
+        // TERMINAL: Expanded height when terminal has output
+        if terminalManager.isInstalled && terminalManager.isVisible {
+            // Base height for terminal (same as media player)
+            let baseTerminalHeight: CGFloat = 140
+            let topPaddingDelta: CGFloat = isDynamicIslandMode ? 0 : (notchHeight - 14)
+            let terminalHeight = baseTerminalHeight + topPaddingDelta
+            
+            // Add 30% extra height when there's output to display
+            if !terminalManager.lastOutput.isEmpty {
+                return terminalHeight * 1.3
+            }
+            return terminalHeight
+        }
+        
         // Determine if we're showing media player or shelf
         let shouldShowMediaPlayer = musicManager.isMediaHUDForced || 
             ((musicManager.isPlaying || musicManager.wasRecentlyPlaying) && !musicManager.isMediaHUDHidden && state.items.isEmpty)
