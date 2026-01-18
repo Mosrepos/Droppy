@@ -76,9 +76,6 @@ struct SwiftTermView: NSViewRepresentable {
         // Convert environment to array format (KEY=VALUE)
         let envArray = env.map { "\($0.key)=\($0.value)" }
         
-        // Home directory for starting location
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        
         // Start the process
         // args: [loginShellName] means the shell sees itself as a login shell
         // execName: is what goes in argv[0]
