@@ -641,8 +641,9 @@ final class NotchWindowController: NSObject, ObservableObject {
                 return nil // Consume the event
             }
             
-            // Cmd+A selects all shelf items
-            if event.keyCode == 0, event.modifierFlags.contains(.command) {
+            // Cmd+A selects all shelf items (but NOT when terminal is visible - let text selection work)
+            if event.keyCode == 0, event.modifierFlags.contains(.command),
+               !(TerminalNotchManager.shared.isInstalled && TerminalNotchManager.shared.isVisible) {
                 DroppyState.shared.selectAll()
                 return nil // Consume the event
             }
