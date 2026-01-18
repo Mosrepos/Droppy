@@ -46,6 +46,7 @@ struct SettingsView: View {
     @State private var isHistoryLimitEditing: Bool = false
     @State private var isUpdateHovering = false
     @State private var showDNDAccessAlert = false  // Full Disk Access alert for Focus Mode HUD
+    @State private var showMenuBarHiddenWarning = false  // Warning when hiding menu bar icon (Issue #57)
     
     // Hover states for sidebar items
     @State private var hoverFeatures = false
@@ -918,13 +919,32 @@ struct SettingsView: View {
         Group {
             // MARK: Startup (merged from Features tab)
             Section {
-                Toggle(isOn: $showInMenuBar) {
+                Toggle(isOn: Binding(
+                    get: { showInMenuBar },
+                    set: { newValue in
+                        if newValue {
+                            // Enabling - just set it
+                            showInMenuBar = true
+                        } else {
+                            // Disabling - show warning first, then set
+                            showMenuBarHiddenWarning = true
+                        }
+                    }
+                )) {
                     VStack(alignment: .leading) {
                         Text("Menu Bar Icon")
                         Text("Display Droppy icon in the menu bar")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                }
+                .alert("Menu Bar Icon Hidden", isPresented: $showMenuBarHiddenWarning) {
+                    Button("Hide Icon") {
+                        showInMenuBar = false
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("You can always access Settings by right-clicking on the Notch or Dynamic Island at the top of your screen.")
                 }
                 
                 Toggle(isOn: Binding(

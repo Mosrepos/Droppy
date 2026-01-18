@@ -162,6 +162,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Crash detection: Mark this session as started (will be cleared on clean exit)
         CrashReporter.shared.markSessionStarted()
         
+        // MIGRATION (Issue #57): Re-enable menu bar for users who locked themselves out
+        // This runs once per user to unlock anyone who disabled the menu bar before this fix
+        if !UserDefaults.standard.bool(forKey: "didMigrateMenuBarLockout") {
+            UserDefaults.standard.set(true, forKey: "didMigrateMenuBarLockout")
+            // If menu bar was hidden, re-enable it to prevent lock-out
+            if !UserDefaults.standard.bool(forKey: "showInMenuBar") {
+                UserDefaults.standard.set(true, forKey: "showInMenuBar")
+                print("🔓 Droppy: Re-enabled menu bar icon (Issue #57 migration)")
+            }
+        }
+        
         // Set as accessory app (no dock icon)
         NSApp.setActivationPolicy(.accessory)
         

@@ -61,6 +61,9 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Monitor for right-click events when notch is hidden (to re-show)
     private var hiddenRightClickMonitor: Any?
     
+    /// Monitor for global right-click events (context menu access in idle state) - Issue #57 fix
+    private var globalRightClickMonitor: Any?
+    
     /// Shared instance
     static let shared = NotchWindowController()
     
@@ -447,6 +450,46 @@ final class NotchWindowController: NSObject, ObservableObject {
             }
         }
         
+        // GLOBAL RIGHT-CLICK MONITOR (Issue #57 Fix) - Enable context menu access in idle state
+        // When window has ignoresMouseEvents=true, right-clicks don't reach the SwiftUI view.
+        // This monitor catches right-clicks on the notch area and programmatically shows the context menu.
+        globalRightClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+            guard let self = self,
+                  UserDefaults.standard.bool(forKey: "enableNotchShelf") else { return }
+            
+            let mouseLocation = NSEvent.mouseLocation
+            
+            // Find the window whose screen contains the mouse
+            guard let (targetWindow, targetScreen) = self.findWindowForMouseLocation(mouseLocation) else { return }
+            
+            // Get the notch rect and create a click zone
+            let notchRect = targetWindow.getNotchRect()
+            let screenTopY = targetScreen.frame.maxY
+            let upwardExpansion = max(0, screenTopY - notchRect.maxY)
+            
+            let clickZone = NSRect(
+                x: notchRect.origin.x - 10,
+                y: notchRect.origin.y,
+                width: notchRect.width + 20,
+                height: notchRect.height + upwardExpansion
+            )
+            
+            // Check if right-click is in the notch zone
+            if clickZone.contains(mouseLocation) {
+                // Right-click on notch - activate hover state so window accepts events,
+                // then the SwiftUI contextMenu will handle the actual menu display
+                DispatchQueue.main.async {
+                    // First, make sure the window is "awake" to receive the context menu
+                    DroppyState.shared.isMouseHovering = true
+                    targetWindow.ignoresMouseEvents = false
+                    
+                    // Open settings directly since context menu may not trigger reliably
+                    // from a global monitor. Users right-clicking the notch want settings access.
+                    SettingsWindowController.shared.showSettings()
+                }
+            }
+        }
+        
         // Local monitor catches movement AND clicks when mouse is over the Notch window
         // Global monitor only catches events from OTHER apps - we need local for our own window
         // Also handles closing shelf when clicking outside the shelf area
@@ -773,6 +816,11 @@ final class NotchWindowController: NSObject, ObservableObject {
         if let monitor = localScrollMonitor {
             NSEvent.removeMonitor(monitor)
             localScrollMonitor = nil
+        }
+        
+        if let monitor = globalRightClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalRightClickMonitor = nil
         }
     }
     
