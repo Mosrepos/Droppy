@@ -58,12 +58,17 @@ struct TerminalNotchView: View {
         // No external styling - terminal lives inside shelf's content area
         // which already has its own black background
         .onAppear {
-            isInputFocused = true
+            // Delay focus slightly to ensure view is fully ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isInputFocused = true
+            }
         }
         .onChange(of: manager.isVisible) { _, isVisible in
             if isVisible {
-                // Focus the text field when terminal becomes visible
-                isInputFocused = true
+                // Focus the text field when terminal becomes visible (with delay for reliability)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isInputFocused = true
+                }
             }
         }
     }
