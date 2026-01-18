@@ -20,6 +20,15 @@ struct DroppyApp: App {
         _ = IconCache.shared
         // Also trigger QuickLook warmup
         _ = ThumbnailCache.shared
+        
+        // NUCLEAR OPTION: Simulate the ENTIRE drop code path to trigger whatever Metal shader it uses
+        // This creates a temporary DroppedItem and immediately discards it
+        let warmupURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        let warmupItem = DroppedItem(url: warmupURL)
+        // Access all properties that might trigger lazy Metal compilation
+        _ = warmupItem.icon
+        _ = warmupItem.name
+        _ = warmupItem.fileType
     }
     
     @AppStorage("showInMenuBar") private var showInMenuBar = true
