@@ -12,18 +12,15 @@ import SwiftUI
 /// Matches BatteryHUDView layout exactly: icon on left wing, ON/OFF on right wing
 struct CapsLockHUDView: View {
     @ObservedObject var capsLockManager: CapsLockManager
-    let notchWidth: CGFloat   // Physical notch width
-    let notchHeight: CGFloat  // Physical notch height
     let hudWidth: CGFloat     // Total HUD width
     var targetScreen: NSScreen? = nil  // Target screen for multi-monitor support
     
-    /// Width of each "wing" (area left/right of physical notch)
-    private var wingWidth: CGFloat {
-        (hudWidth - notchWidth) / 2
+    /// Centralized layout calculator - Single Source of Truth
+    private var layout: HUDLayoutCalculator {
+        HUDLayoutCalculator(screen: targetScreen ?? NSScreen.main ?? NSScreen.screens.first!)
     }
     
     /// Accent color based on Caps Lock state (matches battery green/white scheme)
-    /// In transparent DI mode, always use white for readability
     private var accentColor: Color {
         capsLockManager.isCapsLockOn ? .green : .white
     }
@@ -33,48 +30,18 @@ struct CapsLockHUDView: View {
         capsLockManager.isCapsLockOn ? "capslock.fill" : "capslock"
     }
     
-    /// Whether we're in Dynamic Island mode (screen-aware for multi-monitor)
-    /// For HUD LAYOUT purposes: external displays always use compact layout (no physical notch)
-    private var isDynamicIslandMode: Bool {
-        let screen = targetScreen ?? NSScreen.main ?? NSScreen.screens.first
-        guard let screen = screen else { return true }
-        let hasNotch = screen.safeAreaInsets.top > 0
-        let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
-        
-        // External displays never have physical notches, so always use compact HUD layout
-        // The externalDisplayUseDynamicIsland setting only affects the visual shape, not HUD content layout
-        if !screen.isBuiltIn {
-            return true
-        }
-        
-        // For built-in display, use main Dynamic Island setting
-        let useDynamicIsland = UserDefaults.standard.object(forKey: "useDynamicIslandStyle") as? Bool ?? true
-        return (!hasNotch || forceTest) && useDynamicIsland
-    }
-    
-    /// Whether transparent Dynamic Island mode is enabled
-    private var isTransparentDI: Bool {
-        isDynamicIslandMode && UserDefaults.standard.bool(forKey: "useDynamicIslandTransparent")
-    }
-    
-    /// Color for Dynamic Island mode - white for transparent, accent color otherwise
-    private var dynamicIslandColor: Color {
-        isTransparentDI ? .white : accentColor
-    }
-    
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
-            if isDynamicIslandMode {
+            if layout.isDynamicIslandMode {
                 // DYNAMIC ISLAND: Icon on left edge, On/Off on right edge
-                // Using Droppy pattern: padding = (notchHeight - iconHeight) / 2 for symmetry
-                let iconSize: CGFloat = 18
-                let symmetricPadding = (notchHeight - iconSize) / 2
+                let iconSize = layout.iconSize
+                let symmetricPadding = layout.symmetricPadding(for: iconSize)
                 
                 HStack {
                     // Caps Lock icon - .leading alignment within frame
                     Image(systemName: capsLockIcon)
                         .font(.system(size: iconSize, weight: .semibold))
-                        .foregroundStyle(dynamicIslandColor)
+                        .foregroundStyle(layout.adjustedColor(accentColor))
                         .symbolEffect(.bounce.up, value: capsLockManager.isCapsLockOn)
                         .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                         .frame(width: 20, height: iconSize, alignment: .leading)
@@ -83,23 +50,23 @@ struct CapsLockHUDView: View {
                     
                     // On/Off text
                     Text(capsLockManager.isCapsLockOn ? "On" : "Off")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dynamicIslandColor)
+                        .font(.system(size: layout.labelFontSize, weight: .semibold))
+                        .foregroundStyle(layout.adjustedColor(accentColor))
                         .contentTransition(.interpolate)
                 }
-                .padding(.horizontal, symmetricPadding)  // Same as vertical for symmetry
-                .frame(height: notchHeight)
+                .padding(.horizontal, symmetricPadding)
+                .frame(height: layout.notchHeight)
             } else {
                 // NOTCH MODE: Two wings separated by the notch space
-                // Using Droppy pattern: 20px icons with symmetricPadding for outer-wing alignment
-                let iconSize: CGFloat = 20
-                let symmetricPadding = max((notchHeight - iconSize) / 2, 6)  // Min 6px for visibility
+                let iconSize = layout.iconSize
+                let symmetricPadding = layout.symmetricPadding(for: iconSize)
+                let wingWidth = layout.wingWidth(for: hudWidth)
                 
                 HStack(spacing: 0) {
                     // Left wing: Caps Lock icon near left edge
                     HStack {
                         Image(systemName: capsLockIcon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: iconSize, weight: .semibold))
                             .foregroundStyle(accentColor)
                             .symbolEffect(.bounce.up, value: capsLockManager.isCapsLockOn)
                             .contentTransition(.symbolEffect(.replace.byLayer.downUp))
@@ -111,13 +78,13 @@ struct CapsLockHUDView: View {
                     
                     // Camera notch area (spacer)
                     Spacer()
-                        .frame(width: notchWidth)
+                        .frame(width: layout.notchWidth)
                     
                     // Right wing: ON/OFF near right edge
                     HStack {
                         Spacer(minLength: 0)
                         Text(capsLockManager.isCapsLockOn ? "On" : "Off")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: layout.labelFontSize, weight: .semibold))
                             .foregroundStyle(accentColor)
                             .contentTransition(.interpolate)
                             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: capsLockManager.isCapsLockOn)
@@ -125,7 +92,7 @@ struct CapsLockHUDView: View {
                     .padding(.trailing, symmetricPadding)
                     .frame(width: wingWidth)
                 }
-                .frame(height: notchHeight)
+                .frame(height: layout.notchHeight)
             }
         }
     }
@@ -136,8 +103,6 @@ struct CapsLockHUDView: View {
         Color.black
         CapsLockHUDView(
             capsLockManager: CapsLockManager.shared,
-            notchWidth: 180,
-            notchHeight: 32,
             hudWidth: 300
         )
     }

@@ -13,7 +13,7 @@ struct DroppyApp: App {
     /// App delegate for handling app lifecycle and notch window setup
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
-    @AppStorage("showInMenuBar") private var showInMenuBar = true
+    @AppStorage(AppPreferenceKey.showInMenuBar) private var showInMenuBar = PreferenceDefault.showInMenuBar
     
     var body: some Scene {
         MenuBarExtra("Droppy", image: "MenuBarIcon", isInserted: $showInMenuBar) {
@@ -31,7 +31,7 @@ struct DroppyMenuContent: View {
     @ObservedObject private var notchController = NotchWindowController.shared
     
     // Check if shelf is enabled (to conditionally show hide/show option)
-    @AppStorage("enableNotchShelf") private var enableNotchShelf = true
+    @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
     
     // Check if extensions are disabled
     private var isElementCaptureDisabled: Bool {
@@ -145,11 +145,6 @@ struct DroppyMenuContent: View {
     }
 }
 
-// Notification for shortcut changes
-extension Notification.Name {
-    static let elementCaptureShortcutChanged = Notification.Name("elementCaptureShortcutChanged")
-}
-
 /// App delegate to manage application lifecycle and notch window
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Must be stored as property to stay alive (services won't work if deallocated)
@@ -170,6 +165,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !UserDefaults.standard.bool(forKey: "showInMenuBar") {
                 UserDefaults.standard.set(true, forKey: "showInMenuBar")
                 print("🔓 Droppy: Re-enabled menu bar icon (Issue #57 migration)")
+            }
+        }
+        
+        // MIGRATION: Enable shelf AirDrop zone by default for existing users who never explicitly set it
+        // New users get true by default, existing users who already have it set keep their preference
+        if !UserDefaults.standard.bool(forKey: "didMigrateShelfAirDropDefault") {
+            UserDefaults.standard.set(true, forKey: "didMigrateShelfAirDropDefault")
+            // Only set if user has never explicitly set this preference (key doesn't exist yet)
+            if UserDefaults.standard.object(forKey: "enableShelfAirDropZone") == nil {
+                UserDefaults.standard.set(true, forKey: "enableShelfAirDropZone")
+                print("✈️ Droppy: Enabled shelf AirDrop zone (new default migration)")
             }
         }
         

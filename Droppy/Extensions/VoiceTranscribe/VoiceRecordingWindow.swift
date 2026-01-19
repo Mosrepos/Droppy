@@ -132,7 +132,7 @@ final class VoiceRecordingWindowController {
 
 struct VoiceRecordingOverlayView: View {
     let controller: VoiceRecordingWindowController
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @ObservedObject var manager = VoiceTranscribeManager.shared
     @State private var isPulsing = false
     @State private var isHoveringButton = false

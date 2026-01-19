@@ -22,11 +22,11 @@ import SwiftUI
 /// A floating basket view that appears during file drags as an alternative drop zone
 struct FloatingBasketView: View {
     @Bindable var state: DroppyState
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
-    @AppStorage("showClipboardButton") private var showClipboardButton = false
-    @AppStorage("enableNotchShelf") private var enableNotchShelf = true
-    @AppStorage("enableAutoClean") private var enableAutoClean = false
-    @AppStorage("enableAirDropZone") private var enableAirDropZone = true
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.showClipboardButton) private var showClipboardButton = PreferenceDefault.showClipboardButton
+    @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
+    @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
+    @AppStorage(AppPreferenceKey.enableAirDropZone) private var enableAirDropZone = PreferenceDefault.enableAirDropZone
     
     @State private var dashPhase: CGFloat = 0
     
@@ -255,7 +255,7 @@ struct FloatingBasketView: View {
                 // Right zone outline (AirDrop - red when targeted)
                 RoundedRectangle(cornerRadius: cornerRadius - 8, style: .continuous)
                     .stroke(
-                        state.isAirDropZoneTargeted ? Color.red : Color.white.opacity(0.2),
+                        state.isAirDropZoneTargeted ? Color.blue : Color.white.opacity(0.2),
                         style: StrokeStyle(
                             lineWidth: state.isAirDropZoneTargeted ? 2 : 1.5,
                             lineCap: .round,
@@ -266,19 +266,15 @@ struct FloatingBasketView: View {
                     .frame(width: airDropZoneWidth - 15, height: currentHeight - 20)
                     .offset(x: baseWidth + 5)
                 
-                // AirDrop icon and label in the right zone (identical style to basket zone but red)
-                VStack(spacing: 6) {
-                    Image(systemName: state.isAirDropZoneTargeted ? "wifi" : "wifi")
-                        .font(.system(size: 24, weight: .light))
-                        .foregroundStyle(state.isAirDropZoneTargeted ? .red : .secondary)
-                        .symbolEffect(.bounce, value: state.isAirDropZoneTargeted)
-                    
-                    Text(state.isAirDropZoneTargeted ? "Drop!" : "AirDrop")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(state.isAirDropZoneTargeted ? .primary : .secondary)
-                }
-                .frame(width: airDropZoneWidth, height: currentHeight)
-                .offset(x: baseWidth)
+                // AirDrop icon centered in the right zone - same size as NotchFace
+                Image("AirDropIcon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 40, height: 40)
+                    .scaleEffect(state.isAirDropZoneTargeted ? 1.1 : 1.0)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.65), value: state.isAirDropZoneTargeted)
+                    .frame(width: airDropZoneWidth - 15, height: currentHeight - 20)
+                    .offset(x: baseWidth + 5)
             }
         } else {
             // Normal basket layout (AirDrop disabled OR basket has items)
@@ -313,8 +309,9 @@ struct FloatingBasketView: View {
         if enableAirDropZone {
             // Split layout when AirDrop zone is enabled
             HStack(spacing: 0) {
-                // Main basket zone content - face reacts to hover
+                // Main basket zone content - face centered within the outline (10pt padding)
                 NotchFace(size: 50, isExcited: state.isBasketTargeted)
+                    .frame(width: baseWidth - 20, height: currentHeight - 20)
                     .frame(width: baseWidth)
                 
                 // Empty space - the icon is already in airDropZoneBackground
@@ -323,8 +320,10 @@ struct FloatingBasketView: View {
             }
             .allowsHitTesting(false)
         } else {
-            // Original layout when AirDrop zone is disabled
+            // Original layout when AirDrop zone is disabled - centered with padding matching outline
             NotchFace(size: 50, isExcited: state.isBasketTargeted)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(10)
                 .allowsHitTesting(false)
         }
     }

@@ -9,7 +9,7 @@ import SwiftUI
 
 struct UpdateView: View {
     @ObservedObject var checker = UpdateChecker.shared
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     
     // Hover states
     @State private var isUpdateHovering = false

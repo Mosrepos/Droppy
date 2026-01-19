@@ -9,8 +9,8 @@ struct BasketItemView: View {
     let state: DroppyState
     @Binding var renamingItemId: UUID?
     let onRemove: () -> Void
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
-    @AppStorage("enableNotchShelf") private var enableNotchShelf = true
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
     
     @State private var thumbnail: NSImage?
     @State private var isHovering = false

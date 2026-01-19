@@ -37,17 +37,17 @@ enum OnboardingPage: Int, CaseIterable {
 
 struct OnboardingView: View {
     // Essential toggles
-    @AppStorage("enableNotchShelf") private var enableShelf = true
-    @AppStorage("enableFloatingBasket") private var enableBasket = true
-    @AppStorage("enableClipboardBeta") private var enableClipboard = true  // ON by default
-    @AppStorage("enableHUDReplacement") private var enableHUDs = true
-    @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableShelf = PreferenceDefault.enableNotchShelf
+    @AppStorage(AppPreferenceKey.enableFloatingBasket) private var enableBasket = PreferenceDefault.enableFloatingBasket
+    @AppStorage(AppPreferenceKey.enableClipboard) private var enableClipboard = PreferenceDefault.enableClipboard
+    @AppStorage(AppPreferenceKey.enableHUDReplacement) private var enableHUDs = PreferenceDefault.enableHUDReplacement
+    @AppStorage(AppPreferenceKey.useDynamicIslandStyle) private var useDynamicIslandStyle = PreferenceDefault.useDynamicIslandStyle
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     // Additional toggles for 8-toggle grid
-    @AppStorage("showMediaPlayer") private var showMediaPlayer = true
-    @AppStorage("autoExpandShelf") private var autoExpandShelf = true
-    @AppStorage("startAtLogin") private var startAtLogin = false
-    @AppStorage("showInMenuBar") private var showInMenuBar = true
+    @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
+    @AppStorage(AppPreferenceKey.autoExpandShelf) private var autoExpandShelf = PreferenceDefault.autoExpandShelf
+    @AppStorage(AppPreferenceKey.startAtLogin) private var startAtLogin = PreferenceDefault.startAtLogin
+    @AppStorage(AppPreferenceKey.showInMenuBar) private var showInMenuBar = PreferenceDefault.showInMenuBar
     
     @State private var currentPage: OnboardingPage = .welcome
     @State private var isNextHovering = false

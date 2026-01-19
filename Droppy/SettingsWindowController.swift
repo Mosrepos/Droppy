@@ -100,10 +100,3 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window = nil
     }
 }
-
-// MARK: - Notification Names
-
-extension Notification.Name {
-    /// Posted when a deep link requests opening a specific extension
-    static let openExtensionFromDeepLink = Notification.Name("openExtensionFromDeepLink")
-}

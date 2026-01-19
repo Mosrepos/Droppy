@@ -18,31 +18,31 @@ struct NotchShelfView: View {
     /// The target screen for this view instance (multi-monitor support)
     /// When nil, uses the built-in screen (backwards compatibility)
     var targetScreen: NSScreen?
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
-    @AppStorage("enableNotchShelf") private var enableNotchShelf = true
-    @AppStorage("hideNotchOnExternalDisplays") private var hideNotchOnExternalDisplays = false
-    @AppStorage("externalDisplayUseDynamicIsland") private var externalDisplayUseDynamicIsland = true  // External display mode
-    @AppStorage("enableHUDReplacement") private var enableHUDReplacement = true
-    @AppStorage("enableBatteryHUD") private var enableBatteryHUD = true  // Battery charging/low battery HUD
-    @AppStorage("enableCapsLockHUD") private var enableCapsLockHUD = true  // Caps Lock ON/OFF HUD
-    @AppStorage("enableAirPodsHUD") private var enableAirPodsHUD = true  // AirPods connection HUD
-    @AppStorage("enableLockScreenHUD") private var enableLockScreenHUD = true  // Lock/Unlock HUD
-    @AppStorage("enableDNDHUD") private var enableDNDHUD = false  // Focus/DND HUD (requires Full Disk Access)
-    @AppStorage("showMediaPlayer") private var showMediaPlayer = true
-    @AppStorage("autoFadeMediaHUD") private var autoFadeMediaHUD = true
-    @AppStorage("debounceMediaChanges") private var debounceMediaChanges = false  // Delay media HUD for rapid changes
-    @AppStorage("autoShrinkShelf") private var autoShrinkShelf = true  // Legacy - always true now
-    @AppStorage("autoShrinkDelay") private var autoShrinkDelay = 3  // Legacy - kept for backwards compat
-    @AppStorage("autoCollapseDelay") private var autoCollapseDelay = 1.0  // New: 0.5-2.0 seconds
-    @AppStorage("autoCollapseShelf") private var autoCollapseShelf = true  // Toggle for auto-collapse
-    @AppStorage("autoExpandDelay") private var autoExpandDelay = 1.0  // New: 0.5-2.0 seconds
-    @AppStorage("showClipboardButton") private var showClipboardButton = false
-    @AppStorage("showOpenShelfIndicator") private var showOpenShelfIndicator = true
-    @AppStorage("showDropIndicator") private var showDropIndicator = true
-    @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true  // For reactive mode changes
-    @AppStorage("useDynamicIslandTransparent") private var useDynamicIslandTransparent = false  // Transparent DI (only when DI + transparent enabled)
-    @AppStorage("enableAutoClean") private var enableAutoClean = false  // Auto-clear after drag-out
-    @AppStorage("enableShelfAirDropZone") private var enableShelfAirDropZone = false  // AirDrop zone in shelf
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
+    @AppStorage(AppPreferenceKey.hideNotchOnExternalDisplays) private var hideNotchOnExternalDisplays = PreferenceDefault.hideNotchOnExternalDisplays
+    @AppStorage(AppPreferenceKey.externalDisplayUseDynamicIsland) private var externalDisplayUseDynamicIsland = PreferenceDefault.externalDisplayUseDynamicIsland
+    @AppStorage(AppPreferenceKey.enableHUDReplacement) private var enableHUDReplacement = PreferenceDefault.enableHUDReplacement
+    @AppStorage(AppPreferenceKey.enableBatteryHUD) private var enableBatteryHUD = PreferenceDefault.enableBatteryHUD
+    @AppStorage(AppPreferenceKey.enableCapsLockHUD) private var enableCapsLockHUD = PreferenceDefault.enableCapsLockHUD
+    @AppStorage(AppPreferenceKey.enableAirPodsHUD) private var enableAirPodsHUD = PreferenceDefault.enableAirPodsHUD
+    @AppStorage(AppPreferenceKey.enableLockScreenHUD) private var enableLockScreenHUD = PreferenceDefault.enableLockScreenHUD
+    @AppStorage(AppPreferenceKey.enableDNDHUD) private var enableDNDHUD = PreferenceDefault.enableDNDHUD
+    @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
+    @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
+    @AppStorage(AppPreferenceKey.debounceMediaChanges) private var debounceMediaChanges = PreferenceDefault.debounceMediaChanges
+    @AppStorage(AppPreferenceKey.autoShrinkShelf) private var autoShrinkShelf = PreferenceDefault.autoShrinkShelf  // Legacy
+    @AppStorage(AppPreferenceKey.autoShrinkDelay) private var autoShrinkDelay = PreferenceDefault.autoShrinkDelay  // Legacy
+    @AppStorage(AppPreferenceKey.autoCollapseDelay) private var autoCollapseDelay = PreferenceDefault.autoCollapseDelay
+    @AppStorage(AppPreferenceKey.autoCollapseShelf) private var autoCollapseShelf = PreferenceDefault.autoCollapseShelf
+    @AppStorage(AppPreferenceKey.autoExpandDelay) private var autoExpandDelay = PreferenceDefault.autoExpandDelay
+    @AppStorage(AppPreferenceKey.showClipboardButton) private var showClipboardButton = PreferenceDefault.showClipboardButton
+    @AppStorage(AppPreferenceKey.showOpenShelfIndicator) private var showOpenShelfIndicator = PreferenceDefault.showOpenShelfIndicator
+    @AppStorage(AppPreferenceKey.showDropIndicator) private var showDropIndicator = PreferenceDefault.showDropIndicator  // Legacy, not migrated
+    @AppStorage(AppPreferenceKey.useDynamicIslandStyle) private var useDynamicIslandStyle = PreferenceDefault.useDynamicIslandStyle
+    @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
+    @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
+    @AppStorage(AppPreferenceKey.enableShelfAirDropZone) private var enableShelfAirDropZone = PreferenceDefault.enableShelfAirDropZone
     
     // HUD State - Use @ObservedObject for singletons (they manage their own lifecycle)
     @ObservedObject private var volumeManager = VolumeManager.shared
@@ -61,16 +61,7 @@ struct NotchShelfView: View {
     @State private var hudType: HUDContentType = .volume
     @State private var hudValue: CGFloat = 0
     @State private var hudIsVisible = false
-    @State private var batteryHUDIsVisible = false  // Battery HUD visibility
-    @State private var batteryHUDWorkItem: DispatchWorkItem?  // Timer for battery HUD auto-hide
-    @State private var capsLockHUDIsVisible = false  // Caps Lock HUD visibility
-    @State private var capsLockHUDWorkItem: DispatchWorkItem?  // Timer for Caps Lock HUD auto-hide
-    @State private var airPodsHUDIsVisible = false  // AirPods connection HUD visibility
-    @State private var airPodsHUDWorkItem: DispatchWorkItem?  // Timer for AirPods HUD auto-hide
-    @State private var lockScreenHUDIsVisible = false  // Lock/Unlock HUD visibility
-    @State private var lockScreenHUDWorkItem: DispatchWorkItem?  // Timer for Lock Screen HUD auto-hide
-    @State private var dndHUDIsVisible = false  // Focus/DND HUD visibility
-    @State private var dndHUDWorkItem: DispatchWorkItem?  // Timer for Focus/DND HUD auto-hide
+    // HUD visibility now managed by HUDManager (removed 10 @State variables)
     @State private var mediaHUDFadedOut = false  // Tracks if media HUD has auto-faded
     @State private var mediaFadeWorkItem: DispatchWorkItem?
     @State private var autoShrinkWorkItem: DispatchWorkItem?  // Timer for auto-shrinking shelf
@@ -80,7 +71,7 @@ struct NotchShelfView: View {
     @State private var isMediaStable = false  // Only show media HUD after debounce delay
     
     // Idle face preference
-    @AppStorage("enableIdleFace") private var enableIdleFace = true
+    @AppStorage(AppPreferenceKey.enableIdleFace) private var enableIdleFace = PreferenceDefault.enableIdleFace
     
     
     /// Animation state for the border dash
@@ -237,7 +228,7 @@ struct NotchShelfView: View {
         // (as long as there's a track to show)
         if musicManager.isMediaHUDForced && !musicManager.isPlayerIdle {
             // Don't show if other HUDs have priority
-            if batteryHUDIsVisible || capsLockHUDIsVisible || dndHUDIsVisible || hudIsVisible { return false }
+            if HUDManager.shared.isVisible || hudIsVisible { return false }
             if isExpandedOnThisScreen { return false }
             return showMediaPlayer
         }
@@ -250,8 +241,8 @@ struct NotchShelfView: View {
         }
         // Only apply debounce check when setting is enabled
         if debounceMediaChanges && !isMediaStable { return false }
-        // Don't show when battery or caps lock HUD is visible (they take priority)
-        if batteryHUDIsVisible || capsLockHUDIsVisible || dndHUDIsVisible { return false }
+        // Don't show when any HUD is visible (they take priority)
+        if HUDManager.shared.isVisible { return false }
         return showMediaPlayer && musicManager.isPlaying && !hudIsVisible && !isExpandedOnThisScreen
     }
     
@@ -266,15 +257,15 @@ struct NotchShelfView: View {
             return expandedWidth
         } else if hudIsVisible {
             return currentHudTypeWidth  // Content-based width (Brightness is wider than Volume)
-        } else if lockScreenHUDIsVisible && enableLockScreenHUD {
+        } else if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD {
             return batteryHudWidth  // Lock Screen HUD uses same width as battery HUD
-        } else if airPodsHUDIsVisible && enableAirPodsHUD {
+        } else if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD {
             return hudWidth  // AirPods HUD uses same width as Media HUD
-        } else if batteryHUDIsVisible && enableBatteryHUD {
+        } else if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD {
             return batteryHudWidth  // Battery HUD uses slightly narrower width than volume
-        } else if capsLockHUDIsVisible && enableCapsLockHUD {
+        } else if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD {
             return batteryHudWidth  // Caps Lock HUD uses same width as battery HUD
-        } else if dndHUDIsVisible && enableDNDHUD {
+        } else if HUDManager.shared.isDNDHUDVisible && enableDNDHUD {
             return batteryHudWidth  // Focus/DND HUD uses same width as battery HUD
         } else if shouldShowMediaHUD {
             return hudWidth  // Media HUD uses tighter wings
@@ -298,16 +289,16 @@ struct NotchShelfView: View {
         } else if hudIsVisible {
             // Volume/Brightness HUD: ONLY expand horizontally, never taller
             return notchHeight
-        } else if lockScreenHUDIsVisible && enableLockScreenHUD {
+        } else if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD {
             return notchHeight  // Lock Screen HUD just uses notch height
-        } else if airPodsHUDIsVisible && enableAirPodsHUD {
+        } else if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD {
             // AirPods HUD stays at notch height like media player (horizontal expansion only)
             return notchHeight
-        } else if batteryHUDIsVisible && enableBatteryHUD {
+        } else if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD {
             return notchHeight  // Battery HUD just uses notch height (no slider)
-        } else if capsLockHUDIsVisible && enableCapsLockHUD {
+        } else if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD {
             return notchHeight  // Caps Lock HUD just uses notch height (no slider)
-        } else if dndHUDIsVisible && enableDNDHUD {
+        } else if HUDManager.shared.isDNDHUDVisible && enableDNDHUD {
             return notchHeight  // Focus/DND HUD just uses notch height (no slider)
         } else if shouldShowMediaHUD {
             // Dynamic Island stays fixed height - no vertical extension
@@ -406,14 +397,8 @@ struct NotchShelfView: View {
                 // Show when expanded
                 if isExpandedOnThisScreen { return true }
             }
-            // Show when battery HUD is visible
-            if batteryHUDIsVisible && enableBatteryHUD { return true }
-            // Show when caps lock HUD is visible
-            if capsLockHUDIsVisible && enableCapsLockHUD { return true }
-            // Show when DND/Focus HUD is visible
-            if dndHUDIsVisible && enableDNDHUD { return true }
-            // Show when lock screen HUD is visible
-            if lockScreenHUDIsVisible && enableLockScreenHUD { return true }
+            // Show when any HUD is visible (using centralized HUDManager)
+            if HUDManager.shared.isVisible { return true }
             // Otherwise hide - Dynamic Island is invisible when idle
             return false
         }
@@ -760,79 +745,28 @@ struct NotchShelfView: View {
     }
     
     private func triggerBatteryHUD() {
-        batteryHUDWorkItem?.cancel()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            batteryHUDIsVisible = true
-        }
-        
-        let workItem = DispatchWorkItem { [self] in
-            withAnimation(.easeOut(duration: 0.3)) {
-                batteryHUDIsVisible = false
-            }
-        }
-        batteryHUDWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + batteryManager.visibleDuration, execute: workItem)
+        // Use centralized HUDManager for queue-based display
+        HUDManager.shared.show(.battery, duration: batteryManager.visibleDuration)
     }
     
     private func triggerCapsLockHUD() {
-        capsLockHUDWorkItem?.cancel()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            capsLockHUDIsVisible = true
-        }
-        
-        let workItem = DispatchWorkItem { [self] in
-            withAnimation(.easeOut(duration: 0.3)) {
-                capsLockHUDIsVisible = false
-            }
-        }
-        capsLockHUDWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + capsLockManager.visibleDuration, execute: workItem)
+        // Use centralized HUDManager for queue-based display
+        HUDManager.shared.show(.capsLock, duration: capsLockManager.visibleDuration)
     }
     
     private func triggerAirPodsHUD() {
-        airPodsHUDWorkItem?.cancel()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            airPodsHUDIsVisible = true
-        }
-        
-        let workItem = DispatchWorkItem { [self] in
-            withAnimation(.easeOut(duration: 0.3)) {
-                airPodsHUDIsVisible = false
-                airPodsManager.dismissHUD()
-            }
-        }
-        airPodsHUDWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + airPodsManager.visibleDuration, execute: workItem)
+        // Use centralized HUDManager for queue-based display
+        HUDManager.shared.show(.airPods, duration: airPodsManager.visibleDuration)
     }
     
     private func triggerLockScreenHUD() {
-        lockScreenHUDWorkItem?.cancel()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            lockScreenHUDIsVisible = true
-        }
-        
-        let workItem = DispatchWorkItem { [self] in
-            withAnimation(.easeOut(duration: 0.3)) {
-                lockScreenHUDIsVisible = false
-            }
-        }
-        lockScreenHUDWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + lockScreenManager.visibleDuration, execute: workItem)
+        // Use centralized HUDManager for queue-based display
+        HUDManager.shared.show(.lockScreen, duration: lockScreenManager.visibleDuration)
     }
     
     private func triggerDNDHUD() {
-        dndHUDWorkItem?.cancel()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            dndHUDIsVisible = true
-        }
-        
-        let workItem = DispatchWorkItem { [self] in
-            withAnimation(.easeOut(duration: 0.3)) {
-                dndHUDIsVisible = false
-            }
-        }
-        dndHUDWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + dndManager.visibleDuration, execute: workItem)
+        // Use centralized HUDManager for queue-based display
+        HUDManager.shared.show(.dnd, duration: dndManager.visibleDuration)
     }
     
     private func startMediaFadeTimer() {
@@ -879,8 +813,10 @@ struct NotchShelfView: View {
             }
         }
         autoShrinkWorkItem = workItem
-        // Use new autoCollapseDelay (0.5-2.0 seconds) instead of legacy autoShrinkDelay
-        DispatchQueue.main.asyncAfter(deadline: .now() + autoCollapseDelay, execute: workItem)
+        
+        // Use 5 seconds when items are in shelf (more time to interact), otherwise use user's setting
+        let delay: Double = state.items.isEmpty ? autoCollapseDelay : 5.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     
     /// Resets the auto-shrink timer (called when mouse enters the notch area)
@@ -972,12 +908,10 @@ struct NotchShelfView: View {
             .zIndex(3)
         }
         
-        // Battery HUD
-        if batteryHUDIsVisible && enableBatteryHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        // Battery HUD - uses centralized HUDManager
+        if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD && !hudIsVisible && !isExpandedOnThisScreen {
             BatteryHUDView(
                 batteryManager: batteryManager,
-                notchWidth: notchWidth,
-                notchHeight: notchHeight,
                 hudWidth: batteryHudWidth,
                 targetScreen: targetScreen
             )
@@ -986,12 +920,10 @@ struct NotchShelfView: View {
             .zIndex(4)
         }
         
-        // Caps Lock HUD
-        if capsLockHUDIsVisible && enableCapsLockHUD && !hudIsVisible && !batteryHUDIsVisible && !isExpandedOnThisScreen {
+        // Caps Lock HUD - uses centralized HUDManager
+        if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD && !hudIsVisible && !isExpandedOnThisScreen {
             CapsLockHUDView(
                 capsLockManager: capsLockManager,
-                notchWidth: notchWidth,
-                notchHeight: notchHeight,
                 hudWidth: batteryHudWidth,
                 targetScreen: targetScreen
             )
@@ -1000,12 +932,10 @@ struct NotchShelfView: View {
             .zIndex(5)
         }
         
-        // Focus/DND HUD
-        if dndHUDIsVisible && enableDNDHUD && !hudIsVisible && !batteryHUDIsVisible && !capsLockHUDIsVisible && !isExpandedOnThisScreen {
+        // Focus/DND HUD - uses centralized HUDManager
+        if HUDManager.shared.isDNDHUDVisible && enableDNDHUD && !hudIsVisible && !isExpandedOnThisScreen {
             DNDHUDView(
                 dndManager: dndManager,
-                notchWidth: notchWidth,
-                notchHeight: notchHeight,
                 hudWidth: batteryHudWidth,
                 targetScreen: targetScreen
             )
@@ -1014,12 +944,10 @@ struct NotchShelfView: View {
             .zIndex(5.5)
         }
         
-        // AirPods HUD
-        if airPodsHUDIsVisible && enableAirPodsHUD && !hudIsVisible && !isExpandedOnThisScreen, let airPods = airPodsManager.connectedAirPods {
+        // AirPods HUD - uses centralized HUDManager
+        if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD && !hudIsVisible && !isExpandedOnThisScreen, let airPods = airPodsManager.connectedAirPods {
             AirPodsHUDView(
                 airPods: airPods,
-                notchWidth: notchWidth,
-                notchHeight: notchHeight,
                 hudWidth: hudWidth,
                 targetScreen: targetScreen
             )
@@ -1028,12 +956,10 @@ struct NotchShelfView: View {
             .zIndex(6)
         }
         
-        // Lock Screen HUD
-        if lockScreenHUDIsVisible && enableLockScreenHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        // Lock Screen HUD - uses centralized HUDManager
+        if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD && !hudIsVisible && !isExpandedOnThisScreen {
             LockScreenHUDView(
                 lockScreenManager: lockScreenManager,
-                notchWidth: notchWidth,
-                notchHeight: notchHeight,
                 hudWidth: batteryHudWidth,
                 targetScreen: targetScreen
             )
@@ -1049,7 +975,7 @@ struct NotchShelfView: View {
     @ViewBuilder
     private var mediaPlayerHUD: some View {
         // Break up complex expressions for type checker
-        let noHUDsVisible = !hudIsVisible && !batteryHUDIsVisible && !capsLockHUDIsVisible && !dndHUDIsVisible && !airPodsHUDIsVisible && !lockScreenHUDIsVisible
+        let noHUDsVisible = !hudIsVisible && !HUDManager.shared.isVisible
         let notExpanded = !isExpandedOnThisScreen
         
         let shouldShowForced = musicManager.isMediaHUDForced && !musicManager.isPlayerIdle && showMediaPlayer && noHUDsVisible && notExpanded
@@ -1190,9 +1116,6 @@ struct NotchShelfView: View {
         // Height is ALWAYS exactly the current visual height - NEVER expand downward
         let dropAreaHeight: CGFloat = currentNotchHeight
         
-        // Calculate indicator position: exactly below the current notch height with small gap
-        let indicatorOffset = currentNotchHeight + 20
-        
         return ZStack(alignment: .top) {
             // Invisible hit area for hovering/clicking - SIZE CHANGES based on state
             RoundedRectangle(cornerRadius: isDynamicIslandMode ? 50 : 16, style: .continuous)
@@ -1200,16 +1123,7 @@ struct NotchShelfView: View {
                 .frame(width: dropAreaWidth, height: dropAreaHeight)
                 .contentShape(RoundedRectangle(cornerRadius: isDynamicIslandMode ? 50 : 16, style: .continuous)) // Match the shape exactly
             
-            // Beautiful drop indicator when hovering with files (only when shelf is enabled)
-            if enableNotchShelf && showDropIndicator && state.isDropTargeted && !isExpandedOnThisScreen {
-                dropIndicatorContent
-                    .offset(y: indicatorOffset)
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.7).combined(with: .opacity).combined(with: .offset(y: -10)),
-                        removal: .scale(scale: 0.9).combined(with: .opacity)
-                    ))
-                    .allowsHitTesting(false)
-            }
+            // Drop indicator removed - shelf now auto-expands when dragging starts
         }
         .onTapGesture {
             // Only allow expanding shelf when shelf is enabled
@@ -1663,7 +1577,7 @@ extension NotchShelfView {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(4) // Ensure stroke doesn't get clipped at edges during peek animation
+            .padding(10) // Match basket padding for visual consistency
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(
@@ -1681,23 +1595,20 @@ extension NotchShelfView {
             // AirDrop zone (right side, only when enabled)
             if enableShelfAirDropZone {
                 ZStack {
-                    VStack(spacing: 6) {
-                        Image(systemName: "wifi")
-                            .font(.system(size: 24, weight: .light))
-                            .foregroundStyle(state.isShelfAirDropZoneTargeted ? .red : .secondary)
-                            .symbolEffect(.bounce, value: state.isShelfAirDropZoneTargeted)
-                        
-                        Text(state.isShelfAirDropZoneTargeted ? "Drop!" : "AirDrop")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(state.isShelfAirDropZoneTargeted ? .primary : .secondary)
-                    }
+                    // AirDrop icon - same size as NotchFace
+                    Image("AirDropIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 40, height: 40)
+                        .scaleEffect(state.isShelfAirDropZoneTargeted ? 1.1 : 1.0)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.65), value: state.isShelfAirDropZoneTargeted)
                 }
                 .frame(maxWidth: 90, maxHeight: .infinity)
-                .padding(4) // Ensure stroke doesn't get clipped at edges during peek animation
+                .padding(10) // Match main zone padding
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(
-                            state.isShelfAirDropZoneTargeted ? Color.red : Color.white.opacity(0.2),
+                            state.isShelfAirDropZoneTargeted ? Color.blue : Color.white.opacity(0.2),
                             style: StrokeStyle(
                                 lineWidth: state.isShelfAirDropZoneTargeted ? 2 : 1.5,
                                 lineCap: .round,

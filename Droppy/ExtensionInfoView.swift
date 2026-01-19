@@ -16,7 +16,7 @@ struct ExtensionInfoView: View {
     var installCount: Int?
     var rating: AnalyticsService.ExtensionRating?
     
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
     @State private var isHoveringClose = false

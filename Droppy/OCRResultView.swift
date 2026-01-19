@@ -11,7 +11,7 @@ struct OCRResultView: View {
     let text: String
     let onClose: () -> Void
     
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @State private var isCopyHovering = false
     @State private var isCloseHovering = false
     @State private var showCopiedFeedback = false

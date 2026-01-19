@@ -7,7 +7,7 @@ struct RenameWindowView: View {
     var onRename: (String) -> Void
     var onCancel: () -> Void
     
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @State private var isHoveringCancel = false
     @State private var isHoveringSave = false
     // Static dotted border (no animation to save CPU)

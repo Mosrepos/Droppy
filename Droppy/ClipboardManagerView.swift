@@ -19,8 +19,8 @@ class QuickLookDataSource: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDel
 
 struct ClipboardManagerView: View {
     @ObservedObject var manager = ClipboardManager.shared
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
-    @AppStorage("clipboardAutoFocusSearch") private var autoFocusSearch = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.clipboardAutoFocusSearch) private var autoFocusSearch = PreferenceDefault.clipboardAutoFocusSearch
     @State private var selectedItems: Set<UUID> = []
     @State private var isResetHovering = false
     @State private var scrollProxy: ScrollViewProxy?

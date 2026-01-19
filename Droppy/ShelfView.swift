@@ -11,7 +11,7 @@ import SwiftUI
 struct ShelfView: View {
     /// Reference to the app state
     @Bindable var state: DroppyState
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     
     var body: some View {
         ZStack {

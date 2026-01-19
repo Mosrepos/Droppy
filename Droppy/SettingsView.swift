@@ -3,44 +3,43 @@ import ServiceManagement
 
 struct SettingsView: View {
     @State private var selectedTab: String? = "Features"
-    @AppStorage("showInMenuBar") private var showInMenuBar = true
-    @AppStorage("startAtLogin") private var startAtLogin = false
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
-    @AppStorage("enableNotchShelf") private var enableNotchShelf = true
-    @AppStorage("enableFloatingBasket") private var enableFloatingBasket = true
-    @AppStorage("enableBasketAutoHide") private var enableBasketAutoHide = false  // Auto-hide basket with peek (v5.3)
-    @AppStorage("enableAutoClean") private var enableAutoClean = false  // Auto-clear after drag-out (v6.0.2)
-    @AppStorage("enableAirDropZone") private var enableAirDropZone = true  // AirDrop drop zone in basket
-    @AppStorage("enableShelfAirDropZone") private var enableShelfAirDropZone = false  // AirDrop drop zone in shelf
-    @AppStorage("basketAutoHideEdge") private var basketAutoHideEdge = "right"  // "left", "right", "bottom"
-    @AppStorage("instantBasketOnDrag") private var instantBasketOnDrag = false  // Show basket immediately on drag
-    @AppStorage("showClipboardButton") private var showClipboardButton = false
-    @AppStorage("showOpenShelfIndicator") private var showOpenShelfIndicator = true
-    @AppStorage("showDropIndicator") private var showDropIndicator = true
-    @AppStorage("hideNotchOnExternalDisplays") private var hideNotchOnExternalDisplays = false
-    @AppStorage("hideNotchFromScreenshots") private var hideNotchFromScreenshots = false
-    @AppStorage("useDynamicIslandStyle") private var useDynamicIslandStyle = true  // Default: true for non-notch
-    @AppStorage("useDynamicIslandTransparent") private var useDynamicIslandTransparent = false  // Glass effect for DI
-    @AppStorage("externalDisplayUseDynamicIsland") private var externalDisplayUseDynamicIsland = true  // External display mode
+    @AppStorage(AppPreferenceKey.showInMenuBar) private var showInMenuBar = PreferenceDefault.showInMenuBar
+    @AppStorage(AppPreferenceKey.startAtLogin) private var startAtLogin = PreferenceDefault.startAtLogin
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
+    @AppStorage(AppPreferenceKey.enableFloatingBasket) private var enableFloatingBasket = PreferenceDefault.enableFloatingBasket
+    @AppStorage(AppPreferenceKey.enableBasketAutoHide) private var enableBasketAutoHide = PreferenceDefault.enableBasketAutoHide
+    @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
+    @AppStorage(AppPreferenceKey.enableAirDropZone) private var enableAirDropZone = PreferenceDefault.enableAirDropZone
+    @AppStorage(AppPreferenceKey.enableShelfAirDropZone) private var enableShelfAirDropZone = PreferenceDefault.enableShelfAirDropZone
+    @AppStorage(AppPreferenceKey.basketAutoHideEdge) private var basketAutoHideEdge = PreferenceDefault.basketAutoHideEdge
+    @AppStorage(AppPreferenceKey.instantBasketOnDrag) private var instantBasketOnDrag = PreferenceDefault.instantBasketOnDrag
+    @AppStorage(AppPreferenceKey.showClipboardButton) private var showClipboardButton = PreferenceDefault.showClipboardButton
+    @AppStorage(AppPreferenceKey.showOpenShelfIndicator) private var showOpenShelfIndicator = PreferenceDefault.showOpenShelfIndicator
+    @AppStorage(AppPreferenceKey.hideNotchOnExternalDisplays) private var hideNotchOnExternalDisplays = PreferenceDefault.hideNotchOnExternalDisplays
+    @AppStorage(AppPreferenceKey.hideNotchFromScreenshots) private var hideNotchFromScreenshots = PreferenceDefault.hideNotchFromScreenshots
+    @AppStorage(AppPreferenceKey.useDynamicIslandStyle) private var useDynamicIslandStyle = PreferenceDefault.useDynamicIslandStyle
+    @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
+    @AppStorage(AppPreferenceKey.externalDisplayUseDynamicIsland) private var externalDisplayUseDynamicIsland = PreferenceDefault.externalDisplayUseDynamicIsland
     
     // HUD and Media Player settings
-    @AppStorage("enableHUDReplacement") private var enableHUDReplacement = true
-    @AppStorage("enableBatteryHUD") private var enableBatteryHUD = true  // Enabled by default
-    @AppStorage("enableCapsLockHUD") private var enableCapsLockHUD = true  // Caps Lock indicator
-    @AppStorage("enableAirPodsHUD") private var enableAirPodsHUD = true  // AirPods connection HUD
-    @AppStorage("enableLockScreenHUD") private var enableLockScreenHUD = true  // Lock/Unlock HUD
-    @AppStorage("enableDNDHUD") private var enableDNDHUD = false  // Focus/DND HUD (requires Full Disk Access)
-    @AppStorage("showMediaPlayer") private var showMediaPlayer = true
-    @AppStorage("autoFadeMediaHUD") private var autoFadeMediaHUD = true
-    @AppStorage("debounceMediaChanges") private var debounceMediaChanges = false  // Delay media HUD for rapid changes
-    @AppStorage("enableRealAudioVisualizer") private var enableRealAudioVisualizer = false  // Opt-in: requires Screen Recording
-    @AppStorage("autoShrinkShelf") private var autoShrinkShelf = true  // Legacy - always true now
-    @AppStorage("autoShrinkDelay") private var autoShrinkDelay = 3  // Legacy - kept for backwards compat
-    @AppStorage("autoCollapseDelay") private var autoCollapseDelay = 1.0  // New: 0.5-2.0 seconds
-    @AppStorage("autoCollapseShelf") private var autoCollapseShelf = true  // Toggle for auto-collapse
-    @AppStorage("autoExpandShelf") private var autoExpandShelf = true  // Now default true
-    @AppStorage("autoExpandDelay") private var autoExpandDelay = 1.0  // New: 0.5-2.0 seconds
-    @AppStorage("enableFinderServices") private var enableFinderServices = true
+    @AppStorage(AppPreferenceKey.enableHUDReplacement) private var enableHUDReplacement = PreferenceDefault.enableHUDReplacement
+    @AppStorage(AppPreferenceKey.enableBatteryHUD) private var enableBatteryHUD = PreferenceDefault.enableBatteryHUD
+    @AppStorage(AppPreferenceKey.enableCapsLockHUD) private var enableCapsLockHUD = PreferenceDefault.enableCapsLockHUD
+    @AppStorage(AppPreferenceKey.enableAirPodsHUD) private var enableAirPodsHUD = PreferenceDefault.enableAirPodsHUD
+    @AppStorage(AppPreferenceKey.enableLockScreenHUD) private var enableLockScreenHUD = PreferenceDefault.enableLockScreenHUD
+    @AppStorage(AppPreferenceKey.enableDNDHUD) private var enableDNDHUD = PreferenceDefault.enableDNDHUD
+    @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
+    @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
+    @AppStorage(AppPreferenceKey.debounceMediaChanges) private var debounceMediaChanges = PreferenceDefault.debounceMediaChanges
+    @AppStorage(AppPreferenceKey.enableRealAudioVisualizer) private var enableRealAudioVisualizer = PreferenceDefault.enableRealAudioVisualizer
+    @AppStorage(AppPreferenceKey.autoShrinkShelf) private var autoShrinkShelf = PreferenceDefault.autoShrinkShelf  // Legacy
+    @AppStorage(AppPreferenceKey.autoShrinkDelay) private var autoShrinkDelay = PreferenceDefault.autoShrinkDelay  // Legacy
+    @AppStorage(AppPreferenceKey.autoCollapseDelay) private var autoCollapseDelay = PreferenceDefault.autoCollapseDelay
+    @AppStorage(AppPreferenceKey.autoCollapseShelf) private var autoCollapseShelf = PreferenceDefault.autoCollapseShelf
+    @AppStorage(AppPreferenceKey.autoExpandShelf) private var autoExpandShelf = PreferenceDefault.autoExpandShelf
+    @AppStorage(AppPreferenceKey.autoExpandDelay) private var autoExpandDelay = PreferenceDefault.autoExpandDelay
+    @AppStorage(AppPreferenceKey.enableFinderServices) private var enableFinderServices = PreferenceDefault.enableFinderServices
 
 
     
@@ -899,19 +898,6 @@ struct SettingsView: View {
                     }
                 }
                 
-                Toggle(isOn: $showDropIndicator) {
-                    VStack(alignment: .leading) {
-                        Text("Drop Indicator")
-                        Text("Show NotchFace tooltip when dragging files over notch")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                if showDropIndicator {
-                    DropIndicatorPreview()
-                }
-                
                 Toggle(isOn: $hideNotchFromScreenshots) {
                     VStack(alignment: .leading) {
                         Text("Hide from Screenshots")
@@ -1117,9 +1103,9 @@ struct SettingsView: View {
     @State private var downloadCount: Int?
     
     // MARK: - Clipboard
-    @AppStorage("enableClipboardBeta") private var enableClipboard = true
-    @AppStorage("clipboardHistoryLimit") private var clipboardHistoryLimit = 50
-    @AppStorage("clipboardAutoFocusSearch") private var autoFocusSearch = false
+    @AppStorage(AppPreferenceKey.enableClipboard) private var enableClipboard = PreferenceDefault.enableClipboard
+    @AppStorage(AppPreferenceKey.clipboardHistoryLimit) private var clipboardHistoryLimit = PreferenceDefault.clipboardHistoryLimit
+    @AppStorage(AppPreferenceKey.clipboardAutoFocusSearch) private var autoFocusSearch = PreferenceDefault.clipboardAutoFocusSearch
     @State private var currentShortcut: SavedShortcut?
     @State private var showAppPicker: Bool = false
     @ObservedObject private var clipboardManager = ClipboardManager.shared
@@ -1146,7 +1132,7 @@ struct SettingsView: View {
     }
     
     // MARK: - Copy+Favorite Shortcut (Issue #43)
-    @AppStorage("clipboardCopyFavoriteEnabled") private var copyFavoriteEnabled = false
+    @AppStorage(AppPreferenceKey.clipboardCopyFavoriteEnabled) private var copyFavoriteEnabled = PreferenceDefault.clipboardCopyFavoriteEnabled
     @State private var copyFavoriteShortcut: SavedShortcut?
     
     private func loadCopyFavoriteShortcut() {

@@ -1,10 +1,6 @@
 import Cocoa
 import SwiftUI
 
-extension Notification.Name {
-    static let clipboardWindowDidShow = Notification.Name("ClipboardWindowDidShow")
-}
-
 class ClipboardWindowController: NSObject, NSWindowDelegate {
     static let shared = ClipboardWindowController()
     

@@ -49,7 +49,7 @@ class TerminalNotchManager: ObservableObject {
     // MARK: - Settings
     
     /// Whether extension is installed
-    @AppStorage("terminalNotch_installed") var isInstalled: Bool = false
+    @AppStorage(AppPreferenceKey.terminalNotchInstalled) var isInstalled: Bool = PreferenceDefault.terminalNotchInstalled
     
     /// Saved keyboard shortcut
     @Published var shortcut: SavedShortcut? = nil
@@ -236,7 +236,7 @@ class TerminalNotchManager: ObservableObject {
         UserDefaults.standard.set(commandHistory, forKey: "terminalNotch_history")
     }
     
-    /// Run a shell command and return output
+    /// Run a shell command and return output (with timeout and output limit)
     private func runCommand(_ command: String) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
             let process = Process()
@@ -250,18 +250,81 @@ class TerminalNotchManager: ObservableObject {
             process.standardError = pipe
             process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
             
+            // SAFETY: Timeout to prevent freeze with continuous commands (ping, tail -f, etc.)
+            let timeout: TimeInterval = 10.0  // 10 second timeout
+            let maxOutputBytes = 50_000  // Limit output to ~50KB to prevent memory issues
+            
+            var outputData = Data()
+            var hasResumed = false
+            let resumeLock = NSLock()
+            
+            // Helper to safely resume continuation only once
+            func safeResume(with result: Result<String, Error>) {
+                resumeLock.lock()
+                defer { resumeLock.unlock() }
+                guard !hasResumed else { return }
+                hasResumed = true
+                switch result {
+                case .success(let output):
+                    continuation.resume(returning: output)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            
             do {
                 try process.run()
-                process.waitUntilExit()
                 
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8) ?? ""
+                // Set up timeout
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                    if process.isRunning {
+                        process.terminate()
+                        // Read whatever output we have
+                        let data = pipe.fileHandleForReading.availableData
+                        let output = String(data: data, encoding: .utf8) ?? ""
+                        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let message = trimmed.isEmpty 
+                            ? "⏱️ Command timed out after \(Int(timeout))s (continuous output commands like 'ping' are not supported)"
+                            : trimmed + "\n\n⏱️ Command timed out after \(Int(timeout))s"
+                        safeResume(with: .success(message))
+                    }
+                }
                 
-                // Return full output - the view will handle scrolling
-                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                continuation.resume(returning: trimmed)
+                // Read output in background with size limit
+                DispatchQueue.global().async {
+                    let fileHandle = pipe.fileHandleForReading
+                    while process.isRunning {
+                        let chunk = fileHandle.availableData
+                        if chunk.isEmpty { break }
+                        outputData.append(chunk)
+                        
+                        // Safety: terminate if output is too large
+                        if outputData.count > maxOutputBytes {
+                            process.terminate()
+                            break
+                        }
+                    }
+                    
+                    // Process finished normally - read any remaining data
+                    if !process.isRunning {
+                        let remaining = fileHandle.readDataToEndOfFile()
+                        if outputData.count + remaining.count <= maxOutputBytes {
+                            outputData.append(remaining)
+                        }
+                    }
+                    
+                    let output = String(data: outputData, encoding: .utf8) ?? ""
+                    var trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    // Add warning if output was truncated
+                    if outputData.count > maxOutputBytes {
+                        trimmed += "\n\n⚠️ Output truncated (exceeded \(maxOutputBytes / 1000)KB limit)"
+                    }
+                    
+                    safeResume(with: .success(trimmed))
+                }
             } catch {
-                continuation.resume(throwing: error)
+                safeResume(with: .failure(error))
             }
         }
     }

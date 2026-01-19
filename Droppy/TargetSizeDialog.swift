@@ -14,7 +14,7 @@ struct TargetSizeDialogView: View {
     let fileName: String
     let onCompress: (Int64) -> Void
     let onCancel: () -> Void
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @State private var targetSizeMB: String = ""
     @State private var isCompressButtonHovering = false
     @State private var isCancelButtonHovering = false

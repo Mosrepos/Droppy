@@ -569,12 +569,6 @@ final class WindowSnapManager: ObservableObject {
     }
 }
 
-// MARK: - Notification Name
-
-extension Notification.Name {
-    static let windowSnapShortcutChanged = Notification.Name("windowSnapShortcutChanged")
-}
-
 // MARK: - CGRect Extension for Animation
 
 private extension CGRect {

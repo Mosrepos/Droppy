@@ -409,17 +409,9 @@ final class NotchWindowController: NSObject, ObservableObject {
             if isExpanded {
                 let expandedWidth: CGFloat = 450
                 let centerX = targetScreen.frame.origin.x + targetScreen.frame.width / 2
-                let rowCount = ceil(Double(DroppyState.shared.items.count) / 5.0)
-                var expandedHeight = max(1, rowCount) * 110 + 54
                 
-                // Add extra height for media player when shelf is empty but music is playing
-                let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-                if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-                    expandedHeight += 100
-                }
-                
-                // Add buffer for the floating close button
-                expandedHeight += 60
+                // Issue #64: Use unified height calculator (single source of truth)
+                let expandedHeight = DroppyState.expandedShelfHeight(for: targetScreen)
 
                 expandedShelfZone = NSRect(
                     x: centerX - expandedWidth / 2,
@@ -571,17 +563,9 @@ final class NotchWindowController: NSObject, ObservableObject {
                 if isExpanded {
                     let expandedWidth: CGFloat = 450
                     let centerX = targetScreen.frame.origin.x + targetScreen.frame.width / 2
-                    let rowCount = ceil(Double(DroppyState.shared.items.count) / 5.0)
-                    var expandedHeight = max(1, rowCount) * 110 + 54
                     
-                    // Add extra height for media player when shelf is empty but music is playing
-                    let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-                    if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-                        expandedHeight += 100
-                    }
-                    
-                    // Add buffer for the floating close button
-                    expandedHeight += 60
+                    // Issue #64: Use unified height calculator (single source of truth)
+                    let expandedHeight = DroppyState.expandedShelfHeight(for: targetScreen)
 
                     expandedShelfZone = NSRect(
                         x: centerX - expandedWidth / 2,
@@ -698,20 +682,20 @@ final class NotchWindowController: NSObject, ObservableObject {
                   !DragMonitor.shared.isDragging   // Drag monitor handles its own detection
             else { return }
             
-            // Use CGEvent to get raw cursor position - works even at screen edge
-            guard let cgEvent = CGEvent(source: nil) else { return }
-            let cgPoint = cgEvent.location
-            
-            // Convert CG coordinates (origin top-left of main screen) to NS coordinates (origin bottom-left)
-            // CG Y: 0 at top, increases downward
-            // NS Y: 0 at bottom, increases upward  
-            // For correct multi-monitor: nsY = globalMenuBarHeight - cgY (where globalMenuBarHeight is main screen height + main screen origin offset)
-            // Simpler approach: Use the relationship between frame origins
-            guard let mainScreen = NSScreen.screens.first else { return }
-            // In CG coords, Y=0 is at top of main screen. In NS, main screen's maxY is at the top.
-            // CG Y increases down, NS Y increases up.
-            // So: nsY = mainScreen.frame.maxY - cgPoint.y
-            let nsMouseLocation = NSPoint(x: cgPoint.x, y: mainScreen.frame.maxY - cgPoint.y)
+            // Get cursor position - prefer CGEvent (works at screen edge), fallback to NSEvent
+            // CGEvent can fail without Accessibility permissions, so we need a fallback
+            let nsMouseLocation: NSPoint
+            if let cgEvent = CGEvent(source: nil) {
+                let cgPoint = cgEvent.location
+                // Convert CG coordinates (origin top-left of main screen) to NS coordinates (origin bottom-left)
+                // CG Y: 0 at top, increases downward
+                // NS Y: 0 at bottom, increases upward  
+                guard let mainScreen = NSScreen.screens.first else { return }
+                nsMouseLocation = NSPoint(x: cgPoint.x, y: mainScreen.frame.maxY - cgPoint.y)
+            } else {
+                // Fallback: NSEvent.mouseLocation works without permissions but may miss screen edges
+                nsMouseLocation = NSEvent.mouseLocation
+            }
             
             // Check each window to see if cursor is at the top edge of its screen
             for window in self.notchWindows.values {
@@ -1373,18 +1357,9 @@ class NotchWindow: NSPanel {
                 // If so, maintain hover state to prevent auto-collapse
                 let expandedWidth: CGFloat = 450
                 let centerX = targetScreen.frame.origin.x + targetScreen.frame.width / 2
-                let rowCount = ceil(Double(DroppyState.shared.items.count) / 5.0)
-                var expandedHeight = max(1, rowCount) * 110 + 54
                 
-                // Add media player height if needed
-                let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-                if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-                    expandedHeight += 100
-                }
-                
-                
-                // Add buffer for the floating close button (approx 64pt + spacing + margin)
-                expandedHeight += 60
+                // Issue #64: Use unified height calculator (single source of truth)
+                let expandedHeight = DroppyState.expandedShelfHeight(for: targetScreen)
                 
                 let expandedShelfZone = NSRect(
                     x: centerX - expandedWidth / 2,
@@ -1463,8 +1438,9 @@ class NotchWindow: NSPanel {
                 let expandedWidth: CGFloat = 450
                 // Use global coordinates
                 let centerX = screen.frame.origin.x + screen.frame.width / 2
-                let rowCount = ceil(Double(state.items.count) / 5.0)
-                let expandedHeight = max(1, rowCount) * 110 + 54 + 90 // +90 for close button buffer
+                
+                // Issue #64: Use unified height calculator (single source of truth)
+                let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
 
                 let expandedZone = NSRect(
                     x: centerX - expandedWidth / 2,

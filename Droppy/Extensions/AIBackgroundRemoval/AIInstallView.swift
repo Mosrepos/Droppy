@@ -38,7 +38,7 @@ enum AIInstallStep: Int, CaseIterable {
 // MARK: - Install View
 
 struct AIInstallView: View {
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @ObservedObject var manager = AIInstallManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false

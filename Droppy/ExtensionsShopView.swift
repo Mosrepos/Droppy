@@ -4,7 +4,7 @@ import SwiftUI
 // Extracted from SettingsView.swift for faster incremental builds
 
 struct ExtensionsShopView: View {
-    @State private var selectedCategory: ExtensionCategory = .all
+    @State private var selectedCategory: ExtensionCategory? = nil  // nil = show all
     @Namespace private var categoryAnimation
     @State private var extensionCounts: [String: Int] = [:]
     @State private var extensionRatings: [String: AnalyticsService.ExtensionRating] = [:]
@@ -29,10 +29,7 @@ struct ExtensionsShopView: View {
                 // Featured Hero Section
                 featuredSection
                 
-                // Category Pills
-                categorySwiperHeader
-                
-                // Extensions List
+                // Extensions List (includes header, filters, and list)
                 extensionsList
             }
             .padding(.top, 4)
@@ -60,6 +57,21 @@ struct ExtensionsShopView: View {
     
     private var featuredSection: some View {
         VStack(spacing: 12) {
+            // Section header
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "puzzlepiece.extension.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.cyan)
+                    
+                    Text("Featured Extensions")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                
+                Spacer()
+            }
+            
             // Row 1: AI Background Removal + Voice Transcribe
             HStack(spacing: 12) {
                 FeaturedExtensionCardCompact(
@@ -150,14 +162,20 @@ struct ExtensionsShopView: View {
     private var categorySwiperHeader: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(ExtensionCategory.allCases) { category in
+                // Filter out .all - it's now the default when no filter selected
+                ForEach(ExtensionCategory.allCases.filter { $0 != .all }) { category in
                     CategoryPillButton(
                         category: category,
                         isSelected: selectedCategory == category,
                         namespace: categoryAnimation
                     ) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                            selectedCategory = category
+                            // Double-click/toggle behavior: clicking selected category deselects it
+                            if selectedCategory == category {
+                                selectedCategory = nil  // Back to "all"
+                            } else {
+                                selectedCategory = category
+                            }
                         }
                     }
                 }
@@ -170,33 +188,54 @@ struct ExtensionsShopView: View {
     // MARK: - Extensions List
     
     private var extensionsList: some View {
-        VStack(spacing: 0) {
-            // Filter extensions based on selected category
-            let extensions = filteredExtensions
-            
-            ForEach(Array(extensions.enumerated()), id: \.1.id) { index, ext in
-                CompactExtensionRow(
-                    iconURL: ext.iconURL,
-                    title: ext.title,
-                    subtitle: ext.subtitle,
-                    isInstalled: ext.isInstalled,
-                    installCount: extensionCounts[ext.analyticsKey]
-                ) {
-                    ext.detailView()
+        VStack(spacing: 12) {
+            // Section header
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                    
+                    Text("All Extensions")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
                 }
                 
-                if index < extensions.count - 1 {
-                    Divider()
-                        .padding(.leading, 60)
+                Spacer()
+            }
+            
+            // Category filter pills
+            categorySwiperHeader
+            
+            // Extensions list
+            VStack(spacing: 0) {
+                // Filter extensions based on selected category
+                let extensions = filteredExtensions
+                
+                ForEach(Array(extensions.enumerated()), id: \.1.id) { index, ext in
+                    CompactExtensionRow(
+                        iconURL: ext.iconURL,
+                        title: ext.title,
+                        subtitle: ext.subtitle,
+                        isInstalled: ext.isInstalled,
+                        installCount: extensionCounts[ext.analyticsKey]
+                    ) {
+                        ext.detailView()
+                    }
+                    
+                    if index < extensions.count - 1 {
+                        Divider()
+                            .padding(.leading, 60)
+                    }
                 }
             }
+            .background(Color.white.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
         }
-        .background(Color.white.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
     }
     
     // MARK: - Filtered Extensions
@@ -359,7 +398,12 @@ struct ExtensionsShopView: View {
             }
         ]
         
-        switch selectedCategory {
+        // nil = show all, otherwise filter by category
+        guard let category = selectedCategory else {
+            return allExtensions.filter { !$0.extensionType.isRemoved }.sorted { $0.title < $1.title }
+        }
+        
+        switch category {
         case .all:
             return allExtensions.filter { !$0.extensionType.isRemoved }.sorted { $0.title < $1.title }
         case .installed:
@@ -367,7 +411,7 @@ struct ExtensionsShopView: View {
         case .disabled:
             return allExtensions.filter { $0.extensionType.isRemoved }.sorted { $0.title < $1.title }
         default:
-            return allExtensions.filter { $0.category == selectedCategory && !$0.extensionType.isRemoved }.sorted { $0.title < $1.title }
+            return allExtensions.filter { $0.category == category && !$0.extensionType.isRemoved }.sorted { $0.title < $1.title }
         }
     }
 }

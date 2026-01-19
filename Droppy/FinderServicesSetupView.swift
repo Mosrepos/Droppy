@@ -12,7 +12,7 @@ import AppKit
 // MARK: - Finder Services Setup View
 
 struct FinderServicesSetupView: View {
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
     @State private var hasOpenedSettings = false
@@ -169,7 +169,7 @@ struct FinderServicesSetupView: View {
 
 /// Sheet-compatible version that uses @Environment(\.dismiss) like AIInstallView
 struct FinderServicesSetupSheetView: View {
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false

@@ -5,7 +5,7 @@ import SwiftUI
 
 struct CapturePreviewView: View {
     let image: NSImage
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     
     private let cornerRadius: CGFloat = 28
     private let padding: CGFloat = 16  // Symmetrical padding on all sides

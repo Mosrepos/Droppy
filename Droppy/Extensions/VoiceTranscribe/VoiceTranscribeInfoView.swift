@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct VoiceTranscribeInfoView: View {
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @ObservedObject private var manager = VoiceTranscribeManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false

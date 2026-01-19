@@ -223,14 +223,3 @@ class DraggableAreaView<Content: View>: NSView, NSDraggingSource {
         }
     }
 }
-
-// MARK: - Drag-Out Notifications
-
-extension Notification.Name {
-    /// Posted when files are dragged OUT of the shelf (for auto-clean)
-    static let droppyShelfDragOutCompleted = Notification.Name("droppyShelfDragOutCompleted")
-    /// Posted when files are dragged OUT of the basket (for auto-clean)
-    static let droppyBasketDragOutCompleted = Notification.Name("droppyBasketDragOutCompleted")
-    /// Legacy notification (deprecated, use specific ones above)
-    static let droppyDragOutCompleted = Notification.Name("droppyDragOutCompleted")
-}

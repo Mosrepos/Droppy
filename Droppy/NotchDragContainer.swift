@@ -102,17 +102,16 @@ class NotchDragContainer: NSView {
             // When expanded, track the full expanded shelf area
             let expandedWidth: CGFloat = 450
             let centerX = bounds.midX
-            let rowCount = (Double(DroppyState.shared.items.count) / 5.0).rounded(.up)
-            var expandedHeight = max(1, rowCount) * 110 + 54
             
-            // Add media player height if needed
-            let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-            if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-                expandedHeight += 100
+            // Issue #64: Use unified height calculator (single source of truth)
+            guard let screen = notchWindow.notchScreen else {
+                trackingRect = NSRect(x: bounds.midX - 130, y: bounds.height - 50, width: 260, height: 50)
+                let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways]
+                trackingArea = NSTrackingArea(rect: trackingRect, options: options, owner: self, userInfo: nil)
+                addTrackingArea(trackingArea!)
+                return
             }
-            
-            // Add buffer for the floating close button and bottom padding
-            expandedHeight += 100
+            let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
             
             trackingRect = NSRect(
                 x: centerX - expandedWidth / 2,
@@ -313,18 +312,10 @@ class NotchDragContainer: NSView {
             let centerX = bounds.midX
             let xRange = (centerX - expandedWidth/2)...(centerX + expandedWidth/2)
             
-            // Height calculation from NotchShelfView (approx)
-            let rowCount = (Double(DroppyState.shared.items.count) / 5.0).rounded(.up)
-            var expandedHeight = max(1, rowCount) * 110 + 54
-            
-            // Add extra height for media player when shelf is empty but music is playing (or recently paused)
-            let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-            if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-                expandedHeight += 100
-            }
-            
-            // Add buffer for the floating close button and bottom padding
-            expandedHeight += 100
+            // Issue #64: Use unified height calculator (single source of truth)
+            guard let notchWindow = self.window as? NotchWindow,
+                  let screen = notchWindow.notchScreen else { return nil }
+            let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
              
             // Y is from top (bounds.height) down to (bounds.height - expandedHeight)
             let yRange = (bounds.height - expandedHeight)...bounds.height
@@ -344,16 +335,26 @@ class NotchDragContainer: NSView {
             }
         }
         
-        // If dragging, intercept if mouse is over notch OR over the expanded shelf area
+        // If dragging, intercept if mouse is near top of screen around notch area
+        // Use a generous hit area so auto-expand works well
         if isDragging {
             let mouseScreenPos = NSEvent.mouseLocation
             
-            // Get the real hardware notch rect
-            guard let notchWindow = self.window as? NotchWindow else { return nil }
-            let realNotchRect = notchWindow.getNotchRect()
+            guard let notchWindow = self.window as? NotchWindow,
+                  let screen = notchWindow.notchScreen else { return nil }
             
-            // Accept drags over the real notch
-            if realNotchRect.contains(mouseScreenPos) {
+            // Use expanded notch area (wider and taller to catch media player HUD)
+            let centerX = screen.frame.origin.x + screen.frame.width / 2
+            let dragHitWidth: CGFloat = 400  // Generous width for drag targeting
+            let dragHitHeight: CGFloat = 100 // Generous height to catch media player
+            
+            let xMin = centerX - dragHitWidth / 2
+            let xMax = centerX + dragHitWidth / 2
+            let yMin = screen.frame.origin.y + screen.frame.height - dragHitHeight
+            let yMax = screen.frame.origin.y + screen.frame.height
+            
+            if mouseScreenPos.x >= xMin && mouseScreenPos.x <= xMax &&
+               mouseScreenPos.y >= yMin && mouseScreenPos.y <= yMax {
                 return super.hitTest(point)
             }
             
@@ -369,16 +370,8 @@ class NotchDragContainer: NSView {
                 let xMin = centerX - expandedWidth / 2
                 let xMax = centerX + expandedWidth / 2
 
-                let rowCount = ceil(Double(DroppyState.shared.items.count) / 5.0)
-                var expandedHeight = max(1, rowCount) * 110 + 54
-
-                let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-                if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-                    expandedHeight += 100
-                }
-                
-                // Add buffer for the floating close button and bottom padding
-                expandedHeight += 100
+                // Issue #64: Use unified height calculator (single source of truth)
+                let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
 
                 let yMin = screen.frame.origin.y + screen.frame.height - expandedHeight
                 let yMax = screen.frame.origin.y + screen.frame.height
@@ -442,18 +435,28 @@ class NotchDragContainer: NSView {
     
     // MARK: - NSDraggingDestination Methods
     
-    /// Helper to check if a drag location is over the real hardware notch
+    /// Helper to check if a drag location is over the notch area (generous for auto-expand)
     private func isDragOverNotch(_ sender: NSDraggingInfo) -> Bool {
-        guard let notchWindow = self.window as? NotchWindow else { return false }
-        let notchRect = notchWindow.getNotchRect()
-        let dragLocation = sender.draggingLocation
+        guard let notchWindow = self.window as? NotchWindow,
+              let screen = notchWindow.notchScreen else { return false }
         
-        // Convert from window coordinates to screen coordinates
+        let dragLocation = sender.draggingLocation
         guard let windowFrame = self.window?.frame else { return false }
         let screenLocation = NSPoint(x: windowFrame.origin.x + dragLocation.x, 
                                      y: windowFrame.origin.y + dragLocation.y)
         
-        return notchRect.contains(screenLocation)
+        // Use generous hit area matching hitTest logic
+        let centerX = screen.frame.origin.x + screen.frame.width / 2
+        let dragHitWidth: CGFloat = 400  // Generous width for drag targeting
+        let dragHitHeight: CGFloat = 100 // Generous height to catch media player
+        
+        let xMin = centerX - dragHitWidth / 2
+        let xMax = centerX + dragHitWidth / 2
+        let yMin = screen.frame.origin.y + screen.frame.height - dragHitHeight
+        let yMax = screen.frame.origin.y + screen.frame.height
+        
+        return screenLocation.x >= xMin && screenLocation.x <= xMax &&
+               screenLocation.y >= yMin && screenLocation.y <= yMax
     }
     
     /// Helper to check if a drag is over the expanded shelf area
@@ -475,18 +478,8 @@ class NotchDragContainer: NSView {
         let xMin = centerX - expandedWidth / 2
         let xMax = centerX + expandedWidth / 2
 
-        // Height calculation
-        let rowCount = ceil(Double(DroppyState.shared.items.count) / 5.0)
-        var expandedHeight = max(1, rowCount) * 110 + 54
-
-        // Add extra height for media player
-        let shouldShowPlayer = MusicManager.shared.isPlaying || MusicManager.shared.wasRecentlyPlaying
-        if DroppyState.shared.items.isEmpty && shouldShowPlayer && !MusicManager.shared.isPlayerIdle {
-            expandedHeight += 100
-        }
-        
-        // Add buffer for the floating close button and bottom padding
-        expandedHeight += 100
+        // Issue #64: Use unified height calculator (single source of truth)
+        let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
 
         let yMin = screen.frame.origin.y + screen.frame.height - expandedHeight
         let yMax = screen.frame.origin.y + screen.frame.height
@@ -576,9 +569,20 @@ class NotchDragContainer: NSView {
             return [] // Reject - let drag pass through to other apps
         }
         
-        // Highlight UI when over a valid drop zone
-        let shouldBeTargeted = (overNotch && !isExpanded) || overExpandedArea
-        if shouldBeTargeted {
+        // Auto-expand shelf when drag enters notch (replaces the drop indicator)
+        if overNotch && !isExpanded {
+            // Get the display ID from the notch window's screen
+            if let notchWindow = self.window as? NotchWindow,
+               let displayID = notchWindow.notchScreen?.displayID {
+                DispatchQueue.main.async {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                        DroppyState.shared.expandShelf(for: displayID)
+                        DroppyState.shared.isDropTargeted = true
+                    }
+                }
+            }
+        } else if overExpandedArea {
+            // Highlight UI when over expanded drop zone
             DispatchQueue.main.async {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     DroppyState.shared.isDropTargeted = true

@@ -146,6 +146,37 @@ final class DroppyState {
     /// Pending converted file ready to download (temp URL, original filename)
     var pendingConversion: (tempURL: URL, filename: String)?
     
+    // MARK: - Unified Height Calculator (Issue #64)
+    // Single source of truth for expanded shelf hit-test height.
+    // CRITICAL: This uses MAX of all possible heights to ensure buttons are ALWAYS clickable.
+    // SwiftUI state is complex and hard to replicate - this guarantees interactivity.
+    
+    /// Calculates the hit-test height for the expanded shelf
+    /// Uses MAX of all possible heights to guarantee buttons are always clickable
+    /// - Parameter screen: The screen to calculate for (provides notch height)
+    /// - Returns: Total hit-test height in points
+    static func expandedShelfHeight(for screen: NSScreen) -> CGFloat {
+        let notchHeight = screen.safeAreaInsets.top
+        let isDynamicIsland = notchHeight <= 0 || UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
+        let topPaddingDelta: CGFloat = isDynamicIsland ? 0 : (notchHeight - 14)
+        let notchCompensation: CGFloat = isDynamicIsland ? 0 : notchHeight
+        
+        // Calculate ALL possible content heights
+        let terminalHeight: CGFloat = 180 + topPaddingDelta
+        let mediaPlayerHeight: CGFloat = 140 + topPaddingDelta
+        let rowCount = ceil(Double(DroppyState.shared.items.count) / 5.0)
+        let shelfHeight: CGFloat = max(1, rowCount) * 110 + notchCompensation
+        
+        // Use MAXIMUM of all possible heights - guarantees we cover the actual visual
+        var height = max(terminalHeight, max(mediaPlayerHeight, shelfHeight))
+        
+        // ALWAYS include generous buffer for floating buttons
+        // Button offset (8/12) + button height (46) + extra padding = 70pt
+        height += 70
+        
+        return height
+    }
+    
     /// Shared instance for app-wide access
     static let shared = DroppyState()
     

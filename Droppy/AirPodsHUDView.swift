@@ -47,10 +47,13 @@ struct ConnectedAirPods: Equatable {
 /// - Battery levels fade in after rotation starts
 struct AirPodsHUDView: View {
     let airPods: ConnectedAirPods
-    let notchWidth: CGFloat
-    let notchHeight: CGFloat
     let hudWidth: CGFloat
     var targetScreen: NSScreen? = nil  // Target screen for multi-monitor support
+    
+    /// Centralized layout calculator - Single Source of Truth
+    private var layout: HUDLayoutCalculator {
+        HUDLayoutCalculator(screen: targetScreen ?? NSScreen.main ?? NSScreen.screens.first!)
+    }
     
     // Animation states - iPhone-style timing
     @State private var rotationAngle: Double = 0
@@ -59,30 +62,6 @@ struct AirPodsHUDView: View {
     @State private var batteryOpacity: CGFloat = 0
     @State private var batteryScale: CGFloat = 0.8
     @State private var ringProgress: CGFloat = 0
-    
-    /// Width of each "wing" (area left/right of physical notch)
-    private var wingWidth: CGFloat {
-        (hudWidth - notchWidth) / 2
-    }
-    
-    /// Whether we're in Dynamic Island mode (screen-aware for multi-monitor)
-    /// For HUD LAYOUT purposes: external displays always use compact layout (no physical notch)
-    private var isDynamicIslandMode: Bool {
-        let screen = targetScreen ?? NSScreen.main ?? NSScreen.screens.first
-        guard let screen = screen else { return true }
-        let hasNotch = screen.safeAreaInsets.top > 0
-        let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
-        
-        // External displays never have physical notches, so always use compact HUD layout
-        // The externalDisplayUseDynamicIsland setting only affects the visual shape, not HUD content layout
-        if !screen.isBuiltIn {
-            return true
-        }
-        
-        // For built-in display, use main Dynamic Island setting
-        let useDynamicIsland = UserDefaults.standard.object(forKey: "useDynamicIslandStyle") as? Bool ?? true
-        return (!hasNotch || forceTest) && useDynamicIsland
-    }
     
     /// Battery ring color based on level
     private var batteryColor: Color {
@@ -97,7 +76,7 @@ struct AirPodsHUDView: View {
     
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
-            if isDynamicIslandMode {
+            if layout.isDynamicIslandMode {
                 dynamicIslandContent
             } else {
                 notchModeContent
@@ -111,16 +90,15 @@ struct AirPodsHUDView: View {
     // MARK: - Dynamic Island Layout
     
     private var dynamicIslandContent: some View {
-        // Using Droppy pattern: padding = (notchHeight - iconHeight) / 2 for symmetry
-        let iconSize: CGFloat = 18
-        let symmetricPadding = (notchHeight - iconSize) / 2
+        let iconSize = layout.iconSize
+        let symmetricPadding = layout.symmetricPadding(for: iconSize)
         
         return ZStack {
             // Device name - centered
             VStack {
                 Spacer(minLength: 0)
                 Text("Connected")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: layout.labelFontSize, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
                     .frame(height: 16)
                     .opacity(batteryOpacity)
@@ -135,22 +113,22 @@ struct AirPodsHUDView: View {
                 Spacer()
                 batteryRingView(size: 20)
             }
-            .padding(.horizontal, symmetricPadding)  // Same as vertical for symmetry
+            .padding(.horizontal, symmetricPadding)
         }
-        .frame(height: notchHeight)
+        .frame(height: layout.notchHeight)
     }
     
     // MARK: - Notch Mode Layout
     
     private var notchModeContent: some View {
-        // Using Droppy pattern: 20px icons with symmetricPadding for outer-wing alignment
-        let iconSize: CGFloat = 20
-        let symmetricPadding = max((notchHeight - iconSize) / 2, 6)  // Min 6px for visibility
+        let iconSize = layout.iconSize
+        let symmetricPadding = layout.symmetricPadding(for: iconSize)
+        let wingWidth = layout.wingWidth(for: hudWidth)
         
         return HStack(spacing: 0) {
             // Left wing: AirPods icon near left edge
             HStack {
-                airPodsIconView(size: 20)
+                airPodsIconView(size: iconSize)
                     .frame(width: iconSize, height: iconSize, alignment: .leading)
                 Spacer(minLength: 0)
             }
@@ -159,7 +137,7 @@ struct AirPodsHUDView: View {
             
             // Camera notch area (spacer)
             Spacer()
-                .frame(width: notchWidth)
+                .frame(width: layout.notchWidth)
             
             // Right wing: Battery ring near right edge
             HStack {
@@ -169,7 +147,7 @@ struct AirPodsHUDView: View {
             .padding(.trailing, symmetricPadding)
             .frame(width: wingWidth)
         }
-        .frame(height: notchHeight)
+        .frame(height: layout.notchHeight)
     }
     
     // MARK: - AirPods Icon (iPhone-style 3D rotation)
@@ -187,7 +165,7 @@ struct AirPodsHUDView: View {
                 anchorZ: 0,
                 perspective: 0.3
             )
-            .frame(width: size, height: size)  // Match icon size exactly
+            .frame(width: size, height: size)
             // Scale and opacity entrance
             .scaleEffect(iconScale)
             .opacity(iconOpacity)
@@ -229,17 +207,13 @@ struct AirPodsHUDView: View {
     
     private func startIPhoneStyleAnimation() {
         // === PHASE 1: Icon appears with spring ===
-        // iPhone does a quick scale-up with overshoot
         withAnimation(.spring(response: 0.5, dampingFraction: 0.65, blendDuration: 0)) {
             iconScale = 1.0
             iconOpacity = 1.0
         }
         
         // === PHASE 2: Start slow 3D rotation ===
-        // iPhone rotates slowly around Y-axis (about 3-4 seconds per full rotation)
-        // One full rotation, then settles to gentle oscillation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            // First: one elegant full rotation
             withAnimation(.easeInOut(duration: 3.5)) {
                 rotationAngle = 360
             }
@@ -250,13 +224,12 @@ struct AirPodsHUDView: View {
                     .easeInOut(duration: 2.0)
                     .repeatForever(autoreverses: true)
                 ) {
-                    rotationAngle = 380 // Gentle back and forth around 360
+                    rotationAngle = 380
                 }
             }
         }
         
         // === PHASE 3: Battery info fades in ===
-        // Slightly delayed from icon - iPhone shows battery after icon settles
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             withAnimation(.easeOut(duration: 0.4)) {
                 batteryOpacity = 1.0
@@ -265,7 +238,6 @@ struct AirPodsHUDView: View {
         }
         
         // === PHASE 4: Battery ring fills ===
-        // Smooth fill after battery appears
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             withAnimation(.easeOut(duration: 0.8)) {
                 ringProgress = CGFloat(airPods.batteryLevel) / 100
@@ -288,8 +260,6 @@ struct AirPodsHUDView: View {
                 rightBattery: 90,
                 caseBattery: 75
             ),
-            notchWidth: 210,
-            notchHeight: 37,
             hudWidth: 260
         )
     }
@@ -308,8 +278,6 @@ struct AirPodsHUDView: View {
                 rightBattery: 50,
                 caseBattery: nil
             ),
-            notchWidth: 180,
-            notchHeight: 32,
             hudWidth: 280
         )
     }
@@ -328,8 +296,6 @@ struct AirPodsHUDView: View {
                 rightBattery: 20,
                 caseBattery: nil
             ),
-            notchWidth: 180,
-            notchHeight: 32,
             hudWidth: 280
         )
     }

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct WindowSnapInfoView: View {
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @State private var shortcuts: [SnapAction: SavedShortcut] = [:]
     @State private var recordingAction: SnapAction?
     @State private var recordMonitor: Any?

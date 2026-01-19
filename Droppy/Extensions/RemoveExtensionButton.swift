@@ -171,12 +171,6 @@ struct DisableExtensionButton: View {
     }
 }
 
-// MARK: - Notification for Extension State Changes
-
-extension Notification.Name {
-    static let extensionStateChanged = Notification.Name("extensionStateChanged")
-}
-
 #Preview {
     VStack(spacing: 20) {
         DisableExtensionButton(extensionType: .voiceTranscribe)

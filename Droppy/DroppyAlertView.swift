@@ -46,7 +46,7 @@ struct DroppyAlertView: View {
     let onPrimary: () -> Void
     let onSecondary: (() -> Void)?
     
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @State private var isPrimaryHovering = false
     @State private var isSecondaryHovering = false
     

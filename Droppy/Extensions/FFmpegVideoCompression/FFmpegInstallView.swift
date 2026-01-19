@@ -34,7 +34,7 @@ enum FFmpegInstallStep: Int, CaseIterable {
 // MARK: - Install View
 
 struct FFmpegInstallView: View {
-    @AppStorage("useTransparentBackground") private var useTransparentBackground = false
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @ObservedObject var manager = FFmpegInstallManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
