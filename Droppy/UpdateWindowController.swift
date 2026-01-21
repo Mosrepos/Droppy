@@ -39,10 +39,10 @@ class UpdateWindowController: NSObject, NSWindowDelegate {
             let windowWidth: CGFloat = 400
             let windowHeight: CGFloat = 150 // Initial size, will adjust to content
             
-            // Create the window - IDENTICAL style to SettingsWindowController
+            // Create the window - borderless style without traffic lights
             let newWindow = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
-                styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+                styleMask: [.titled, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
@@ -50,11 +50,15 @@ class UpdateWindowController: NSObject, NSWindowDelegate {
             newWindow.center()
             newWindow.title = "Check for Updates"
             newWindow.titlebarAppearsTransparent = true
-            newWindow.titleVisibility = .visible
+            newWindow.titleVisibility = .hidden
             
-            // Configure background and appearance - IDENTICAL to SettingsWindowController
-            // NOTE: Do NOT use isMovableByWindowBackground to avoid buttons/entries triggering window drag
-            newWindow.isMovableByWindowBackground = false
+            // Hide traffic lights
+            newWindow.standardWindowButton(.closeButton)?.isHidden = true
+            newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            newWindow.standardWindowButton(.zoomButton)?.isHidden = true
+            
+            // Configure background and appearance
+            newWindow.isMovableByWindowBackground = true
             newWindow.backgroundColor = .clear
             newWindow.isOpaque = false
             newWindow.hasShadow = true
