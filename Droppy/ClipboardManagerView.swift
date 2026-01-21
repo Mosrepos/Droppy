@@ -1252,7 +1252,9 @@ struct ClipboardItemRow: View {
 
         .contentShape(Rectangle())
         .onHover { hovering in
-            isHovering = hovering
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
         }
     }
     
