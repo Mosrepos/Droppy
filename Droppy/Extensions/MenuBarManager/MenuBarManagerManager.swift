@@ -72,6 +72,10 @@ final class MenuBarManager: ObservableObject {
         isEnabled = true
         UserDefaults.standard.set(true, forKey: enabledKey)
         
+        // CRITICAL: Clear cached positions to ensure correct ordering
+        // The divider MUST be to the LEFT of the toggle for hiding to work correctly
+        clearCachedPositions()
+        
         // Create both status items
         createStatusItems()
         
@@ -84,6 +88,13 @@ final class MenuBarManager: ObservableObject {
         applyExpansionState()
         
         print("[MenuBarManager] Enabled, expanded: \(isExpanded)")
+    }
+    
+    /// Clear cached status item positions to reset ordering
+    private func clearCachedPositions() {
+        StatusItemDefaults.clearPreferredPosition(for: toggleAutosaveName)
+        StatusItemDefaults.clearPreferredPosition(for: dividerAutosaveName)
+        print("[MenuBarManager] Cleared cached positions for fresh ordering")
     }
     
     /// Disable the menu bar manager
@@ -290,6 +301,10 @@ private enum StatusItemDefaults {
     
     static func setPreferredPosition(_ position: Double, for autosaveName: String) {
         UserDefaults.standard.set(position, forKey: "\(positionPrefix) \(autosaveName)")
+    }
+    
+    static func clearPreferredPosition(for autosaveName: String) {
+        UserDefaults.standard.removeObject(forKey: "\(positionPrefix) \(autosaveName)")
     }
 }
 
