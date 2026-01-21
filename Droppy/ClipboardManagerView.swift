@@ -723,7 +723,8 @@ struct ClipboardManagerView: View {
                                     }
                                 }
                             }
-                        }
+                        } // Close LazyVStack
+                        } // Close VStack
                         .padding(.horizontal, 20)
                         .padding(.bottom, 20)
                         // Animation for list changes (favorites, add/remove)
