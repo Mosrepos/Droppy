@@ -314,6 +314,151 @@ We believe in transparency—you can see exactly what the app does and verify it
 
 ---
 
+## Roadmap
+
+<details>
+<summary>Shipped (click to expand)</summary>
+
+- [x] Notch Shelf
+- [x] Floating Basket
+- [x] Jiggle mouse to summon basket
+- [x] Clipboard Manager
+- [x] Clipboard search
+- [x] Clipboard favorites
+- [x] Clipboard OCR extraction
+- [x] Clipboard bulk copy
+- [x] Clipboard rename entries
+- [x] Clipboard drag out
+- [x] Clipboard paste with Cmd+V
+- [x] Copy + Favorite shortcut (Cmd+Shift+C)
+- [x] Auto-focus search
+- [x] Media Player
+- [x] Album art display
+- [x] Playback controls
+- [x] Shuffle and repeat
+- [x] Tap-to-seek slider
+- [x] Real audio visualizer
+- [x] Adaptive album glow
+- [x] Low-profile media console layout
+- [x] Inline HUD indicators in media player
+- [x] Dynamic Island mode
+- [x] Multi-monitor support
+- [x] Smart fullscreen detection
+- [x] Per-screen expansion
+- [x] Screen-localized expansion
+- [x] Cross-screen hover handling
+- [x] Power Folders
+- [x] Pin folders to shelf
+- [x] Direct filing into pinned folders
+- [x] Smart Export
+- [x] Auto-save compression results
+- [x] Auto-save conversion results
+- [x] Reveal in Finder after export
+- [x] Protect Originals mode
+- [x] Always copy on drag option
+- [x] Volume HUD
+- [x] Brightness HUD
+- [x] Battery HUD
+- [x] Caps Lock HUD
+- [x] AirPods HUD with battery levels
+- [x] Focus/DND HUD
+- [x] Lock Screen HUD
+- [x] Mute feedback in Volume HUD
+- [x] Side-by-side HUD layout
+- [x] AI Background Removal
+- [x] Bulk AI background removal
+- [x] Voice Transcribe
+- [x] Voice Transcribe audio file upload
+- [x] Invisi-record mode
+- [x] WhisperKit on-device AI
+- [x] Video Target Size compression
+- [x] Two-pass FFmpeg encoding
+- [x] Window Snap
+- [x] Customizable snap shortcuts
+- [x] Snap preview overlay
+- [x] Element Capture
+- [x] Click-to-capture any UI element
+- [x] Termi-Notch
+- [x] Quick terminal in notch
+- [x] Command execution with timeout
+- [x] Output scrolling
+- [x] Open in Terminal.app handoff
+- [x] Spotify Integration
+- [x] Alfred Workflow
+- [x] Finder Services
+- [x] Extension Store
+- [x] Extension install/uninstall
+- [x] Extension enable/disable toggles
+- [x] Extension reviews and ratings
+- [x] Extension install counts
+- [x] File compression (ZIP)
+- [x] Image conversion (PNG, JPG, HEIC, WebP, PDF)
+- [x] Video conversion
+- [x] Document to PDF conversion (DOCX, PPTX, XLSX)
+- [x] Native offline document conversion
+- [x] OCR text extraction
+- [x] Quick Look preview (Spacebar)
+- [x] AirDrop sharing
+- [x] AirDrop drop zones
+- [x] Split-zone basket layout
+- [x] Open With menu
+- [x] Reveal in Finder
+- [x] Transparency mode (Liquid Glass)
+- [x] Dynamic Island transparency
+- [x] Droppy NotchFace
+- [x] NotchFace winking animation
+- [x] NotchFace excited state
+- [x] NotchFace mouse tracking
+- [x] Onboarding wizard (7 pages)
+- [x] Guided first-run experience
+- [x] Interactive demo during setup
+- [x] Auto-expand on hover
+- [x] Configurable expand delay
+- [x] Auto-collapse
+- [x] Configurable collapse delay
+- [x] Click-outside-to-close
+- [x] Right-click hide/show
+- [x] Manual close button
+- [x] Zero-lag first drop
+- [x] Placeholder-first icon loading
+- [x] Async icon elevation
+- [x] Metal shader pre-warming
+- [x] 120fps SwiftUI animations
+- [x] In-app updates
+- [x] Crash reporter
+- [x] Session-aware crash detection
+- [x] Self-healing watchdog
+- [x] Wake-from-sleep recovery
+- [x] Display configuration guard
+- [x] URL scheme integration (droppy://)
+- [x] Global keyboard shortcuts
+- [x] Shortcut recording UI
+- [x] Homebrew distribution
+- [x] Universal binary (Apple Silicon + Intel)
+- [x] Start at login option
+- [x] Menu bar extra
+- [x] Context menus everywhere
+- [x] Drag preview thumbnails
+- [x] Folder preview popovers
+- [x] ZIP file branded icon
+- [x] Progress indicators during processing
+- [x] Poof animation on success
+- [x] Collision protection for exports
+- [x] Hardware-aware onboarding
+- [x] Notch mode vs Island mode detection
+- [x] External display style picker
+
+</details>
+
+- [ ] Live Sports Scores extension
+- [ ] Modular Shelf (customizable widgets)
+- [ ] Weather integration
+- [ ] Calendar integration
+
+**Have an idea?** [Open a feature request](https://github.com/iordv/Droppy/issues/new?template=feature_request.md) or chat on [Discord](https://discord.gg/ghMSjHRa)!
+
+---
+
 ## Build from Source
 
 ```bash
