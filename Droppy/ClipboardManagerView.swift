@@ -611,9 +611,12 @@ struct ClipboardManagerView: View {
                                         }
                                     },
                                     onRightClick: {
-                                        // Select if not already selected
-                                        if !selectedItems.contains(item.id) {
-                                            selectedItems = [item.id]
+                                        // CRITICAL: Defer selection to AFTER menu opens to avoid view recreation lag
+                                        // The view recreation (due to .id modifier) would block the menu if done synchronously
+                                        DispatchQueue.main.async {
+                                            if !selectedItems.contains(item.id) {
+                                                selectedItems = [item.id]
+                                            }
                                         }
                                     },
                                     // Force DraggableArea to update when selection changes
