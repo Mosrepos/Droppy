@@ -21,7 +21,7 @@
 ---
 
 <p align="center">
-  <img src="docs/assets/images/termi-notch-demo.gif" alt="Droppy Demo" width="100%">
+  <img src="docs/assets/images/droppy-demo.gif" alt="Droppy Demo" width="100%">
 </p>
 
 <p align="center">

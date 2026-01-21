@@ -54,7 +54,7 @@ struct MenuBarManagerInfoView: View {
             // Buttons (fixed, non-scrolling)
             buttonSection
         }
-        .frame(width: 500)
+        .frame(width: 540)
         .fixedSize(horizontal: true, vertical: true)
         .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -152,7 +152,7 @@ struct MenuBarManagerInfoView: View {
             }
             
             // Screenshot
-            CachedAsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/images/menu-bar-manager-screenshot.png")) { image in
+            CachedAsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/screenshots/menu-bar-manager.png")) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -248,6 +248,7 @@ struct MenuBarManagerInfoView: View {
             }
             .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -259,11 +260,14 @@ struct MenuBarManagerInfoView: View {
     
     private func instructionRow(step: String, text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text(step)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 20, height: 20)
-                .background(Circle().fill(Color.blue))
+            ZStack {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 20, height: 20)
+                Text(step)
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+            }
             
             Text(text)
                 .font(.callout)
