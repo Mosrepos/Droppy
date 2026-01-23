@@ -281,6 +281,7 @@ final class TrackedFoldersManager: ObservableObject {
             // Add ALL pending files as a SINGLE stack to shelf (always show as stack)
             state.addItems(from: urlArray, forceStackAppearance: true)
             state.isExpanded = true
+            state.showShelf()  // Actually open the shelf window
             print("TrackedFolders: Created stack with \(urlArray.count) file(s) in Shelf")
             
         case .basket:

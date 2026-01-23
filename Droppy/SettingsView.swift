@@ -2063,7 +2063,7 @@ struct SwipeGestureInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2106,7 +2106,7 @@ struct NotchShelfInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2149,7 +2149,7 @@ struct BasketGestureInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2192,7 +2192,7 @@ struct PeekModeInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2235,7 +2235,7 @@ struct InstantAppearInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2278,7 +2278,7 @@ struct AirDropZoneInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2321,7 +2321,7 @@ struct AutoCleanInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -2364,7 +2364,7 @@ struct AlwaysCopyInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -3112,7 +3112,7 @@ struct PowerFoldersInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -3169,7 +3169,7 @@ struct ClipboardShortcutInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -3236,7 +3236,7 @@ struct ExternalDisplayInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -3278,7 +3278,7 @@ struct QuickActionsInfoButton: View {
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -3466,13 +3466,13 @@ struct TrackedFoldersInfoButton: View {
     @State private var showPopover = false
     
     var body: some View {
-        Image(systemName: "folder.badge.questionmark")
+        Image(systemName: "info.circle")
             .font(.system(size: 16))
             .foregroundStyle(.secondary)
             .frame(width: 20, height: 20)
             .onTapGesture { showPopover.toggle() }
             .onHover { hovering in
-                if hovering { showPopover = true }
+                showPopover = hovering
             }
             .popover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
