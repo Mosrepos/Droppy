@@ -16,11 +16,11 @@ struct LockScreenMediaPanelView: View {
     @ObservedObject var animator: LockScreenMediaPanelAnimator
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     
-    // MARK: - Layout Constants (pixel-perfect)
+    // MARK: - Layout Constants (pixel-perfect, synced with Manager)
     private let panelWidth: CGFloat = 380
     private let panelHeight: CGFloat = 160
     private let cornerRadius: CGFloat = 24
-    private let edgePadding: CGFloat = 16  // Same padding on ALL edges
+    private let edgePadding: CGFloat = 16
     private let albumArtSize: CGFloat = 56
     private let albumArtRadius: CGFloat = 10
     
@@ -33,14 +33,14 @@ struct LockScreenMediaPanelView: View {
                 ? min(1, max(0, estimatedTime / musicManager.songDuration)) 
                 : 0
             
-            VStack(spacing: 0) {
+            VStack(spacing: 14) {
                 // Row 1: Album Art + Track Info + Visualizer
-                HStack(spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
                     // Album art
                     albumArtView
                     
                     // Track info (title + artist)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(musicManager.songTitle.isEmpty ? "Not Playing" : musicManager.songTitle)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
@@ -54,7 +54,7 @@ struct LockScreenMediaPanelView: View {
                     
                     Spacer(minLength: 0)
                     
-                    // Visualizer (5 bars) - aligned to right edge
+                    // Visualizer (5 bars)
                     AudioSpectrumView(
                         isPlaying: musicManager.isPlaying,
                         barCount: 5,
@@ -64,15 +64,14 @@ struct LockScreenMediaPanelView: View {
                         color: .white
                     )
                 }
-                
-                Spacer(minLength: 0)
+                .frame(height: albumArtSize)
                 
                 // Row 2: Progress bar with timestamps
                 HStack(spacing: 8) {
                     Text(formatTime(estimatedTime))
-                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
                         .foregroundColor(.white.opacity(0.6))
-                        .frame(width: 36, alignment: .leading)
+                        .frame(width: 32, alignment: .leading)
                     
                     // Progress track
                     GeometryReader { geo in
@@ -90,24 +89,20 @@ struct LockScreenMediaPanelView: View {
                     .frame(height: 4)
                     
                     Text(formatTime(musicManager.songDuration))
-                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
                         .foregroundColor(.white.opacity(0.6))
-                        .frame(width: 36, alignment: .trailing)
+                        .frame(width: 32, alignment: .trailing)
                 }
                 
-                Spacer(minLength: 0)
-                
                 // Row 3: Media controls (centered)
-                HStack(spacing: 36) {
+                HStack(spacing: 40) {
                     // Previous
                     Button {
                         musicManager.previousTrack()
                     } label: {
                         Image(systemName: "backward.fill")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 22, weight: .medium))
                             .foregroundColor(.white)
-                            .frame(width: 44, height: 32)
-                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     
@@ -116,10 +111,8 @@ struct LockScreenMediaPanelView: View {
                         musicManager.togglePlay()
                     } label: {
                         Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 26, weight: .medium))
+                            .font(.system(size: 28, weight: .medium))
                             .foregroundColor(.white)
-                            .frame(width: 44, height: 32)
-                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     
@@ -128,10 +121,8 @@ struct LockScreenMediaPanelView: View {
                         musicManager.nextTrack()
                     } label: {
                         Image(systemName: "forward.fill")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 22, weight: .medium))
                             .foregroundColor(.white)
-                            .frame(width: 44, height: 32)
-                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -145,10 +136,10 @@ struct LockScreenMediaPanelView: View {
                     .stroke(Color.white.opacity(useTransparentBackground ? 0.2 : 0.1), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.4), radius: 30, x: 0, y: 15)
-            // Entry/exit animations
-            .scaleEffect(animator.isPresented ? 1 : 0.85, anchor: .center)
+            // Entry/exit animations - FAST
+            .scaleEffect(animator.isPresented ? 1 : 0.9, anchor: .center)
             .opacity(animator.isPresented ? 1 : 0)
-            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: animator.isPresented)
+            .animation(.easeOut(duration: 0.15), value: animator.isPresented)
         }
     }
     

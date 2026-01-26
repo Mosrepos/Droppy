@@ -15,8 +15,8 @@ import Combine
 
 /// Animation timing constants for lock screen panel transitions
 enum LockScreenMediaAnimationTimings {
-    static let panelShow: TimeInterval = 0.45
-    static let panelHide: TimeInterval = 0.35
+    static let panelShow: TimeInterval = 0.2
+    static let panelHide: TimeInterval = 0.15
 }
 
 /// Animator for panel visibility state - allows SwiftUI to animate entry/exit
@@ -39,10 +39,10 @@ final class LockScreenMediaPanelManager {
     private var hideTask: Task<Void, Never>?
     private var screenChangeObserver: NSObjectProtocol?
     
-    // MARK: - Panel Dimensions
-    private let panelWidth: CGFloat = 420
-    private let panelHeight: CGFloat = 180
-    private let panelCornerRadius: CGFloat = 28
+    // MARK: - Panel Dimensions (must match LockScreenMediaPanelView)
+    private let panelWidth: CGFloat = 380
+    private let panelHeight: CGFloat = 160
+    private let panelCornerRadius: CGFloat = 24
     
     // MARK: - Dependencies
     private weak var musicManager: MusicManager?

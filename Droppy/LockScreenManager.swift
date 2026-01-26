@@ -93,14 +93,17 @@ class LockScreenManager: ObservableObject {
         // Update internal state IMMEDIATELY - the notch is visible on lock screen via SkyLight
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            // Prevent duplicate triggers
-            guard self.isUnlocked else { return }
-            self.isUnlocked = false
-            self.lastEvent = .locked
-            self.lastChangeAt = Date()
             
-            // Show lock screen media panel (it renders ON the lock screen)
+            // Always show the panel when screen locks/dims (even if already locked)
+            // This handles: initial lock, screen dim, and re-lock after partial wake
             LockScreenMediaPanelManager.shared.showPanel()
+            
+            // Only update state if transitioning from unlocked
+            if self.isUnlocked {
+                self.isUnlocked = false
+                self.lastEvent = .locked
+                self.lastChangeAt = Date()
+            }
         }
     }
     
