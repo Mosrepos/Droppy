@@ -35,38 +35,45 @@ struct LockScreenMediaPanelView: View {
             
             VStack(spacing: 14) {
                 // Row 1: Album Art + Track Info + Visualizer
-                HStack(alignment: .center, spacing: 0) {
-                    // Album art
-                    albumArtView
-                        .padding(.trailing, 12)
-                    
-                    // Track info (title + artist)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(musicManager.songTitle.isEmpty ? "Not Playing" : musicManager.songTitle)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
+                ZStack {
+                    // Left side: Album art + track info
+                    HStack(alignment: .center, spacing: 12) {
+                        // Album art
+                        albumArtView
                         
-                        Text(musicManager.artistName.isEmpty ? "Unknown Artist" : musicManager.artistName)
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(.white.opacity(0.6))
-                            .lineLimit(1)
+                        // Track info (title + artist)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(musicManager.songTitle.isEmpty ? "Not Playing" : musicManager.songTitle)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            
+                            Text(musicManager.artistName.isEmpty ? "Unknown Artist" : musicManager.artistName)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
+                        
+                        Spacer() // Push everything else away
                     }
                     
-                    Spacer(minLength: 8)
-                    
-                    // Visualizer (5 bars) - at exact right edge
-                    AudioSpectrumView(
-                        isPlaying: musicManager.isPlaying,
-                        barCount: 5,
-                        barWidth: 3,
-                        spacing: 2,
-                        height: 20,
-                        color: musicManager.visualizerColor
-                    )
+                    // Right side: Visualizer - explicitly positioned at right edge
+                    HStack {
+                        Spacer()
+                        
+                        AudioSpectrumView(
+                            isPlaying: musicManager.isPlaying,
+                            barCount: 5,
+                            barWidth: 3,
+                            spacing: 2,
+                            height: 20,
+                            color: musicManager.visualizerColor
+                        )
+                    }
                 }
-                .frame(maxWidth: .infinity) // FORCE full width
-                .frame(height: albumArtSize)
+                // CRITICAL: Explicitly set frame width to ensure Spacer() works
+                // width = panelWidth (380) - padding (16*2=32) = 348
+                .frame(width: panelWidth - (edgePadding * 2), height: albumArtSize)
                 
                 // Row 2: Progress bar with timestamps
                 HStack(spacing: 8) {
