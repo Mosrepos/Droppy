@@ -36,16 +36,15 @@ final class MenuBarManager: ObservableObject {
         }
     }
     
-    /// Whether the Droppy Bar is enabled
+    /// Whether the Droppy Bar is enabled (shows when expanding menu bar icons)
     @Published var droppyBarEnabled: Bool = false {
         didSet {
             UserDefaults.standard.set(droppyBarEnabled, forKey: droppyBarEnabledKey)
-            if droppyBarEnabled {
+            // Bar visibility is now controlled by isExpanded, not separate toggle
+            if droppyBarEnabled && isExpanded {
                 showDroppyBar()
-                createDroppyBarToggle()
             } else {
                 hideDroppyBar()
-                removeDroppyBarToggle()
             }
         }
     }
@@ -58,13 +57,9 @@ final class MenuBarManager: ObservableObject {
     /// The invisible divider that expands to push items off-screen
     private var dividerItem: NSStatusItem?
     
-    /// Toggle button for Droppy Bar - shows ellipsis icon
-    private var droppyBarToggleItem: NSStatusItem?
-    
     /// Autosave names for position persistence
     private let toggleAutosaveName = "DroppyMenuBarToggle"
     private let dividerAutosaveName = "DroppyMenuBarDivider"
-    private let droppyBarToggleAutosaveName = "DroppyBarToggle"
     
     // MARK: - Droppy Bar
     
@@ -205,6 +200,15 @@ final class MenuBarManager: ObservableObject {
         UserDefaults.standard.set(isExpanded, forKey: expandedKey)
         applyExpansionState()
         
+        // Also toggle Droppy Bar if enabled
+        if droppyBarEnabled {
+            if isExpanded {
+                showDroppyBar()
+            } else {
+                hideDroppyBar()
+            }
+        }
+        
         // Notify to refresh Droppy menu
         NotificationCenter.default.post(name: .menuBarManagerStateChanged, object: nil)
         
@@ -285,6 +289,12 @@ final class MenuBarManager: ObservableObject {
                 isHoverExpanded = true
                 isExpanded = true
                 applyExpansionState()
+                
+                // Also show Droppy Bar if enabled
+                if droppyBarEnabled {
+                    showDroppyBar()
+                }
+                
                 print("[MenuBarManager] Hover expand triggered")
             }
         } else {
@@ -307,6 +317,12 @@ final class MenuBarManager: ObservableObject {
                             let savedState = UserDefaults.standard.bool(forKey: manager.expandedKey)
                             manager.isExpanded = savedState
                             manager.applyExpansionState()
+                            
+                            // Also hide Droppy Bar if enabled and should hide
+                            if manager.droppyBarEnabled && !manager.isExpanded {
+                                manager.hideDroppyBar()
+                            }
+                            
                             print("[MenuBarManager] Hover collapse triggered (after delay)")
                         }
                         manager.collapseTimer = nil
@@ -356,39 +372,6 @@ final class MenuBarManager: ObservableObject {
         print("[MenuBarManager] Created status items")
     }
     
-    private func createDroppyBarToggle() {
-        guard droppyBarToggleItem == nil else { return }
-        
-        droppyBarToggleItem = NSStatusBar.system.statusItem(withLength: toggleLength)
-        droppyBarToggleItem?.autosaveName = droppyBarToggleAutosaveName
-        
-        if let button = droppyBarToggleItem?.button {
-            button.target = self
-            button.action = #selector(droppyBarToggleClicked)
-            updateDroppyBarToggleIcon()
-            print("[MenuBarManager] Droppy Bar toggle configured")
-        }
-    }
-    
-    private func removeDroppyBarToggle() {
-        if let item = droppyBarToggleItem {
-            NSStatusBar.system.removeStatusItem(item)
-            droppyBarToggleItem = nil
-            print("[MenuBarManager] Droppy Bar toggle removed")
-        }
-    }
-    
-    private func updateDroppyBarToggleIcon() {
-        guard let button = droppyBarToggleItem?.button else { return }
-        
-        let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
-        
-        // Show filled ellipsis if bar is visible, empty if hidden
-        let symbolName = droppyBarPanel?.isVisible == true ? "ellipsis.circle.fill" : "ellipsis.circle"
-        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Toggle Droppy Bar")?
-            .withSymbolConfiguration(config)
-    }
-    
     private func removeStatusItems() {
         if let item = toggleItem {
             let autosaveName = item.autosaveName as String
@@ -414,12 +397,16 @@ final class MenuBarManager: ObservableObject {
         
         let config = NSImage.SymbolConfiguration(pointSize: 8, weight: .regular)
         
-        if isExpanded {
-            // Items visible (expanded) - show filled dot
+        // Only show filled dot when MANUALLY expanded, not during hover
+        // This prevents confusing behavior where clicking filled dot hides again
+        let isManuallyExpanded = isExpanded && !isHoverExpanded
+        
+        if isManuallyExpanded {
+            // Items manually shown - show filled dot
             button.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Hide menu bar icons")?
                 .withSymbolConfiguration(config)
         } else {
-            // Items hidden (collapsed) - show empty dot
+            // Items hidden or only hover-expanded - show empty dot
             button.image = NSImage(systemSymbolName: "circle", accessibilityDescription: "Show menu bar icons")?
                 .withSymbolConfiguration(config)
         }
@@ -451,16 +438,6 @@ final class MenuBarManager: ObservableObject {
             // Left-click: toggle expansion
             toggleExpanded()
         }
-    }
-    
-    @objc private func droppyBarToggleClicked() {
-        // Toggle the Droppy Bar visibility
-        if droppyBarPanel?.isVisible == true {
-            droppyBarPanel?.orderOut(nil)
-        } else {
-            showDroppyBar()
-        }
-        updateDroppyBarToggleIcon()
     }
     
     private func showContextMenu() {
