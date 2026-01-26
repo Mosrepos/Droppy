@@ -118,7 +118,6 @@ private final class DroppyBarHostingView: NSHostingView<DroppyBarContentView> {
 struct DroppyBarContentView: View {
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @StateObject private var scanner = MenuBarItemScanner()
-    @State private var frame = CGRect.zero
     
     private var contentHeight: CGFloat {
         NSScreen.main?.getMenuBarHeight() ?? 24
@@ -153,7 +152,6 @@ struct DroppyBarContentView: View {
         .shadow(color: .black.opacity(0.33), radius: 2.5)
         .padding(5)
         .fixedSize()
-        .onFrameChange(update: $frame)
         .onAppear {
             if scanner.hasScreenCapturePermission {
                 scanner.scanWithCapture()
@@ -244,7 +242,7 @@ final class DroppyBarClickView: NSView {
         else {
             return
         }
-        clickMenuItem(button: .left)
+        clickMenuItem(isLeftClick: true)
     }
     
     override func rightMouseUp(with event: NSEvent) {
@@ -255,11 +253,11 @@ final class DroppyBarClickView: NSView {
         else {
             return
         }
-        clickMenuItem(button: .right)
+        clickMenuItem(isLeftClick: false)
     }
     
     /// Click the actual menu bar item by posting a click event to its position
-    private func clickMenuItem(button: NSEvent.ButtonNumber) {
+    private func clickMenuItem(isLeftClick: Bool) {
         Task { @MainActor in
             // Get the item's position in the menu bar
             guard let frame = item.frame else {
@@ -283,9 +281,9 @@ final class DroppyBarClickView: NSView {
             let clickPoint = CGPoint(x: clickX, y: cgClickY)
             
             // Create and post mouse events
-            let mouseDownType: CGEventType = button == .left ? .leftMouseDown : .rightMouseDown
-            let mouseUpType: CGEventType = button == .left ? .leftMouseUp : .rightMouseUp
-            let mouseButton: CGMouseButton = button == .left ? .left : .right
+            let mouseDownType: CGEventType = isLeftClick ? .leftMouseDown : .rightMouseDown
+            let mouseUpType: CGEventType = isLeftClick ? .leftMouseUp : .rightMouseUp
+            let mouseButton: CGMouseButton = isLeftClick ? .left : .right
             
             if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: mouseDownType, mouseCursorPosition: clickPoint, mouseButton: mouseButton) {
                 mouseDown.post(tap: .cghidEventTap)
@@ -297,7 +295,7 @@ final class DroppyBarClickView: NSView {
                 mouseUp.post(tap: .cghidEventTap)
             }
             
-            print("[DroppyBar] Clicked \(item.ownerName) at (\(clickX), \(clickY)) with \(button == .left ? "left" : "right") button")
+            print("[DroppyBar] Clicked \(item.ownerName) at (\(clickX), \(clickY)) with \(isLeftClick ? "left" : "right") button")
         }
     }
 }
