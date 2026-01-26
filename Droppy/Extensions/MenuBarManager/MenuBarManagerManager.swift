@@ -56,12 +56,18 @@ final class MenuBarManager: ObservableObject {
     /// Whether we are currently in a hover-expanded state (temporary expansion)
     private var isHoverExpanded = false
     
+    /// Timer to delay collapse for stability (debounce)
+    private var collapseTimer: Timer?
+    
+    /// Delay before collapsing after mouse leaves (seconds)
+    private let collapseDelay: TimeInterval = 0.3
+    
     /// Threshold X position - mouse must be to the right of this to trigger hover reveal
     /// This is the right side of the screen where menu bar icons live
     private var hoverThresholdX: CGFloat {
         guard let screen = NSScreen.main else { return 800 }
-        // Trigger when mouse is in the right 40% of screen (where menu bar icons typically are)
-        return screen.frame.width * 0.6
+        // Trigger when mouse is in the right 50% of screen (where menu bar icons typically are)
+        return screen.frame.width * 0.5
     }
     
     // MARK: - Constants
@@ -202,6 +208,10 @@ final class MenuBarManager: ObservableObject {
             print("[MenuBarManager] Hover monitoring stopped")
         }
         
+        // Cancel any pending collapse
+        collapseTimer?.invalidate()
+        collapseTimer = nil
+        
         // Restore to user's saved state if we were hover-expanded
         if isHoverExpanded {
             isHoverExpanded = false
@@ -227,6 +237,10 @@ final class MenuBarManager: ObservableObject {
         let isInIconArea = mouseLocation.x >= hoverThresholdX
         
         if isInMenuBar && isInIconArea {
+            // Cancel any pending collapse
+            collapseTimer?.invalidate()
+            collapseTimer = nil
+            
             // Mouse is in the menu bar on the right side - expand if collapsed
             if !isExpanded && !isHoverExpanded {
                 isHoverExpanded = true
@@ -235,13 +249,27 @@ final class MenuBarManager: ObservableObject {
                 print("[MenuBarManager] Hover expand triggered")
             }
         } else {
-            // Mouse left the menu bar area - collapse if we hover-expanded
-            if isHoverExpanded && isExpanded {
-                isHoverExpanded = false
-                let savedState = UserDefaults.standard.bool(forKey: expandedKey)
-                isExpanded = savedState
-                applyExpansionState()
-                print("[MenuBarManager] Hover collapse triggered")
+            // Mouse left the menu bar area - schedule collapse with delay for stability
+            if isHoverExpanded && isExpanded && collapseTimer == nil {
+                collapseTimer = Timer.scheduledTimer(withTimeInterval: collapseDelay, repeats: false) { [weak self] _ in
+                    Task { @MainActor in
+                        guard let self = self else { return }
+                        
+                        // Double-check mouse is still outside before collapsing
+                        let currentLocation = NSEvent.mouseLocation
+                        let stillInMenuBar = currentLocation.y >= (screen.frame.maxY - menuBarHeight)
+                        let stillInIconArea = currentLocation.x >= self.hoverThresholdX
+                        
+                        if !stillInMenuBar || !stillInIconArea {
+                            self.isHoverExpanded = false
+                            let savedState = UserDefaults.standard.bool(forKey: self.expandedKey)
+                            self.isExpanded = savedState
+                            self.applyExpansionState()
+                            print("[MenuBarManager] Hover collapse triggered (after delay)")
+                        }
+                        self.collapseTimer = nil
+                    }
+                }
             }
         }
     }
