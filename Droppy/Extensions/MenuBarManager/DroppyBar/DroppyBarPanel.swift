@@ -140,33 +140,99 @@ final class DroppyBarPanel: NSPanel {
 
 /// SwiftUI content view for the Droppy Bar
 struct DroppyBarContentView: View {
+    @StateObject private var scanner = MenuBarItemScanner()
+    @State private var hoveredItemID: Int?
     
     var body: some View {
-        HStack(spacing: 4) {
-            // Placeholder content - will be replaced with actual icons
-            Text("Droppy Bar")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+        HStack(spacing: 0) {
+            // Menu bar items
+            if scanner.menuBarItems.isEmpty {
+                Text("Scanning...")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(scanner.menuBarItems) { item in
+                    DroppyBarIconButton(
+                        item: item,
+                        isHovered: hoveredItemID == item.id,
+                        onHover: { isHovered in
+                            hoveredItemID = isHovered ? item.id : nil
+                        }
+                    )
+                }
+            }
             
             Spacer()
             
-            // Close button
+            // Refresh button
             Button(action: {
-                // Will close the panel
+                scanner.scan()
             }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12))
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+            .help("Refresh icons")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             // Glassmorphism background
             VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onAppear {
+            scanner.scan()
+        }
+    }
+}
+
+// MARK: - DroppyBarIconButton
+
+/// A button that displays a menu bar item icon
+struct DroppyBarIconButton: View {
+    let item: MenuBarItemScanner.ScannedMenuItem
+    let isHovered: Bool
+    let onHover: (Bool) -> Void
+    
+    var body: some View {
+        Button(action: {
+            // Click the original menu bar item
+            activateMenuItem()
+        }) {
+            Group {
+                if let icon = item.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                } else {
+                    // Fallback: first letter of app name
+                    Text(String(item.ownerName.prefix(1)))
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isHovered ? Color.white.opacity(0.1) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(item.ownerName)
+        .onHover { hovering in
+            onHover(hovering)
+        }
+    }
+    
+    private func activateMenuItem() {
+        // Activate the app that owns this menu bar item
+        if let app = NSRunningApplication(processIdentifier: pid_t(item.ownerPID)) {
+            app.activate()
+            print("[DroppyBar] Activated: \(item.ownerName)")
+        }
     }
 }
 

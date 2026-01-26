@@ -6,6 +6,7 @@
 //
 
 import Cocoa
+import Combine
 
 /// Represents a menu bar item that can be displayed in the Droppy Bar
 struct DroppyBarItem: Identifiable, Codable, Equatable {
