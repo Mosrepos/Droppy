@@ -2,7 +2,7 @@
 //  DroppyBarPanel.swift
 //  Droppy
 //
-//  A floating panel that appears below the menu bar to display overflow icons.
+//  A beautiful floating panel that appears below the menu bar to display overflow icons.
 //
 
 import Cocoa
@@ -15,28 +15,19 @@ final class DroppyBarPanel: NSPanel {
     // MARK: - Properties
     
     /// The height of the Droppy Bar
-    private let barHeight: CGFloat = 28
+    private let barHeight: CGFloat = 36
     
     /// Padding from the right edge of the screen
-    private let rightPadding: CGFloat = 8
+    private let rightPadding: CGFloat = 12
     
-    /// Timer for auto-hide delay
-    private var hideTimer: Timer?
-    
-    /// Delay before auto-hiding (seconds)
-    private let hideDelay: TimeInterval = 0.5
-    
-    /// Whether the panel should auto-hide when mouse leaves
-    var autoHideEnabled: Bool = true
-    
-    /// Mouse tracking for auto-hide
-    private var trackingArea: NSTrackingArea?
+    /// Whether the panel should auto-hide when mouse leaves (disabled by default)
+    var autoHideEnabled: Bool = false
     
     // MARK: - Initialization
     
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: barHeight),
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: barHeight),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -90,105 +81,128 @@ final class DroppyBarPanel: NSPanel {
     func updatePosition(for screen: NSScreen) {
         let menuBarHeight: CGFloat = 24
         
-        // Calculate width - about 1/3 of screen width, max 400px
-        let panelWidth = min(screen.frame.width * 0.33, 400)
+        // Calculate width based on content, min 200, max 500
+        let panelWidth = min(max(200, screen.frame.width * 0.25), 500)
         
         // Position: right side of screen, just below menu bar
         let x = screen.frame.maxX - panelWidth - rightPadding
-        let y = screen.frame.maxY - menuBarHeight - barHeight - 4 // 4px gap below menu bar
+        let y = screen.frame.maxY - menuBarHeight - barHeight - 6
         
         setFrame(NSRect(x: x, y: y, width: panelWidth, height: barHeight), display: true)
-    }
-    
-    // MARK: - Auto-Hide
-    
-    override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        cancelHideTimer()
-    }
-    
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        scheduleHide()
-    }
-    
-    private func scheduleHide() {
-        guard autoHideEnabled else { return }
-        
-        cancelHideTimer()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: hideDelay, repeats: false) { [weak self] timer in
-            guard let panel = self else { return }
-            Task { @MainActor in
-                panel.orderOut(nil)
-                print("[DroppyBar] Auto-hidden")
-            }
-        }
-    }
-    
-    private func cancelHideTimer() {
-        hideTimer?.invalidate()
-        hideTimer = nil
-    }
-    
-    // MARK: - Cleanup
-    
-    deinit {
-        hideTimer?.invalidate()
     }
 }
 
 // MARK: - DroppyBarContentView
 
-/// SwiftUI content view for the Droppy Bar
+/// SwiftUI content view for the Droppy Bar - premium glassmorphism design
 struct DroppyBarContentView: View {
     @StateObject private var scanner = MenuBarItemScanner()
     @State private var hoveredItemID: Int?
+    @State private var isHoveringRefresh = false
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Menu bar items
-            if scanner.menuBarItems.isEmpty {
-                Text("Scanning...")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(scanner.menuBarItems) { item in
-                    DroppyBarIconButton(
-                        item: item,
-                        isHovered: hoveredItemID == item.id,
-                        onHover: { isHovered in
-                            hoveredItemID = isHovered ? item.id : nil
-                        }
+        HStack(spacing: 2) {
+            // Left gradient accent
+            RoundedRectangle(cornerRadius: 2)
+                .fill(
+                    LinearGradient(
+                        colors: [.blue, .purple],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
+                )
+                .frame(width: 3)
+                .padding(.vertical, 8)
+            
+            // Menu bar items
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    if scanner.menuBarItems.isEmpty && !scanner.isScanning {
+                        Text("No items")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                    } else if scanner.isScanning {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .padding(.horizontal, 8)
+                    } else {
+                        ForEach(scanner.menuBarItems) { item in
+                            DroppyBarIconButton(
+                                item: item,
+                                isHovered: hoveredItemID == item.id,
+                                onHover: { isHovered in
+                                    withAnimation(.easeInOut(duration: 0.15)) {
+                                        hoveredItemID = isHovered ? item.id : nil
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
+                .padding(.horizontal, 6)
             }
             
-            Spacer()
+            Spacer(minLength: 4)
+            
+            // Separator
+            Rectangle()
+                .fill(.white.opacity(0.1))
+                .frame(width: 1)
+                .padding(.vertical, 10)
             
             // Refresh button
-            Button(action: {
-                performScan()
-            }) {
+            Button(action: performScan) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isHoveringRefresh ? .primary : .secondary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(.white.opacity(isHoveringRefresh ? 0.1 : 0))
+                    )
             }
             .buttonStyle(.plain)
-            .help("Refresh icons")
+            .onHover { isHoveringRefresh = $0 }
+            .help("Refresh menu bar icons")
+            .padding(.trailing, 4)
         }
-        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            // Glassmorphism background
-            VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+            ZStack {
+                // Dark glassmorphism background
+                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                
+                // Subtle gradient overlay
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.05),
+                        Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onAppear {
-            performScan()
-        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.2),
+                            Color.white.opacity(0.05)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
+        )
+        .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+        .onAppear(perform: performScan)
     }
     
-    /// Perform scan with capture if permission available, otherwise regular scan
     private func performScan() {
         if scanner.hasScreenCapturePermission {
             scanner.scanWithCapture()
@@ -200,45 +214,52 @@ struct DroppyBarContentView: View {
 
 // MARK: - DroppyBarIconButton
 
-/// A button that displays a menu bar item icon
+/// A beautiful button that displays a menu bar item icon
 struct DroppyBarIconButton: View {
     let item: MenuBarItemScanner.ScannedMenuItem
     let isHovered: Bool
     let onHover: (Bool) -> Void
     
     var body: some View {
-        Button(action: {
-            // Click the original menu bar item
-            activateMenuItem()
-        }) {
+        Button(action: activateMenuItem) {
             Group {
                 if let icon = item.icon {
                     Image(nsImage: icon)
                         .resizable()
+                        .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                 } else {
-                    // Fallback: first letter of app name
-                    Text(String(item.ownerName.prefix(1)))
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 16, height: 16)
+                    // Fallback: stylized letter
+                    Text(String(item.ownerName.prefix(1)).uppercased())
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 18, height: 18)
+                        .background(
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.blue, .purple],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        )
                 }
             }
-            .padding(4)
+            .frame(width: 28, height: 28)
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isHovered ? Color.white.opacity(0.1) : Color.clear)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(.white.opacity(isHovered ? 0.15 : 0))
             )
+            .scaleEffect(isHovered ? 1.05 : 1.0)
         }
         .buttonStyle(.plain)
         .help(item.ownerName)
-        .onHover { hovering in
-            onHover(hovering)
-        }
+        .onHover(perform: onHover)
     }
     
     private func activateMenuItem() {
-        // Activate the app that owns this menu bar item
         if let app = NSRunningApplication(processIdentifier: pid_t(item.ownerPID)) {
             app.activate()
             print("[DroppyBar] Activated: \(item.ownerName)")
