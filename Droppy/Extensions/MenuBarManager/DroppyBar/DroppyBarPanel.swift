@@ -3,7 +3,7 @@
 //  Droppy
 //
 //  Ice-style floating bar that shows hidden menu bar icons.
-//  Icons are clickable and forward clicks to the actual menu bar items.
+//  Uses MenuBarItemImageCache for icons and MenuBarItemClicker for clicks.
 //
 
 import Cocoa
@@ -14,26 +14,23 @@ import SwiftUI
 @MainActor
 final class DroppyBarPanel: NSPanel {
     
-    // MARK: - Properties
+    /// Shared image cache
+    let imageCache = MenuBarItemImageCache()
     
-    /// The height of the Droppy Bar (matches menu bar height)
-    private var barHeight: CGFloat {
-        guard let screen = screen ?? NSScreen.main else { return 24 }
-        return screen.getMenuBarHeight() ?? 24
-    }
+    /// The current screen
+    private(set) var currentScreen: NSScreen?
     
     // MARK: - Initialization
     
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 24),
+            contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         
         setupPanel()
-        setupContentView()
     }
     
     private func setupPanel() {
@@ -58,46 +55,53 @@ final class DroppyBarPanel: NSPanel {
         acceptsMouseMovedEvents = true
     }
     
-    private func setupContentView() {
-        let hostingView = DroppyBarHostingView(rootView: DroppyBarContentView())
-        hostingView.frame = contentView?.bounds ?? .zero
-        hostingView.autoresizingMask = [.width, .height]
-        contentView = hostingView
-    }
+    // MARK: - Show/Hide
     
-    // MARK: - Positioning
-    
-    /// Show the panel on the screen with the mouse
-    func show(on screen: NSScreen? = nil) {
+    /// Show the panel on the specified screen
+    func show(on screen: NSScreen? = nil) async {
         // Find the screen with the mouse cursor if not specified
         let mouseLocation = NSEvent.mouseLocation
-        let targetScreen = screen ?? NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+        let targetScreen = screen ?? NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
         
         guard let targetScreen = targetScreen else { return }
         
-        updatePosition(for: targetScreen)
+        currentScreen = targetScreen
+        
+        // Update image cache before showing
+        await imageCache.updateCache()
+        
+        // Create content view
+        let hostingView = DroppyBarHostingView(
+            rootView: DroppyBarContentView(imageCache: imageCache, closePanel: { [weak self] in
+                self?.close()
+            })
+        )
+        contentView = hostingView
+        
+        // Position and show
+        updateOrigin(for: targetScreen)
         orderFrontRegardless()
         
         print("[DroppyBar] Shown on screen: \(targetScreen.localizedName)")
     }
     
-    /// Update the panel position for the given screen (below menu bar, right side)
-    func updatePosition(for screen: NSScreen) {
-        let menuBarHeight = screen.getMenuBarHeight() ?? 24
+    /// Update the panel position for the given screen
+    private func updateOrigin(for screen: NSScreen) {
+        let menuBarHeight: CGFloat = 24
         
-        // Width based on content - will be adjusted by SwiftUI sizing
-        let panelWidth: CGFloat = frame.width > 100 ? frame.width : 300
+        // Calculate origin Y: just below menu bar
+        let originY = (screen.frame.maxY - 1) - menuBarHeight - frame.height
         
-        // Position: right side of screen, just below menu bar
-        let x = screen.frame.maxX - panelWidth - 8
-        let y = (screen.frame.maxY - 1) - menuBarHeight - barHeight
+        // Calculate origin X: right side of screen, with padding
+        let originX = screen.frame.maxX - frame.width - 8
         
-        setFrameOrigin(CGPoint(x: x, y: y))
+        setFrameOrigin(CGPoint(x: originX, y: originY))
     }
     
     override func close() {
         super.close()
         contentView = nil
+        currentScreen = nil
     }
 }
 
@@ -116,27 +120,36 @@ private final class DroppyBarHostingView: NSHostingView<DroppyBarContentView> {
 
 /// SwiftUI content view - Ice-style capsule bar with icons
 struct DroppyBarContentView: View {
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
-    @StateObject private var scanner = MenuBarItemScanner()
+    @ObservedObject var imageCache: MenuBarItemImageCache
+    let closePanel: () -> Void
+    
+    @State private var items: [MenuBarItem] = []
     
     private var contentHeight: CGFloat {
-        NSScreen.main?.getMenuBarHeight() ?? 24
+        imageCache.menuBarHeight ?? 24
     }
     
     var body: some View {
         HStack(spacing: 0) {
-            if scanner.menuBarItems.isEmpty && !scanner.isScanning {
-                Text("No hidden icons")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-            } else if scanner.isScanning {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .padding(.horizontal, 12)
+            if items.isEmpty {
+                if !CGPreflightScreenCaptureAccess() {
+                    Text("Screen recording required")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                } else {
+                    Text("No hidden icons")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                }
             } else {
-                ForEach(scanner.menuBarItems) { item in
-                    DroppyBarItemView(item: item)
+                ForEach(items) { item in
+                    DroppyBarItemView(
+                        item: item,
+                        imageCache: imageCache,
+                        closePanel: closePanel
+                    )
                 }
             }
         }
@@ -146,72 +159,97 @@ struct DroppyBarContentView: View {
         // Ice-style capsule background
         .background(
             Capsule(style: .continuous)
-                .fill(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+                .fill(.ultraThinMaterial)
         )
         .clipShape(Capsule(style: .continuous))
         .shadow(color: .black.opacity(0.33), radius: 2.5)
         .padding(5)
         .fixedSize()
         .onAppear {
-            if scanner.hasScreenCapturePermission {
-                scanner.scanWithCapture()
-            } else {
-                scanner.scan()
-            }
+            loadItems()
         }
+    }
+    
+    private func loadItems() {
+        // Get menu bar items - for now get all, later filter to hidden only
+        items = MenuBarItem.getMenuBarItems(onScreenOnly: false, activeSpaceOnly: true)
+            .filter { item in
+                // Filter out our own app's items
+                item.ownerName != "Droppy" &&
+                item.ownerName != "Control Center" &&
+                item.ownerName != "Spotlight"
+            }
+        print("[DroppyBar] Loaded \(items.count) items")
     }
 }
 
 // MARK: - DroppyBarItemView
 
-/// A single menu bar item in the Droppy Bar - clickable to activate the real item
+/// A single menu bar item in the Droppy Bar
 struct DroppyBarItemView: View {
-    let item: MenuBarItemScanner.ScannedMenuItem
+    let item: MenuBarItem
+    @ObservedObject var imageCache: MenuBarItemImageCache
+    let closePanel: () -> Void
+    
+    private var image: NSImage? {
+        imageCache.getImage(for: item)
+    }
     
     var body: some View {
         Group {
-            if let icon = item.icon {
-                Image(nsImage: icon)
+            if let image = image {
+                Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
-                    .frame(height: 18)
+            } else {
+                // Fallback: show app icon
+                if let app = item.owningApplication,
+                   let icon = app.icon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 18, height: 18)
+                }
             }
         }
         .contentShape(Rectangle())
         .overlay {
-            DroppyBarItemClickHandler(item: item)
+            DroppyBarItemClickHandler(item: item, closePanel: closePanel)
         }
-        .help(item.ownerName)
+        .help(item.displayName)
     }
 }
 
 // MARK: - DroppyBarItemClickHandler
 
-/// NSViewRepresentable that handles left and right clicks on bar items
+/// NSViewRepresentable that handles clicks on bar items
 struct DroppyBarItemClickHandler: NSViewRepresentable {
-    let item: MenuBarItemScanner.ScannedMenuItem
+    let item: MenuBarItem
+    let closePanel: () -> Void
     
     func makeNSView(context: Context) -> DroppyBarClickView {
-        DroppyBarClickView(item: item)
+        DroppyBarClickView(item: item, closePanel: closePanel)
     }
     
     func updateNSView(_ nsView: DroppyBarClickView, context: Context) {}
 }
 
-/// NSView that handles mouse events and activates the menu bar item's app
+/// NSView that handles mouse events
 final class DroppyBarClickView: NSView {
-    let item: MenuBarItemScanner.ScannedMenuItem
+    let item: MenuBarItem
+    let closePanel: () -> Void
     
     private var lastLeftMouseDownDate = Date.now
     private var lastRightMouseDownDate = Date.now
     private var lastLeftMouseDownLocation = CGPoint.zero
     private var lastRightMouseDownLocation = CGPoint.zero
     
-    init(item: MenuBarItemScanner.ScannedMenuItem) {
+    init(item: MenuBarItem, closePanel: @escaping () -> Void) {
         self.item = item
+        self.closePanel = closePanel
         super.init(frame: .zero)
-        self.toolTip = item.ownerName
+        self.toolTip = item.displayName
     }
     
     required init?(coder: NSCoder) {
@@ -242,7 +280,7 @@ final class DroppyBarClickView: NSView {
         else {
             return
         }
-        activateMenuItem()
+        handleClick(mouseButton: .left)
     }
     
     override func rightMouseUp(with event: NSEvent) {
@@ -253,33 +291,17 @@ final class DroppyBarClickView: NSView {
         else {
             return
         }
-        activateMenuItem()
+        handleClick(mouseButton: .right)
     }
     
-    /// Activate the menu bar item's app - this will show the item's menu 
-    private func activateMenuItem() {
-        // Expand the menu bar first so the item becomes visible
-        MenuBarManager.shared.setExpanded(true)
+    private func handleClick(mouseButton: CGMouseButton) {
+        // Close the panel first (like Ice does)
+        closePanel()
         
-        // Small delay to allow items to appear, then activate the app
+        // Small delay then click the item
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(100))
-            
-            if let app = NSRunningApplication(processIdentifier: pid_t(item.ownerPID)) {
-                // Activate the app - this brings its menu bar item to front
-                app.activate()
-                print("[DroppyBar] Activated: \(item.ownerName)")
-            }
+            try? await Task.sleep(for: .milliseconds(25))
+            MenuBarItemClicker.shared.clickItem(item, mouseButton: mouseButton)
         }
     }
 }
-
-// MARK: - Helper Extension
-
-extension NSScreen {
-    /// Get the height of the menu bar on this screen
-    func getMenuBarHeight() -> CGFloat? {
-        return 24  // Standard menu bar height
-    }
-}
-
