@@ -13,7 +13,7 @@ struct DroppyBarConfigView: View {
     let onDismiss: () -> Void
     
     @State private var menuBarItems: [MenuBarItem] = []
-    @State private var selectedOwnerNames: Set<String> = []
+    @State private var selectedDisplayNames: Set<String> = []  // Use displayName as unique key
     @State private var isLoading = true
     
     private var itemStore: DroppyBarItemStore {
@@ -45,7 +45,7 @@ struct DroppyBarConfigView: View {
                 .padding(.top, 8)
             
             // Debug info
-            Text("Selected: \(selectedOwnerNames.count) items")
+            Text("Selected: \(selectedDisplayNames.count) items")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 4)
@@ -89,26 +89,26 @@ struct DroppyBarConfigView: View {
                                     .foregroundStyle(.secondary)
                             }
                             
-                            // Name
+                            // Name - show displayName which is unique per item
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.ownerName)
+                                Text(item.displayName)
                                     .font(.body)
                                     .lineLimit(1)
-                                Text("Window ID: \(item.windowID)")
+                                Text(item.ownerName)
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }
                             
                             Spacer()
                             
-                            // Toggle
+                            // Toggle - use displayName as unique key
                             Toggle("", isOn: Binding(
-                                get: { selectedOwnerNames.contains(item.ownerName) },
+                                get: { selectedDisplayNames.contains(item.displayName) },
                                 set: { isSelected in
                                     if isSelected {
-                                        selectedOwnerNames.insert(item.ownerName)
+                                        selectedDisplayNames.insert(item.displayName)
                                     } else {
-                                        selectedOwnerNames.remove(item.ownerName)
+                                        selectedDisplayNames.remove(item.displayName)
                                     }
                                 }
                             ))
@@ -138,36 +138,40 @@ struct DroppyBarConfigView: View {
                 print("  - \(item.ownerName) (bundle: \(item.owningApplication?.bundleIdentifier ?? "nil"))")
             }
             
-            // Filter out our own controls and deduplicate by ownerName
-            var seenOwners: Set<String> = []
+            // Filter: each item is unique by windowID, don't collapse by ownerName!
             menuBarItems = allItems.filter { item in
                 // Skip Droppy's own items
-                guard !item.ownerName.contains("Droppy") else { return false }
+                let isDroppyItem = item.ownerName.contains("Droppy") || 
+                                   item.title?.contains("Droppy") == true ||
+                                   item.bundleIdentifier?.contains("iordv.Droppy") == true
+                guard !isDroppyItem else { return false }
                 
-                // Skip duplicates
-                guard !seenOwners.contains(item.ownerName) else { return false }
-                seenOwners.insert(item.ownerName)
+                // Skip items with negative X (hidden off-screen)
+                guard item.frame.minX >= 0 else { return false }
+                
+                // Skip items that are too wide (likely not menu bar icons)
+                guard item.frame.width < 200 else { return false }
                 
                 return true
             }
             
-            // Load current selection
-            selectedOwnerNames = itemStore.enabledOwnerNames
+            // Load current selection - now using displayName
+            selectedDisplayNames = itemStore.enabledDisplayNames
             
             isLoading = false
-            print("[DroppyBarConfig] Showing \(menuBarItems.count) unique items")
+            print("[DroppyBarConfig] Showing \(menuBarItems.count) individual items")
         }
     }
     
     private func saveSelection() {
-        print("[DroppyBarConfig] Saving \(selectedOwnerNames.count) items: \(selectedOwnerNames)")
+        print("[DroppyBarConfig] Saving \(selectedDisplayNames.count) items: \(selectedDisplayNames)")
         
         // Clear existing items
         itemStore.clearAll()
         
-        // Add selected items
+        // Add selected items - match by displayName
         var position = 0
-        for item in menuBarItems where selectedOwnerNames.contains(item.ownerName) {
+        for item in menuBarItems where selectedDisplayNames.contains(item.displayName) {
             let droppyItem = DroppyBarItem(
                 ownerName: item.ownerName,
                 bundleIdentifier: item.owningApplication?.bundleIdentifier,
