@@ -39,13 +39,11 @@ func CGSCopyConnectionProperty(
     _ outValue: inout Unmanaged<CFTypeRef>?
 ) -> CGError
 
-@_silgen_name("CGSSetConnectionProperty")
-func CGSSetConnectionProperty(
-    _ cid: CGSConnectionID,
-    _ targetCID: CGSConnectionID,
-    _ key: CFString,
     _ value: CFTypeRef
 ) -> CGError
+
+@_silgen_name("CGSCopyManagedDisplaySpaces")
+func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray?
 
 // MARK: - CGSWindow Functions
 

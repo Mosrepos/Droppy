@@ -2041,8 +2041,5 @@ class NotchWindow: NSPanel {
     }
 }
 
-// MARK: - Private SkyLight API for Fullscreen Space Detection
-// These private APIs are used by Droppy and Droppy (via system APIs) for reliable fullscreen detection
-private typealias CGSConnectionID = Int32
-@_silgen_name("CGSMainConnectionID") private func CGSMainConnectionID() -> CGSConnectionID
-@_silgen_name("CGSCopyManagedDisplaySpaces") private func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray?
+// MARK: - Private SkyLight API
+// Consolidated in PrivateAPIs.swift
