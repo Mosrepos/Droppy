@@ -1192,6 +1192,7 @@ struct ClipboardItemRow: View {
                 }
                 .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)  // Fill available space, don't expand parent
             
             Spacer(minLength: 8)
             
