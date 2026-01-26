@@ -120,7 +120,7 @@ struct StackedItemView: View {
                     .frame(width: 60)
             }
             .padding(2)
-            .frame(width: 64, height: 80)
+            .frame(width: 64, height: 80, alignment: .bottom)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -132,9 +132,9 @@ struct StackedItemView: View {
                 HapticFeedback.pop()
             }
         }
-        // .contextMenu {
-        //     contextMenuContent
-        // }
+        .contextMenu {
+            contextMenuContent
+        }
     }
     
     // MARK: - Stacked Card
