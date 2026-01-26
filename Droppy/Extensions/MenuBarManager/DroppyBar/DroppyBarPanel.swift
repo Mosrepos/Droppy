@@ -260,7 +260,10 @@ final class DroppyBarClickView: NSView {
     private func clickMenuItem(isLeftClick: Bool) {
         Task { @MainActor in
             // Get the item's position in the menu bar
-            guard let frame = item.frame else {
+            let frame = item.frame
+            
+            // Check if frame is valid (non-zero)
+            guard frame.width > 0 && frame.height > 0 else {
                 // Fallback: just activate the app
                 if let app = NSRunningApplication(processIdentifier: pid_t(item.ownerPID)) {
                     app.activate()

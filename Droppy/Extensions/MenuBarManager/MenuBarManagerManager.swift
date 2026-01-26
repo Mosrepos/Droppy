@@ -274,18 +274,19 @@ final class MenuBarManager: ObservableObject {
         let menuBarHeight: CGFloat = 24
         let isInMenuBar = mouseLocation.y >= (screen.frame.maxY - menuBarHeight)
         
-        // Check if mouse is in the right portion of the screen (where icons are)
-        // Use 75% threshold - only trigger in rightmost quarter (away from notch)
+        // Check if mouse is in the right portion of the screen (where the dot is)
+        // Use 75% threshold - only trigger expansion in rightmost quarter (away from notch)
         let screenThresholdX = screen.frame.minX + (screen.frame.width * 0.75)
-        let isInIconArea = mouseLocation.x >= screenThresholdX
+        let isInTriggerArea = mouseLocation.x >= screenThresholdX
         
-        if isInMenuBar && isInIconArea {
-            // Cancel any pending collapse
+        if isInMenuBar {
+            // Cancel any pending collapse while in menu bar
             collapseTimer?.invalidate()
             collapseTimer = nil
             
-            // Mouse is in the menu bar on the right side - expand if collapsed
-            if !isExpanded && !isHoverExpanded {
+            // Only TRIGGER expansion when in the right area (near the dot)
+            // But once expanded, stay expanded anywhere in the menu bar
+            if isInTriggerArea && !isExpanded && !isHoverExpanded {
                 isHoverExpanded = true
                 isExpanded = true
                 applyExpansionState()
@@ -297,22 +298,22 @@ final class MenuBarManager: ObservableObject {
                 
                 print("[MenuBarManager] Hover expand triggered")
             }
+            // Already expanded via hover? Stay expanded while in menu bar (don't collapse)
         } else {
-            // Mouse left the menu bar area - schedule collapse with delay for stability
+            // Mouse left the menu bar area entirely - schedule collapse with delay
             if isHoverExpanded && isExpanded && collapseTimer == nil {
                 // Capture values for use in timer closure (avoids Swift 6 Sendable issues)
                 let screenMaxY = screen.frame.maxY
-                let thresholdX = hoverThresholdX
                 
                 collapseTimer = Timer.scheduledTimer(withTimeInterval: collapseDelay, repeats: false) { [weak self] timer in
                     guard let manager = self else { return }
                     Task { @MainActor in
-                        // Double-check mouse is still outside before collapsing
+                        // Double-check mouse is still outside menu bar before collapsing
                         let currentLocation = NSEvent.mouseLocation
                         let stillInMenuBar = currentLocation.y >= (screenMaxY - menuBarHeight)
-                        let stillInIconArea = currentLocation.x >= thresholdX
                         
-                        if !stillInMenuBar || !stillInIconArea {
+                        // Only collapse if left menu bar entirely
+                        if !stillInMenuBar {
                             manager.isHoverExpanded = false
                             let savedState = UserDefaults.standard.bool(forKey: manager.expandedKey)
                             manager.isExpanded = savedState
