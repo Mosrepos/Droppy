@@ -28,6 +28,9 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
     /// Whether the item is currently on screen
     let isOnScreen: Bool
     
+    /// The window layer
+    let layer: Int
+    
     // MARK: - Identifiable
     
     var id: CGWindowID { windowID }
@@ -67,6 +70,7 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
         self.ownerPID = ownerPID
         self.frame = CGRect(x: x, y: y, width: width, height: height)
         self.isOnScreen = (windowInfo[kCGWindowIsOnscreen as String] as? Bool) ?? false
+        self.layer = (windowInfo[kCGWindowLayer as String] as? Int) ?? 0
     }
     
     /// Creates a MenuBarItem by looking up a window ID
@@ -112,26 +116,34 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
             let ownerName = windowInfo[kCGWindowOwnerName as String] as? String ?? "Unknown"
             let layer = windowInfo[kCGWindowLayer as String] as? Int ?? -1
             
-            // Broad filter: anything in the top 40 pixels that looks like a menu handling window
-            // Menu bar is usually height 24, but some items might be overlays
-            let isAtTop = y >= 0 && y < 40
-            let isReasonableHeight = height > 0 && height < 100 // Allow taller popovers initially
-            let isReasonableWidth = width > 0 && width < 400 // Filter out full-width app windows
+            // Menu bar items are at layer 25 (kCGStatusWindowLevel)
+            // This is the most reliable way to identify them
+            let isMenuBarLayer = layer == 25
             
-            guard isAtTop && isReasonableHeight && isReasonableWidth else {
+            // Also allow layer 0 items that are in the menu bar area (for some third-party apps)
+            let isAtMenuBarTop = y >= 0 && y <= 30
+            let isReasonableSize = width > 5 && width < 200 && height > 10 && height < 50
+            
+            // Accept if it's at status window layer OR if it looks like a menu bar item
+            let isLikelyMenuBarItem = isMenuBarLayer || (layer == 0 && isAtMenuBarTop && isReasonableSize)
+            
+            guard isLikelyMenuBarItem else {
                 continue
             }
             
-            // Skip known system windows that are definitely not icons
+            // Skip only our own items and the window server
             if ownerName == "Window Server" || 
-               ownerName == "Dock" ||
                ownerName == "Droppy" ||
-               ownerName == "Wallpaper" ||
-               ownerName == "Control Centre" { // Control Center has many hidden windows, skip for now to reduce noise
+               ownerName == "Wallpaper" {
                 continue
             }
             
-            // Skip full screen windows (likely not menu items)
+            // Skip items with invalid dimensions (0x0 or 1x1)
+            if width <= 1 || height <= 1 {
+                continue
+            }
+            
+            // Skip full screen windows
             if let screenWidth = NSScreen.main?.frame.width, width >= screenWidth {
                 continue
             }
@@ -140,7 +152,7 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
                 continue
             }
             
-            print("[MenuBarItem] Found candidate: \(ownerName) at x=\(Int(x)) y=\(Int(y)) w=\(Int(width)) h=\(Int(height)) (layer \(layer))")
+            print("[MenuBarItem] Found: \(ownerName) at x=\(Int(x)) y=\(Int(y)) w=\(Int(width)) h=\(Int(height)) layer=\(layer)")
             items.append(item)
         }
         
