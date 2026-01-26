@@ -117,4 +117,20 @@ final class DroppyBarItemStore: ObservableObject {
             items[index].position = index
         }
     }
+    
+    /// Get bundle IDs of visible items
+    var enabledBundleIds: Set<String> {
+        Set(items.filter { $0.isVisible }.map { $0.bundleIdentifier })
+    }
+    
+    /// Check if an item exists
+    func hasItem(bundleIdentifier: String) -> Bool {
+        items.contains { $0.bundleIdentifier == bundleIdentifier }
+    }
+    
+    /// Clear all items
+    func clearAll() {
+        items.removeAll()
+        saveItems()
+    }
 }

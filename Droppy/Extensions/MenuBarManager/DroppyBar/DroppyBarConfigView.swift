@@ -141,8 +141,9 @@ struct DroppyBarConfigView: View {
         itemStore.clearAll()
         
         // Add selected items
-        for app in availableApps where selectedBundleIds.contains(app.bundleId) {
-            itemStore.addItem(bundleId: app.bundleId, displayName: app.name)
+        for (index, app) in availableApps.enumerated() where selectedBundleIds.contains(app.bundleId) {
+            let item = DroppyBarItem(bundleIdentifier: app.bundleId, displayName: app.name, position: index)
+            itemStore.addItem(item)
         }
     }
 }

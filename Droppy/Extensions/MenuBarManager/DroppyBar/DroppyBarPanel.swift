@@ -329,11 +329,18 @@ final class DroppyBarClickView: NSView {
         // Close panel first
         closePanel()
         
-        // Click the menu bar item
+        // Click the menu bar item using scromble mechanism
         Task { @MainActor in
             // Small delay for panel to close
             try? await Task.sleep(for: .milliseconds(50))
-            MenuBarItemClicker.shared.clickItem(item, mouseButton: mouseButton)
+            
+            do {
+                try await EventScrombler.shared.clickItem(item, mouseButton: mouseButton)
+            } catch {
+                print("[DroppyBar] Click failed: \(error), falling back to activation")
+                // Fallback: just activate the app
+                item.owningApplication?.activate()
+            }
         }
     }
 }
