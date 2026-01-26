@@ -34,22 +34,31 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
     
     // MARK: - Computed Properties
     
-    /// Display name for the item - follows Ice's naming logic
+    /// Display name for the item - resolves bundle IDs to actual app names
     var displayName: String {
         // Handle Control Center special titles like Ice does
         if bundleIdentifier == "com.apple.controlcenter" {
             switch title {
             case "AccessibilityShortcuts": return "Accessibility Shortcuts"
-            case "BentoBox": return "Control Centre"
+            case "BentoBox", "BentoBox-0": return "Control Centre"
             case "FocusModes": return "Focus"
             case "KeyboardBrightness": return "Keyboard Brightness"
             case "MusicRecognition": return "Music Recognition"
-            case "NowPlaying": return "Now Playing"
+            case "NowPlaying", "Now Playing": return "Now Playing"
             case "ScreenMirroring": return "Screen Mirroring"
             case "StageManager": return "Stage Manager"
             case "UserSwitcher": return "Fast User Switching"
-            case "WiFi": return "Wi-Fi"
-            default: return title ?? ownerName
+            case "WiFi", "Wi-Fi": return "Wi-Fi"
+            case "Battery": return "Battery"
+            case "Clock": return "Clock"
+            case "Siri": return "Siri"
+            case "AudioVideoModule": return "Sound"
+            default:
+                // Title might be a bundle identifier - try to resolve it
+                if let title = title, title.contains(".") && !title.contains(" ") {
+                    return resolveAppName(from: title) ?? title
+                }
+                return title ?? "Control Centre"
             }
         }
         
@@ -63,11 +72,29 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
             }
         }
         
-        // Default: prefer title if available, otherwise use owner name
+        // If title looks like a bundle identifier, resolve it to app name
         if let title = title, !title.isEmpty {
+            if title.contains(".") && !title.contains(" ") {
+                // Looks like a bundle ID - try to resolve it
+                return resolveAppName(from: title) ?? title
+            }
+            // Title without dots - use as-is
             return title
         }
+        
+        // Fallback to owner name
         return ownerName.isEmpty ? "Unknown" : ownerName
+    }
+    
+    /// Resolves a bundle identifier to the app's display name
+    private func resolveAppName(from bundleID: String) -> String? {
+        // Try to get app URL from bundle ID
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return nil
+        }
+        // Get the app name from the file name (without .app extension)
+        let appName = appURL.deletingPathExtension().lastPathComponent
+        return appName.isEmpty ? nil : appName
     }
     
     /// The owning application
