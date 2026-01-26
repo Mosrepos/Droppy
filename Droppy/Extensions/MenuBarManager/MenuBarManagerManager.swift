@@ -24,6 +24,18 @@ final class MenuBarManager: ObservableObject {
     /// Whether hidden icons are currently expanded (visible)
     @Published private(set) var isExpanded = true
     
+    /// Whether hover-to-reveal is enabled (on by default)
+    @Published var hoverToRevealEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(hoverToRevealEnabled, forKey: hoverToRevealKey)
+            if hoverToRevealEnabled {
+                startHoverMonitoring()
+            } else {
+                stopHoverMonitoring()
+            }
+        }
+    }
+    
     // MARK: - Status Items
     
     /// The visible toggle button - always shows chevron, click to toggle
@@ -35,6 +47,22 @@ final class MenuBarManager: ObservableObject {
     /// Autosave names for position persistence
     private let toggleAutosaveName = "DroppyMenuBarToggle"
     private let dividerAutosaveName = "DroppyMenuBarDivider"
+    
+    // MARK: - Hover Monitoring
+    
+    /// Global mouse move monitor for hover detection
+    private var mouseMonitor: Any?
+    
+    /// Whether we are currently in a hover-expanded state (temporary expansion)
+    private var isHoverExpanded = false
+    
+    /// Threshold X position - mouse must be to the right of this to trigger hover reveal
+    /// This is the right side of the screen where menu bar icons live
+    private var hoverThresholdX: CGFloat {
+        guard let screen = NSScreen.main else { return 800 }
+        // Trigger when mouse is in the right 40% of screen (where menu bar icons typically are)
+        return screen.frame.width * 0.6
+    }
     
     // MARK: - Constants
     
@@ -51,12 +79,20 @@ final class MenuBarManager: ObservableObject {
     
     private let enabledKey = "menuBarManagerEnabled"
     private let expandedKey = "menuBarManagerExpanded"
+    private let hoverToRevealKey = "menuBarManagerHoverToReveal"
     
     // MARK: - Initialization
     
     private init() {
         // Only start if extension is not removed
         guard !ExtensionType.menuBarManager.isRemoved else { return }
+        
+        // Load hover preference (default to true)
+        if UserDefaults.standard.object(forKey: hoverToRevealKey) != nil {
+            hoverToRevealEnabled = UserDefaults.standard.bool(forKey: hoverToRevealKey)
+        } else {
+            hoverToRevealEnabled = true
+        }
         
         if UserDefaults.standard.bool(forKey: enabledKey) {
             enable()
@@ -91,7 +127,12 @@ final class MenuBarManager: ObservableObject {
         }
         applyExpansionState()
         
-        print("[MenuBarManager] Enabled, expanded: \(isExpanded)")
+        // Start hover monitoring if enabled
+        if hoverToRevealEnabled {
+            startHoverMonitoring()
+        }
+        
+        print("[MenuBarManager] Enabled, expanded: \(isExpanded), hoverToReveal: \(hoverToRevealEnabled)")
     }
     
     /// Disable the menu bar manager
@@ -100,6 +141,9 @@ final class MenuBarManager: ObservableObject {
         
         isEnabled = false
         UserDefaults.standard.set(false, forKey: enabledKey)
+        
+        // Stop hover monitoring
+        stopHoverMonitoring()
         
         // Show all items before removing
         if !isExpanded {
@@ -116,6 +160,7 @@ final class MenuBarManager: ObservableObject {
     /// Toggle between expanded and collapsed states
     func toggleExpanded() {
         isExpanded.toggle()
+        isHoverExpanded = false // User manually toggled, clear hover state
         UserDefaults.standard.set(isExpanded, forKey: expandedKey)
         applyExpansionState()
         
@@ -127,11 +172,78 @@ final class MenuBarManager: ObservableObject {
     
     /// Clean up all resources
     func cleanup() {
+        stopHoverMonitoring()
         disable()
         UserDefaults.standard.removeObject(forKey: enabledKey)
         UserDefaults.standard.removeObject(forKey: expandedKey)
+        UserDefaults.standard.removeObject(forKey: hoverToRevealKey)
         
         print("[MenuBarManager] Cleanup complete")
+    }
+    
+    // MARK: - Hover Monitoring
+    
+    private func startHoverMonitoring() {
+        guard mouseMonitor == nil, isEnabled else { return }
+        
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            Task { @MainActor in
+                self?.handleMouseMove(event)
+            }
+        }
+        
+        print("[MenuBarManager] Hover monitoring started")
+    }
+    
+    private func stopHoverMonitoring() {
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+            print("[MenuBarManager] Hover monitoring stopped")
+        }
+        
+        // Restore to user's saved state if we were hover-expanded
+        if isHoverExpanded {
+            isHoverExpanded = false
+            let savedState = UserDefaults.standard.bool(forKey: expandedKey)
+            if isExpanded != savedState {
+                isExpanded = savedState
+                applyExpansionState()
+            }
+        }
+    }
+    
+    private func handleMouseMove(_ event: NSEvent) {
+        guard isEnabled, hoverToRevealEnabled else { return }
+        guard let screen = NSScreen.main else { return }
+        
+        let mouseLocation = NSEvent.mouseLocation
+        
+        // Check if mouse is in menu bar area (top 24px of screen)
+        let menuBarHeight: CGFloat = 24
+        let isInMenuBar = mouseLocation.y >= (screen.frame.maxY - menuBarHeight)
+        
+        // Check if mouse is in the right portion of the screen (where icons are)
+        let isInIconArea = mouseLocation.x >= hoverThresholdX
+        
+        if isInMenuBar && isInIconArea {
+            // Mouse is in the menu bar on the right side - expand if collapsed
+            if !isExpanded && !isHoverExpanded {
+                isHoverExpanded = true
+                isExpanded = true
+                applyExpansionState()
+                print("[MenuBarManager] Hover expand triggered")
+            }
+        } else {
+            // Mouse left the menu bar area - collapse if we hover-expanded
+            if isHoverExpanded && isExpanded {
+                isHoverExpanded = false
+                let savedState = UserDefaults.standard.bool(forKey: expandedKey)
+                isExpanded = savedState
+                applyExpansionState()
+                print("[MenuBarManager] Hover collapse triggered")
+            }
+        }
     }
     
     // MARK: - Status Items Creation
@@ -249,6 +361,19 @@ final class MenuBarManager: ObservableObject {
         
         menu.addItem(.separator())
         
+        // Hover to reveal toggle
+        let hoverItem = NSMenuItem(
+            title: "Hover to Reveal",
+            action: #selector(toggleHoverToReveal),
+            keyEquivalent: ""
+        )
+        hoverItem.target = self
+        hoverItem.state = hoverToRevealEnabled ? .on : .off
+        hoverItem.image = NSImage(systemSymbolName: "cursorarrow.motionlines", accessibilityDescription: nil)
+        menu.addItem(hoverItem)
+        
+        menu.addItem(.separator())
+        
         let howToItem = NSMenuItem(
             title: "How to Use",
             action: #selector(showHowTo),
@@ -278,12 +403,16 @@ final class MenuBarManager: ObservableObject {
         toggleExpanded()
     }
     
+    @objc private func toggleHoverToReveal() {
+        hoverToRevealEnabled.toggle()
+    }
+    
     @objc private func showHowTo() {
         // Show Droppy-style notification
         DroppyAlertController.shared.showSimple(
             style: .info,
             title: "How to Use Menu Bar Manager",
-            message: "1. Hold ⌘ (Command) and drag menu bar icons\n2. Move icons to the LEFT of the chevron to hide them\n3. Click the chevron to show/hide those icons\n\nIcons to the right of the chevron stay visible."
+            message: "1. Hold ⌘ (Command) and drag menu bar icons\n2. Move icons to the LEFT of the chevron to hide them\n3. Click the chevron to show/hide those icons\n\nIcons to the right of the chevron stay visible.\n\nTip: Hover over the right side of the menu bar to temporarily reveal hidden icons."
         )
     }
     
@@ -300,14 +429,18 @@ final class MenuBarManager: ObservableObject {
         print("  isRemoved: \(ExtensionType.menuBarManager.isRemoved)")
         print("  isEnabled: \(isEnabled)")
         print("  isExpanded: \(isExpanded)")
+        print("  isHoverExpanded: \(isHoverExpanded)")
+        print("  hoverToRevealEnabled: \(hoverToRevealEnabled)")
         print("  toggleItem exists: \(toggleItem != nil)")
         print("  toggleItem.button exists: \(toggleItem?.button != nil)")
         print("  toggleItem.button.target set: \(toggleItem?.button?.target != nil)")
         print("  toggleItem.button.action set: \(toggleItem?.button?.action != nil)")
         print("  dividerItem exists: \(dividerItem != nil)")
         print("  dividerItem.length: \(dividerItem?.length ?? -1)")
+        print("  mouseMonitor exists: \(mouseMonitor != nil)")
         print("  UserDefaults enabledKey: \(UserDefaults.standard.bool(forKey: enabledKey))")
         print("  UserDefaults expandedKey: \(UserDefaults.standard.object(forKey: expandedKey) ?? "nil")")
+        print("  UserDefaults hoverToRevealKey: \(UserDefaults.standard.object(forKey: hoverToRevealKey) ?? "nil (default true)")")
         print("[MenuBarManager] === END DIAGNOSTICS ===")
     }
 }
@@ -332,3 +465,4 @@ extension Notification.Name {
     static let openMenuBarManagerSettings = Notification.Name("openMenuBarManagerSettings")
     static let menuBarManagerStateChanged = Notification.Name("menuBarManagerStateChanged")
 }
+
