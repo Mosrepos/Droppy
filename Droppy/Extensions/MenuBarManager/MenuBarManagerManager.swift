@@ -56,6 +56,9 @@ final class MenuBarManager: ObservableObject {
     /// Whether we are currently in a hover-expanded state (temporary expansion)
     private var isHoverExpanded = false
     
+    /// Timer for smooth divider length animation
+    private var animationTimer: Timer?
+    
     /// Threshold X position - mouse must be to the right of this to trigger hover reveal
     /// This is the right side of the screen where menu bar icons live
     private var hoverThresholdX: CGFloat {
@@ -319,18 +322,60 @@ final class MenuBarManager: ObservableObject {
         }
     }
     
-    private func applyExpansionState() {
+    private func applyExpansionState(animated: Bool = true) {
         guard let dividerItem = dividerItem else { return }
         
-        if isExpanded {
-            // Show hidden items - divider at minimal length
-            dividerItem.length = dividerStandardLength
+        let targetLength = isExpanded ? dividerStandardLength : dividerExpandedLength
+        
+        // Cancel any existing animation
+        animationTimer?.invalidate()
+        animationTimer = nil
+        
+        if animated {
+            animateDividerLength(to: targetLength)
         } else {
-            // Hide items - expand divider to push items left off-screen
-            dividerItem.length = dividerExpandedLength
+            dividerItem.length = targetLength
         }
         
         updateToggleIcon()
+    }
+    
+    /// Animate the divider length with smooth easing
+    private func animateDividerLength(to targetLength: CGFloat) {
+        guard let dividerItem = dividerItem else { return }
+        
+        let startLength = dividerItem.length
+        let duration: TimeInterval = 0.25 // Snappy but smooth
+        let startTime = CACurrentMediaTime()
+        let frameInterval: TimeInterval = 1.0 / 60.0 // 60 FPS
+        
+        animationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            let elapsed = CACurrentMediaTime() - startTime
+            let progress = min(elapsed / duration, 1.0)
+            
+            // Ease-out cubic for smooth deceleration
+            let easedProgress = 1.0 - pow(1.0 - progress, 3)
+            
+            let currentLength = startLength + (targetLength - startLength) * CGFloat(easedProgress)
+            
+            Task { @MainActor [weak self] in
+                self?.dividerItem?.length = currentLength
+            }
+            
+            if progress >= 1.0 {
+                timer.invalidate()
+                Task { @MainActor [weak self] in
+                    self?.animationTimer = nil
+                    // Ensure final value is exact
+                    self?.dividerItem?.length = targetLength
+                }
+            }
+        }
     }
     
     // MARK: - Actions
