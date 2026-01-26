@@ -132,13 +132,6 @@ struct StackedItemView: View {
                 HapticFeedback.pop()
             }
         }
-        .draggable(stack.items.map { $0.url }) {
-            // Drag preview
-            Label("\(stack.count) items", systemImage: "square.stack.3d.up")
-                .padding(8)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
         .contextMenu {
             contextMenuContent
         }
