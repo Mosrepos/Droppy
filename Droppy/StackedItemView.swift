@@ -88,61 +88,12 @@ struct StackedItemView: View {
     // MARK: - Body
     
     var body: some View {
-        DraggableArea(
-            items: {
-                // If this stack is selected, drag all URLs from all selected stacks
-                if state.selectedStacks.contains(stack.id) {
-                    var urls: [NSURL] = []
-                    for selectedStackId in state.selectedStacks {
-                        if let selectedStack = state.shelfStacks.first(where: { $0.id == selectedStackId }) {
-                            urls.append(contentsOf: selectedStack.items.map { $0.url as NSURL })
-                        }
-                    }
-                    return urls
-                } else {
-                    // Not selected - drag all items from this stack only
-                    return stack.items.map { $0.url as NSURL }
-                }
-            },
-            onTap: { modifiers in
-                HapticFeedback.pop()
-                
-                if modifiers.contains(.command) {
-                    // Cmd+click = toggle selection
-                    withAnimation(DroppyAnimation.bouncy) {
-                        state.toggleStackSelection(stack)
-                    }
-                } else if modifiers.contains(.shift) {
-                    // Shift+click = add to selection
-                    withAnimation(DroppyAnimation.bouncy) {
-                        if !state.selectedStacks.contains(stack.id) {
-                            state.selectedStacks.insert(stack.id)
-                            state.selectedItems.formUnion(stack.itemIds)
-                        }
-                    }
-                } else {
-                    // Normal click = select this stack only (deselect others) then expand
-                    state.deselectAll()
-                    withAnimation(ItemStack.expandAnimation) {
-                        onExpand()
-                    }
-                }
-            },
-            onDoubleClick: {
-                // Double click = expand stack
-                HapticFeedback.pop()
-                withAnimation(ItemStack.expandAnimation) {
-                    onExpand()
-                }
-            },
-            onRightClick: {
-                // Right click = just show context menu, don't select/highlight
-            },
-            onDragStart: nil,
-            onDragComplete: nil,
-            selectionSignature: state.selectedStacks.hashValue
-        ) {
-            // Stack content - EXACTLY matching StackCollapseButton layout
+        Button(action: {
+            HapticFeedback.pop()
+            withAnimation(ItemStack.expandAnimation) {
+                onExpand()
+            }
+        }) {
             VStack(spacing: 6) {
                 // 56x56 icon container matching Collapse button
                 ZStack {
@@ -150,18 +101,9 @@ struct StackedItemView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(.ultraThinMaterial)
                     
-                    // Subtle border (stronger when selected/hovered)
+                    // Subtle border
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(isSelected ? 0.3 : (isHovering ? 0.2 : 0.1)), lineWidth: isSelected ? 2 : 1)
-                    
-                    // Blue selection glow
-                    if isSelected || isDropTargeted {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.blue.opacity(0.15))
-                        
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.blue, lineWidth: 2)
-                    }
+                        .stroke(Color.white.opacity(isHovering ? 0.2 : 0.1), lineWidth: 1)
                     
                     // Expand icon
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -170,7 +112,7 @@ struct StackedItemView: View {
                 }
                 .frame(width: 56, height: 56)
                 
-                // Count label like "[4] Files" - matching Collapse text style
+                // Count label like "4 Files" - matching Collapse text style
                 Text(countLabel)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.white.opacity(0.7))
@@ -180,68 +122,25 @@ struct StackedItemView: View {
             .padding(2)
             .frame(width: 64, height: 80)
             .contentShape(Rectangle())
-            .fixedSize()
-            // Drop target visual feedback - scale up and blue glow when files dragged over
-            .scaleEffect(isDropTargeted ? 1.08 : 1.0)
-            .animation(DroppyAnimation.bouncy, value: isDropTargeted)
-            // Drop destination - drag files INTO this stack
-            .dropDestination(for: URL.self) { urls, location in
-                // Prevent dropping this stack onto itself
-                if state.selectedStacks.contains(stack.id) {
-                    return false
-                }
-                
-                // Filter out URLs that are already in this stack
-                let existingURLs = Set(stack.items.map { $0.url })
-                let newURLs = urls.filter { !existingURLs.contains($0) }
-                
-                guard !newURLs.isEmpty else { return false }
-                
-                // Add each new URL to this stack
-                withAnimation(DroppyAnimation.bouncy) {
-                    for url in newURLs {
-                        let newItem = DroppedItem(url: url)
-                        state.addItemToStack(newItem, stackId: stack.id)
-                    }
-                }
-                
-                // Success haptic
-                HapticFeedback.drop()
-                return true
-            } isTargeted: { targeted in
-                withAnimation(DroppyAnimation.bouncy) {
-                    isDropTargeted = targeted
-                }
-                // Haptic when drag enters
-                if targeted {
-                    HapticFeedback.pop()
-                }
-            }
         }
-        .scaleEffect(isHovering ? 1.04 : 1.0)
-        .animation(ItemStack.peekAnimation, value: isHovering)
-        .animation(ItemStack.peekAnimation, value: peekProgress)
-        .animation(DroppyAnimation.bouncy, value: isSelected)
-        // Fixed size wrapper - prevents scale from affecting grid layout
-        .frame(width: 64, height: 80)
+        .buttonStyle(.plain)
+        .scaleEffect(isHovering ? 1.05 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovering)
         .onHover { hovering in
-            guard !state.isInteractionBlocked else { return }
-            
-            // Direct state updates - animations handled by view-level modifiers above
             isHovering = hovering
-            
             if hovering {
                 HapticFeedback.pop()
-                peekProgress = 1.0
-            } else {
-                peekProgress = 0.0
             }
+        }
+        .draggable(stack.items.map { $0.url }) {
+            // Drag preview
+            Label("\(stack.count) items", systemImage: "square.stack.3d.up")
+                .padding(8)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .contextMenu {
             contextMenuContent
-        }
-        .task {
-            await loadThumbnails()
         }
     }
     
