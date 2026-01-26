@@ -92,22 +92,57 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
         }
         
         guard let windowInfoList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            print("[MenuBarItem] CGWindowListCopyWindowInfo returned nil")
             return []
         }
         
-        // kCGStatusWindowLevel is the proper level for menu bar items (like Ice uses)
+        // Get the menu bar height to filter by Y position
+        guard let screen = NSScreen.main else {
+            print("[MenuBarItem] No main screen")
+            return []
+        }
+        let menuBarMaxY: CGFloat = 30 // Menu bar items are in top ~30 pixels
+        
+        // Multiple window levels that menu bar items can be at
         let statusWindowLevel = Int(CGWindowLevelForKey(.statusWindow))
+        let mainMenuLevel = Int(CGWindowLevelForKey(.mainMenuWindow))
+        let popUpMenuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        
+        print("[MenuBarItem] Scanning \(windowInfoList.count) windows for menu bar items")
+        print("[MenuBarItem] Status level: \(statusWindowLevel), MainMenu level: \(mainMenuLevel)")
         
         var items: [MenuBarItem] = []
+        var debugItems: [(String, Int, CGRect)] = []
         
         for windowInfo in windowInfoList {
-            // Must have the status window layer (menu bar level)
-            guard let layer = windowInfo[kCGWindowLayer as String] as? Int else {
+            guard let layer = windowInfo[kCGWindowLayer as String] as? Int,
+                  let boundsDict = windowInfo[kCGWindowBounds as String] as? [String: CGFloat],
+                  let y = boundsDict["Y"],
+                  let height = boundsDict["Height"],
+                  let width = boundsDict["Width"] else {
                 continue
             }
             
-            // Menu bar items are at kCGStatusWindowLevel
-            guard layer == statusWindowLevel else {
+            let ownerName = windowInfo[kCGWindowOwnerName as String] as? String ?? "Unknown"
+            
+            // Track windows near the menu bar for debugging
+            if y < 50 && height < 50 && height > 0 && width > 0 {
+                debugItems.append((ownerName, layer, CGRect(
+                    x: boundsDict["X"] ?? 0,
+                    y: y,
+                    width: width,
+                    height: height
+                )))
+            }
+            
+            // Menu bar items should be:
+            // 1. Near the top of the screen (Y < menuBarMaxY)
+            // 2. At status window level OR main menu level
+            // 3. Have a reasonable size (height < 30, width > 0)
+            let isMenuBarHeight = y < menuBarMaxY && height > 0 && height < 40
+            let isMenuBarLevel = layer == statusWindowLevel || layer == mainMenuLevel || layer == 25 // 25 is common menu bar layer
+            
+            guard isMenuBarHeight && isMenuBarLevel else {
                 continue
             }
             
@@ -115,18 +150,25 @@ struct MenuBarItem: Identifiable, Equatable, Hashable {
                 continue
             }
             
-            // Skip Window Server windows
+            // Skip Window Server
             if item.ownerName == "Window Server" {
                 continue
             }
             
-            // Skip our own Droppy items
+            // Skip Droppy's own items
             if item.ownerName == "Droppy" {
                 continue
             }
             
             items.append(item)
         }
+        
+        // Debug output
+        print("[MenuBarItem] Found windows near menu bar:")
+        for (name, layer, frame) in debugItems {
+            print("  - \(name) (layer: \(layer)) frame: \(frame)")
+        }
+        print("[MenuBarItem] Returning \(items.count) menu bar items")
         
         // Sort by X position (right to left in menu bar)
         return items.sorted { $0.frame.minX > $1.frame.minX }
