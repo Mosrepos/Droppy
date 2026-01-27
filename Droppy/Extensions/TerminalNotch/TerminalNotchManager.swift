@@ -46,6 +46,9 @@ class TerminalNotchManager: ObservableObject {
     /// Whether any command has been executed in this terminal session
     @Published var hasExecutedCommand: Bool = false
     
+    /// Current working directory (persists across commands)
+    @Published var currentWorkingDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    
     // MARK: - Settings
     
     /// Whether extension is installed
@@ -117,6 +120,7 @@ class TerminalNotchManager: ObservableObject {
             lastOutput = ""
             commandText = ""
             hasExecutedCommand = false
+            currentWorkingDirectory = FileManager.default.homeDirectoryForCurrentUser
         }
     }
     
@@ -238,17 +242,25 @@ class TerminalNotchManager: ObservableObject {
     
     /// Run a shell command and return output (with timeout and output limit)
     private func runCommand(_ command: String) async throws -> String {
-        return try await withCheckedThrowingContinuation { continuation in
+        // Capture current cwd for use in the closure
+        let workingDirectory = currentWorkingDirectory
+        
+        // Run the command, then capture the new pwd so we can persist directory changes
+        // The pwd output is separated by a unique marker so we can parse it out
+        let pwdMarker = "__DROPPY_PWD_MARKER__"
+        let wrappedCommand = "\(command); echo \"\(pwdMarker)\"; pwd"
+        
+        let result: (output: String, newPwd: URL?) = try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             let pipe = Pipe()
             
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             // Use -l for login shell (sources profile with PATH including brew)
             // and -c to run the command
-            process.arguments = ["-l", "-c", command]
+            process.arguments = ["-l", "-c", wrappedCommand]
             process.standardOutput = pipe
             process.standardError = pipe
-            process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+            process.currentDirectoryURL = workingDirectory
             
             // SAFETY: Timeout to prevent freeze with continuous commands (ping, tail -f, etc.)
             let timeout: TimeInterval = 10.0  // 10 second timeout
@@ -259,7 +271,7 @@ class TerminalNotchManager: ObservableObject {
             let resumeLock = NSLock()
             
             // Helper to safely resume continuation only once
-            func safeResume(with result: Result<String, Error>) {
+            func safeResume(with result: Result<(String, URL?), Error>) {
                 resumeLock.lock()
                 defer { resumeLock.unlock() }
                 guard !hasResumed else { return }
@@ -286,7 +298,7 @@ class TerminalNotchManager: ObservableObject {
                         let message = trimmed.isEmpty 
                             ? "⏱️ Command timed out after \(Int(timeout))s (continuous output commands like 'ping' are not supported)"
                             : trimmed + "\n\n⏱️ Command timed out after \(Int(timeout))s"
-                        safeResume(with: .success(message))
+                        safeResume(with: .success((message, nil)))
                     }
                 }
                 
@@ -321,12 +333,33 @@ class TerminalNotchManager: ObservableObject {
                         trimmed += "\n\n⚠️ Output truncated (exceeded \(maxOutputBytes / 1000)KB limit)"
                     }
                     
-                    safeResume(with: .success(trimmed))
+                    // Parse out the pwd from the output
+                    var newPwd: URL? = nil
+                    if let markerRange = trimmed.range(of: pwdMarker) {
+                        // Extract pwd (everything after marker, trimmed)
+                        let pwdPart = trimmed[markerRange.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !pwdPart.isEmpty {
+                            newPwd = URL(fileURLWithPath: pwdPart)
+                        }
+                        // Remove marker and pwd from visible output
+                        trimmed = String(trimmed[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    
+                    safeResume(with: .success((trimmed, newPwd)))
                 }
             } catch {
                 safeResume(with: .failure(error))
             }
         }
+        
+        // Update current working directory if changed
+        if let newPwd = result.newPwd {
+            await MainActor.run {
+                self.currentWorkingDirectory = newPwd
+            }
+        }
+        
+        return result.output
     }
     
     // MARK: - Shortcut Management
