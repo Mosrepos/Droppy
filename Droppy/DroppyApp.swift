@@ -284,6 +284,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let serviceProvider = ServiceProvider()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // CRITICAL: Register default preference values BEFORE any @AppStorage is read
+        // This ensures UserDefaults returns correct defaults for missing keys (fixes #110)
+        UserDefaults.standard.register(defaults: [
+            AppPreferenceKey.showInMenuBar: PreferenceDefault.showInMenuBar,
+            AppPreferenceKey.showQuickshareInMenuBar: PreferenceDefault.showQuickshareInMenuBar,
+            AppPreferenceKey.enableNotchShelf: PreferenceDefault.enableNotchShelf,
+            AppPreferenceKey.enableHUDReplacement: PreferenceDefault.enableHUDReplacement,
+            AppPreferenceKey.showMediaPlayer: PreferenceDefault.showMediaPlayer,
+            AppPreferenceKey.enableClipboard: PreferenceDefault.enableClipboard,
+        ])
+        
         // DEBUG: Force clear permission cache to diagnose stuck cache issue
         #if DEBUG
         print("🔐 DEBUG: Force clearing permission cache at launch")
