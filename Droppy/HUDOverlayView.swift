@@ -51,6 +51,16 @@ struct NotchHUDView: View {
         return (!hasNotch || forceTest) && useDynamicIsland
     }
     
+    /// Whether this is an external display using notch visual style (curved corners)
+    private var isExternalWithNotchStyle: Bool {
+        let screen = targetScreen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen = screen else { return false }
+        if screen.isBuiltIn { return false }
+        // External display with notch style = user chose NOT to use DI style
+        let externalUseDI = UserDefaults.standard.object(forKey: "externalDisplayUseDynamicIsland") as? Bool ?? true
+        return !externalUseDI
+    }
+    
     /// Width of each "wing" (area left/right of physical notch) - only used in notch mode
     private var wingWidth: CGFloat {
         (hudWidth - notchWidth) / 2
@@ -62,7 +72,9 @@ struct NotchHUDView: View {
                 // DYNAMIC ISLAND: Compact horizontal layout - icon + slider only (no text label)
                 // This creates a minimal, clean appearance matching the DI aesthetic
                 let iconSize: CGFloat = 18
-                let symmetricPadding = (notchHeight - iconSize) / 2
+                // +10pt when external display uses notch style (curved topCornerRadius)
+                let basePadding = (notchHeight - iconSize) / 2
+                let symmetricPadding = isExternalWithNotchStyle ? basePadding + 10 : basePadding
                 
                 HStack(spacing: 12) {
                     // Left side: Icon with BUTTERY SMOOTH SCALING
