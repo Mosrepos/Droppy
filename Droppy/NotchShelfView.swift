@@ -147,12 +147,17 @@ struct NotchShelfView: View {
         if isDynamicIslandMode { return NotchLayoutConstants.dynamicIslandHeight }
 
         // Use target screen or fallback to built-in
-        guard let screen = targetScreen ?? NSScreen.builtInWithNotch ?? NSScreen.main else { return 32 }
-        let topInset = screen.safeAreaInsets.top
+        // CRITICAL: Return physical notch height when screen is unavailable for stable positioning
+        guard let screen = targetScreen ?? NSScreen.builtInWithNotch ?? NSScreen.main else { return NotchLayoutConstants.physicalNotchHeight }
         
-        // For screens with a physical notch, use the actual inset
-        if topInset > 0 {
-            return topInset
+        // CRITICAL: For screens with a physical notch (detected via auxiliary areas),
+        // use safeAreaInsets when available, otherwise fall back to fixed constant
+        // This ensures stable positioning on lock screen when safeAreaInsets may be 0
+        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        
+        if hasPhysicalNotch {
+            let topInset = screen.safeAreaInsets.top
+            return topInset > 0 ? topInset : NotchLayoutConstants.physicalNotchHeight
         }
         
         // For external displays in notch mode: constrain to menu bar height
@@ -166,8 +171,14 @@ struct NotchShelfView: View {
     /// Whether we're in Dynamic Island mode (no physical notch + setting enabled, or force test)
     private var isDynamicIslandMode: Bool {
         // Use target screen or fallback to built-in
-        guard let screen = targetScreen ?? NSScreen.builtInWithNotch ?? NSScreen.main else { return true }
-        let hasNotch = screen.safeAreaInsets.top > 0
+        // CRITICAL: Return false (notch mode) when screen is unavailable to prevent layout jumps
+        // During lock screen transitions, NSScreen.screens can be momentarily empty/unavailable
+        // Defaulting to notch mode is safer for built-in MacBooks and prevents DI mode flickering
+        guard let screen = targetScreen ?? NSScreen.builtInWithNotch ?? NSScreen.main else { return false }
+        // CRITICAL: Use auxiliary areas to detect physical notch, NOT safeAreaInsets
+        // safeAreaInsets.top can be 0 on lock screen (no menu bar), but auxiliary areas
+        // are hardware-based and always present for notch MacBooks
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
         let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
         
         // For external displays (non-built-in), use the external display setting

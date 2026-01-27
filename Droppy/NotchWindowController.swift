@@ -267,7 +267,40 @@ final class NotchWindowController: NSObject, ObservableObject {
         }
         
         SkyLightOperator.shared.delegateWindow(window)
-        print("NotchWindowController: ✅ Delegated notch window to SkyLight for lock screen visibility")
+        window.isOnLockScreen = true
+        
+        // CRITICAL: Raise window level to Shielding to be visible above lock screen wallpaper
+        // Also ensure collection behavior allows it to persist
+        window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        
+        // CRITICAL: Bring to front of the shielding level
+        window.orderFrontRegardless()
+        
+        print("NotchWindowController: ✅ Delegated notch window to SkyLight for lock screen visibility (Level: Shielding)")
+    }
+    
+    /// Handles returning from lock screen state
+    /// Recreates the window to restore standard desktop interactivity (drag-and-drop, level)
+    func returnFromLockScreen() {
+        guard let builtInScreen = NSScreen.builtInWithNotch else { return }
+        
+        // Only recycle if we actually have a window that was delegated
+        if let window = notchWindows[builtInScreen.displayID], window.isOnLockScreen {
+            print("NotchWindowController: 🔓 Returning from lock screen - restoring window properties")
+            
+            // Restore standard desktop window properties (recycling the window)
+            // This prevents SwiftUI view recreation and the associated 'jump' animations
+            window.level = .statusBar
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            window.isOnLockScreen = false
+            window.ignoresMouseEvents = true // Reset to safe idle state
+            
+            // Ensure proper ordering
+            window.orderFrontRegardless()
+            
+            print("NotchWindowController: ✅ Window restored to desktop state (Level: StatusBar)")
+        }
     }
     
     /// Closes all notch windows
@@ -365,8 +398,9 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Returns the current display mode label for menu (Notch vs Dynamic Island)
     var displayModeLabel: String {
-        // Check if any connected screen has a notch
-        let hasNotch = NSScreen.builtInWithNotch?.safeAreaInsets.top ?? 0 > 0
+        // Check if any connected screen has a notch using auxiliary areas (stable on lock screen)
+        let screen = NSScreen.builtInWithNotch
+        let hasNotch = screen?.auxiliaryTopLeftArea != nil && screen?.auxiliaryTopRightArea != nil
         let useDynamicIsland = (UserDefaults.standard.object(forKey: "useDynamicIslandStyle") as? Bool) ?? true
         
         if hasNotch && !useDynamicIsland {
@@ -1685,11 +1719,19 @@ final class NotchWindowController: NSObject, ObservableObject {
 extension NSScreen {
     /// Returns the built-in display (the one with a notch), regardless of which screen is "main"
     static var builtInWithNotch: NSScreen? {
-        // First, try to find a screen with safeAreaInsets.top > 0 (has a notch)
+        // CRITICAL: Use auxiliary areas to detect physical notch, NOT safeAreaInsets
+        // safeAreaInsets.top can be 0 on lock screen (no menu bar), but auxiliary areas
+        // are hardware-based and always present for notch MacBooks
+        if let notchScreen = NSScreen.screens.first(where: { 
+            $0.auxiliaryTopLeftArea != nil && $0.auxiliaryTopRightArea != nil 
+        }) {
+            return notchScreen
+        }
+        // Fallback to safeAreaInsets check for compatibility
         if let notchScreen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
             return notchScreen
         }
-        // Fallback to built-in display (localizedName contains "Built-in" or similar)
+        // Final fallback to built-in display (localizedName contains "Built-in" or similar)
         return NSScreen.screens.first(where: { $0.localizedName.contains("Built-in") || $0.localizedName.contains("内蔵") })
     }
 
@@ -1711,7 +1753,8 @@ extension NSScreen {
                             localizedName.contains("Internal") ||
                             localizedName.contains("内蔵") // Japanese
         // Alternative: Check if this screen has a notch (MacBook-specific)
-        let hasNotch = safeAreaInsets.top > 0
+        // Use auxiliary areas for stable detection (works on lock screen)
+        let hasNotch = auxiliaryTopLeftArea != nil && auxiliaryTopRightArea != nil
         return isNameBuiltIn || hasNotch
     }
 }
@@ -1722,6 +1765,10 @@ class NotchWindow: NSPanel {
 
     /// Flag to indicate if the window is still valid for event handling
     var isValid: Bool = true
+    
+    /// Flag to indicate if the window is currently delegated to the Lock Screen
+    /// When true, we bypass "Hide in Fullscreen" checks to ensure visibility
+    var isOnLockScreen: Bool = false
     
     /// The display ID this window is targeting (for multi-monitor support)
     var targetDisplayID: CGDirectDisplayID = 0
@@ -1740,8 +1787,10 @@ class NotchWindow: NSPanel {
     /// For external displays: uses externalDisplayUseDynamicIsland setting (always DI since no physical notch)
     /// For built-in display: uses useDynamicIslandStyle setting (only if no physical notch or force test)
     private var needsDynamicIsland: Bool {
-        guard let screen = notchScreen else { return true }
-        let hasNotch = screen.safeAreaInsets.top > 0
+        // CRITICAL: Return false (notch mode) when screen is unavailable to prevent layout jumps
+        guard let screen = notchScreen else { return false }
+        // Use auxiliary areas for stable detection (works on lock screen)
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
         let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
         
         // External displays always use Dynamic Island (no physical notch)
@@ -1791,7 +1840,7 @@ class NotchWindow: NSPanel {
 
         // NOTCH MODE: Standard notch positioning
         var notchWidth: CGFloat = 180
-        var notchHeight: CGFloat = 32
+        var notchHeight: CGFloat = NotchLayoutConstants.physicalNotchHeight  // Use fixed constant as default
         // Use global screen coordinates for X position
         var notchX: CGFloat = screen.frame.origin.x + screen.frame.width / 2 - notchWidth / 2  // Fallback
 
@@ -1807,10 +1856,15 @@ class NotchWindow: NSPanel {
             notchX = screen.frame.origin.x + leftArea.maxX
         }
 
-        // Get notch height from safe area insets
-        let topInset = screen.safeAreaInsets.top
-        if topInset > 0 {
-            notchHeight = topInset
+        // Get notch height - prefer safeAreaInsets but fall back to constant
+        // CRITICAL: safeAreaInsets.top can be 0 on lock screen, so we use the fixed constant as fallback
+        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        if hasPhysicalNotch {
+            let topInset = screen.safeAreaInsets.top
+            if topInset > 0 {
+                notchHeight = topInset
+            }
+            // else keep the default NotchLayoutConstants.physicalNotchHeight
         } else if !screen.isBuiltIn {
             // For external displays in notch mode: constrain to menu bar height
             // Menu bar height = difference between full frame and visible frame at the top
@@ -2208,6 +2262,15 @@ class NotchWindow: NSPanel {
     func checkForFullscreenAndReturn() -> Bool {
         // CRITICAL: Never hide during drag operations - user needs to drop files!
         if DragMonitor.shared.isDragging {
+            if targetAlpha != 1.0 {
+                targetAlpha = 1.0
+                alphaValue = 1.0
+            }
+            return false
+        }
+        
+        // CRITICAL: Never hide on Lock Screen (even if it looks like a fullscreen app)
+        if isOnLockScreen {
             if targetAlpha != 1.0 {
                 targetAlpha = 1.0
                 alphaValue = 1.0

@@ -11,27 +11,53 @@ import AppKit
 
 /// Centralized HUD layout calculator - Single Source of Truth
 /// All HUD views should use this instead of duplicating isDynamicIslandMode, wingWidth, etc.
+/// CRITICAL: Handles nil screen gracefully with safe fallback values for lock screen stability
 struct HUDLayoutCalculator {
-    let screen: NSScreen
+    let screen: NSScreen?
     
     // MARK: - Computed Layout Properties
     
-    /// Physical notch height from safe area insets
+    /// Physical notch height - uses auxiliary areas for stable lock screen detection
+    /// Returns physicalNotchHeight when screen is unavailable to prevent layout jumps
     var notchHeight: CGFloat {
-        let height = screen.safeAreaInsets.top
+        // CRITICAL: Return physical notch height when screen is unavailable for stable positioning
+        guard let screen = screen else { return NotchLayoutConstants.physicalNotchHeight }
+        
+        // Use auxiliary areas to detect physical notch (stable on lock screen)
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        
+        if hasNotch {
+            let height = screen.safeAreaInsets.top
+            // Return actual height when available, otherwise use fixed constant
+            return height > 0 ? height : NotchLayoutConstants.physicalNotchHeight
+        }
+        
         // Fallback for screens without notch - use Dynamic Island height
-        return height > 0 ? height : 32
+        return NotchLayoutConstants.dynamicIslandHeight
     }
     
     /// Physical notch width (hardcoded based on Apple's design)
+    /// Returns physicalNotchWidth when screen is unavailable
     var notchWidth: CGFloat {
+        // CRITICAL: Return physical notch width when screen is unavailable
+        guard let screen = screen else { return NotchLayoutConstants.physicalNotchWidth }
+        
         // MacBook Pro notch is 180pt wide
-        screen.safeAreaInsets.top > 0 ? 180 : 0
+        // Use auxiliary areas to detect notch (stable on lock screen)
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        return hasNotch ? NotchLayoutConstants.physicalNotchWidth : 0
     }
     
     /// Whether to use Dynamic Island (compact) layout vs Notch (wing) layout
+    /// Returns false (notch mode) when screen is unavailable to prevent layout jumps
     var isDynamicIslandMode: Bool {
-        let hasPhysicalNotch = screen.safeAreaInsets.top > 0
+        // CRITICAL: Return false (notch mode) when screen is unavailable to prevent layout jumps
+        guard let screen = screen else { return false }
+        
+        // CRITICAL: Use auxiliary areas to detect physical notch, NOT safeAreaInsets
+        // safeAreaInsets.top can be 0 on lock screen (no menu bar), but auxiliary areas
+        // are hardware-based and always present for notch MacBooks
+        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
         let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
         
         // External displays never have physical notches, always use compact layout
@@ -91,8 +117,9 @@ struct HUDLayoutCalculator {
     // MARK: - Convenience Initializer
     
     /// Create calculator for current main screen or fallback
+    /// NOTE: If no screens available, returns calculator with nil screen (uses safe fallbacks)
     static var current: HUDLayoutCalculator {
-        let screen = NSScreen.main ?? NSScreen.screens.first ?? NSScreen.screens[0]
+        let screen = NSScreen.main ?? NSScreen.screens.first
         return HUDLayoutCalculator(screen: screen)
     }
     

@@ -104,6 +104,14 @@ class LockScreenManager: ObservableObject {
                 self.isUnlocked = false
                 self.lastEvent = .locked
                 self.lastChangeAt = Date()
+                
+                // CRITICAL: Trigger Lock Screen HUD via HUDManager
+                // Use a very long duration effectively "indefinite" while locked
+                // It will be dismissed/replaced upon unlock
+                HUDManager.shared.show(.lockScreen, on: NSScreen.builtInWithNotch?.displayID, duration: 3600)
+                
+                // CRITICAL: Delegate window to lock screen space and elevate level
+                NotchWindowController.shared.delegateToLockScreen()
             }
         }
     }
@@ -117,6 +125,11 @@ class LockScreenManager: ObservableObject {
             // This ensures panel stays visible when screen dims and wakes while still locked
             if !self.isUnlocked {
                 LockScreenMediaPanelManager.shared.showPanel()
+                // CRITICAL: Ensure Lock Screen HUD is visible on wake
+                HUDManager.shared.show(.lockScreen, on: NSScreen.builtInWithNotch?.displayID, duration: 3600)
+                
+                // CRITICAL: Ensure window is properly delegated and visible (re-apply in case of state loss)
+                NotchWindowController.shared.delegateToLockScreen()
             }
         }
     }
@@ -133,6 +146,15 @@ class LockScreenManager: ObservableObject {
             self.isUnlocked = true
             self.lastEvent = .unlocked
             self.lastChangeAt = Date()
+            self.lastChangeAt = Date()
+            // CRITICAL: Trigger Unlock HUD (2.0s)
+            HUDManager.shared.show(.lockScreen, on: NSScreen.builtInWithNotch?.displayID, duration: 2.0)
+            
+            // CRITICAL: Restore window to standard desktop state (recycle mechanism)
+            // Delay to allow unlock animation to play out (2.0s)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                 NotchWindowController.shared.returnFromLockScreen()
+            }
         }
     }
     

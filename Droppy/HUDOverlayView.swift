@@ -34,8 +34,10 @@ struct NotchHUDView: View {
     /// For HUD LAYOUT purposes: external displays always use compact layout (no physical notch)
     private var isDynamicIslandMode: Bool {
         let screen = targetScreen ?? NSScreen.main ?? NSScreen.screens.first
-        guard let screen = screen else { return true }
-        let hasNotch = screen.safeAreaInsets.top > 0
+        // CRITICAL: Return false (notch mode) when screen is unavailable to prevent layout jumps
+        guard let screen = screen else { return false }
+        // Use auxiliary areas to detect notch (stable on lock screen)
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
         let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
         
         // External displays never have physical notches, so always use compact HUD layout

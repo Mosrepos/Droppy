@@ -47,16 +47,34 @@ enum NotchLayoutConstants {
     
     // MARK: - Notch Mode Calculations
     
+    /// Standard MacBook Pro notch height (menu bar safe area height)
+    /// This is consistent across all notch MacBooks at their default resolution
+    static let physicalNotchHeight: CGFloat = 37
+    
     /// Get the physical notch height for a given screen
-    /// Returns 0 if no notch (external display or Dynamic Island mode)
+    /// Returns physicalNotchHeight as fallback when screen is unavailable
+    /// CRITICAL: Uses auxiliary areas for detection (stable on lock screen) and
+    /// returns the stable safeAreaInsets value when available, with a fixed fallback
     static func notchHeight(for screen: NSScreen?) -> CGFloat {
-        guard let screen = screen else { return 0 }
-        return screen.safeAreaInsets.top
+        // CRITICAL: Return physical notch height when screen is unavailable for stable positioning
+        guard let screen = screen else { return physicalNotchHeight }
+        
+        // Use auxiliary areas to detect physical notch (stable on lock screen)
+        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        guard hasPhysicalNotch else { return 0 }
+        
+        // Return actual safeAreaInsets if available, otherwise use fixed constant
+        let topInset = screen.safeAreaInsets.top
+        return topInset > 0 ? topInset : physicalNotchHeight
     }
     
     /// Whether a screen is in Dynamic Island mode (no physical notch)
+    /// Uses auxiliary areas for stable detection on lock screen
+    /// CRITICAL: Returns false (notch mode) when screen is unavailable to prevent layout jumps
     static func isDynamicIslandMode(for screen: NSScreen?) -> Bool {
-        notchHeight(for: screen) == 0
+        guard let screen = screen else { return false }
+        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        return !hasPhysicalNotch
     }
     
     // MARK: - EdgeInsets Calculation

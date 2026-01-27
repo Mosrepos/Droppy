@@ -236,7 +236,7 @@ private struct PremiumBlurModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         content
-            .scaleEffect(scale)
+            .scaleEffect(scale, anchor: .top)
             .blur(radius: blur)
             .opacity(opacity)
     }

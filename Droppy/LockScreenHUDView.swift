@@ -17,7 +17,7 @@ struct LockScreenHUDView: View {
     
     /// Centralized layout calculator - Single Source of Truth
     private var layout: HUDLayoutCalculator {
-        HUDLayoutCalculator(screen: targetScreen ?? NSScreen.main ?? NSScreen.screens.first!)
+        HUDLayoutCalculator(screen: targetScreen ?? NSScreen.main ?? NSScreen.screens.first)
     }
     
     // Animation states

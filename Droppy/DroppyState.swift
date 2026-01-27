@@ -333,8 +333,11 @@ final class DroppyState {
     /// - Parameter screen: The screen to calculate for (provides notch height)
     /// - Returns: Total hit-test height in points
     static func expandedShelfHeight(for screen: NSScreen) -> CGFloat {
-        let notchHeight = screen.safeAreaInsets.top
-        let isDynamicIsland = notchHeight <= 0 || UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
+        // Use auxiliary areas for stable notch detection (works on lock screen)
+        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        let topInset = screen.safeAreaInsets.top
+        let notchHeight = hasPhysicalNotch ? (topInset > 0 ? topInset : NotchLayoutConstants.physicalNotchHeight) : 0
+        let isDynamicIsland = !hasPhysicalNotch || UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
         let topPaddingDelta: CGFloat = isDynamicIsland ? 0 : (notchHeight - 20)
         let notchCompensation: CGFloat = isDynamicIsland ? 0 : notchHeight
         
