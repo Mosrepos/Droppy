@@ -282,20 +282,20 @@ struct NotchShelfView: View {
     /// This ensures wings are FIXED size regardless of notch size
     /// Volume and Brightness use IDENTICAL widths for visual consistency
     private var volumeHudWidth: CGFloat {
-        // External monitors (both island and notch mode): use compact 260pt
+        // External monitors (both island and notch mode): use wider layout to fit content
         // Built-in MacBook notch: use wide layout for proper fit around physical notch
         if isExternalDisplay || isDynamicIslandMode {
-            return 280  // Compact width for external/island mode
+            return 360  // Wide enough for icon + slider + percentage
         }
         return notchWidth + (volumeWingWidth * 2) + 20  // Wide for built-in notch
     }
     
     /// Brightness HUD - same width as Volume for visual consistency
     private var brightnessHudWidth: CGFloat {
-        // External monitors (both island and notch mode): use compact 260pt
+        // External monitors (both island and notch mode): use wider layout to fit content
         // Built-in MacBook notch: use wide layout
         if isExternalDisplay || isDynamicIslandMode {
-            return 260  // Compact width for external/island mode
+            return 360  // Wide enough for icon + slider + percentage
         }
         return notchWidth + (volumeWingWidth * 2) + 20  // Wide for built-in notch
     }
@@ -308,16 +308,24 @@ struct NotchShelfView: View {
     
     /// Battery HUD - slightly narrower wings
     private var batteryHudWidth: CGFloat {
+        // External displays need wider layout to fit properly
+        if isExternalDisplay {
+            return 180  // Wider for external displays
+        }
         if isDynamicIslandMode {
-            return 100  // Compact for Dynamic Island
+            return 100  // Compact for Dynamic Island on built-in
         }
         return notchWidth + (batteryWingWidth * 2)
     }
     
     /// Media HUD - compact wings for album art / visualizer
     private var hudWidth: CGFloat {
+        // External displays need wider layout for album art + title + visualizer
+        if isExternalDisplay {
+            return 340  // Wide enough for media content on external
+        }
         if isDynamicIslandMode {
-            return 260  // Smaller for Dynamic Island
+            return 260  // Smaller for Dynamic Island on built-in
         }
         return notchWidth + (mediaWingWidth * 2)
     }
@@ -325,8 +333,12 @@ struct NotchShelfView: View {
     
     /// Update HUD - wider wings to fit "Update" + icon on left and "Droppy X.X.X" on right
     private var updateHudWidth: CGFloat {
+        // External displays need wider layout
+        if isExternalDisplay {
+            return 300  // Wider for external displays
+        }
         if isDynamicIslandMode {
-            return 240  // Narrower for Dynamic Island (compact)
+            return 240  // Narrower for Dynamic Island on built-in (compact)
         }
         return notchWidth + (updateWingWidth * 2)  // Wide wings for notch mode
     }

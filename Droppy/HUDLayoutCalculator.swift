@@ -24,17 +24,12 @@ struct HUDLayoutCalculator {
         guard let screen = screen else { return NotchLayoutConstants.physicalNotchHeight }
         
         // Use auxiliary areas to detect physical notch (stable on lock screen)
-        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
         
-        if hasPhysicalNotch {
+        if hasNotch {
             let height = screen.safeAreaInsets.top
             // Return actual height when available, otherwise use fixed constant
             return height > 0 ? height : NotchLayoutConstants.physicalNotchHeight
-        }
-        
-        // For external displays using Notch style, use the physical notch height
-        if !screen.isBuiltIn && !isDynamicIslandMode {
-            return NotchLayoutConstants.physicalNotchHeight
         }
         
         // Fallback for screens without notch - use Dynamic Island height
@@ -47,20 +42,10 @@ struct HUDLayoutCalculator {
         // CRITICAL: Return physical notch width when screen is unavailable
         guard let screen = screen else { return NotchLayoutConstants.physicalNotchWidth }
         
-        // Use auxiliary areas to detect physical notch (stable on lock screen)
-        let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
-        
-        if hasPhysicalNotch {
-            return NotchLayoutConstants.physicalNotchWidth
-        }
-        
-        // For external displays using Notch style, use the physical notch width
-        if !screen.isBuiltIn && !isDynamicIslandMode {
-            return NotchLayoutConstants.physicalNotchWidth
-        }
-        
-        // No notch for Dynamic Island mode
-        return 0
+        // MacBook Pro notch is 180pt wide
+        // Use auxiliary areas to detect notch (stable on lock screen)
+        let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
+        return hasNotch ? NotchLayoutConstants.physicalNotchWidth : 0
     }
     
     /// Whether to use Dynamic Island (compact) layout vs Notch (wing) layout
@@ -75,10 +60,9 @@ struct HUDLayoutCalculator {
         let hasPhysicalNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
         let forceTest = UserDefaults.standard.bool(forKey: "forceDynamicIslandTest")
         
-        // External displays never have physical notches, use user preference
+        // External displays never have physical notches, always use compact layout
         if !screen.isBuiltIn {
-            // Respect the externalDisplayUseDynamicIsland setting
-            return (UserDefaults.standard.object(forKey: AppPreferenceKey.externalDisplayUseDynamicIsland) as? Bool) ?? true
+            return true
         }
         
         // For built-in display, use user preference
