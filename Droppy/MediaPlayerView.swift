@@ -308,9 +308,9 @@ struct MediaPlayerView: View {
                 }
                 // Controls bottom-aligned with album art bottom edge
                 .frame(maxWidth: .infinity, minHeight: albumArtSize, maxHeight: albumArtSize)
-                // UNIFIED ANIMATION: Scale+opacity with immediate trigger (no delay)
-                // Uses same animation timing as container notchTransition for sync
+                // PREMIUM: Scale+blur+opacity appear animation (matches notchTransition pattern)
                 .scaleEffect(contentAppeared ? 1.0 : 0.8, anchor: .top)
+                .blur(radius: contentAppeared ? 0 : 8)
                 .opacity(contentAppeared ? 1.0 : 0)
                 .animation(.smooth(duration: 0.35), value: contentAppeared)
                 .onAppear {
@@ -321,32 +321,34 @@ struct MediaPlayerView: View {
                     contentAppeared = false
                 }
             }
-            // MARK: - Premium Ambient Glow (diagonal from bottom-left to top-right)
+            // Use SSOT for consistent padding across all expanded views
+            .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight))
+            // MARK: - Premium Ambient Glow (from bottom-left corner to top-right)
+            // AFTER padding so it anchors at actual container corner
             .background(alignment: .bottomLeading) {
                 if musicManager.albumArt.size.width > 0 {
-                    // Large blurred ellipse positioned at bottom-left, fading towards top-right
+                    // Large blurred ellipse anchored at bottom-left corner of container
                     Ellipse()
                         .fill(
                             RadialGradient(
                                 colors: [
-                                    musicManager.visualizerColor.opacity(0.25),
-                                    musicManager.visualizerColor.opacity(0.08),
+                                    musicManager.visualizerColor.opacity(0.35),
+                                    musicManager.visualizerColor.opacity(0.15),
                                     Color.clear
                                 ],
                                 center: .center,
-                                startRadius: 10,
-                                endRadius: 120
+                                startRadius: 0,
+                                endRadius: 200
                             )
                         )
-                        .frame(width: 200, height: 180)
-                        .blur(radius: 40)
-                        .offset(x: -30, y: 30)
+                        .frame(width: 350, height: 280)
+                        .blur(radius: 60)
+                        // Position: center of ellipse at bottom-left corner
+                        .offset(x: -80, y: 60)
                         .drawingGroup() // GPU compositing for performance
                         .animation(.easeInOut(duration: 0.8), value: musicManager.visualizerColor)
                 }
             }
-            // Use SSOT for consistent padding across all expanded views
-            .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight))
         }
         // MARK: - Universal Inline HUD Observers
         // Uses local @ObservedObject references for snappy updates
@@ -658,6 +660,11 @@ struct MediaPlayerView: View {
             )
         }
         .animation(DroppyAnimation.viewChange, value: musicManager.isPlaying)
+        // PREMIUM: Scale+blur+opacity appear animation (matches controls pattern)
+        .scaleEffect(contentAppeared ? 1.0 : 0.8, anchor: .top)
+        .blur(radius: contentAppeared ? 0 : 8)
+        .opacity(contentAppeared ? 1.0 : 0)
+        .animation(.smooth(duration: 0.35), value: contentAppeared)
     }
     
     // MARK: - Progress Slider
