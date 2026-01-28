@@ -64,13 +64,15 @@ struct DroppedItemView: View {
                 }
             }
             
-            // Filename
-            Text(item.name)
-                .font(.system(size: 10, weight: .medium))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(width: 72)
-                .foregroundStyle(Color(NSColor.labelColor).opacity(0.9))
+            // Filename - subtly scrolls for long names
+            SubtleScrollingText(
+                text: item.name,
+                font: .system(size: 10, weight: .medium),
+                foregroundStyle: AnyShapeStyle(Color(NSColor.labelColor).opacity(0.9)),
+                maxWidth: 72,
+                lineLimit: 2,
+                alignment: .center
+            )
         }
         .padding(8)
         .background {

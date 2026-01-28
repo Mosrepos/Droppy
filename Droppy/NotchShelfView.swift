@@ -1848,7 +1848,7 @@ struct NotchShelfView: View {
             // TERMINAL VIEW: Highest priority - takes over the shelf when active
             if terminalManager.isInstalled && terminalManager.isVisible {
                 // SSOT: contentLayoutNotchHeight for consistent terminal content layout
-                TerminalNotchView(manager: terminalManager, notchHeight: contentLayoutNotchHeight)
+                TerminalNotchView(manager: terminalManager, notchHeight: contentLayoutNotchHeight, isExternalWithNotchStyle: isExternalDisplay && !externalDisplayUseDynamicIsland)
                     .frame(height: currentExpandedHeight, alignment: .top)
                     .id("terminal-view")
                     // PREMIUM: Scale(0.8, anchor: .top) + blur + opacity - ultra-smooth feel
@@ -1873,7 +1873,7 @@ struct NotchShelfView: View {
                     // showTitle: false when morphing overlay handles it (DI mode OR external displays)
                     // UNIFIED ANIMATION: MediaPlayerView has its own contentAppeared state that triggers on appear
                     // Uses same scale(0.8)+opacity with .smooth(0.35) timing as morphing overlays
-                    MediaPlayerView(musicManager: musicManager, notchHeight: contentLayoutNotchHeight, albumArtNamespace: albumArtNamespace, showAlbumArt: false, showVisualizer: false, showTitle: !shouldShowTitleInHUD)
+                    MediaPlayerView(musicManager: musicManager, notchHeight: contentLayoutNotchHeight, isExternalWithNotchStyle: isExternalDisplay && !externalDisplayUseDynamicIsland, albumArtNamespace: albumArtNamespace, showAlbumArt: false, showVisualizer: false, showTitle: !shouldShowTitleInHUD)
                         .frame(height: currentExpandedHeight)
                         // Capture all clicks within the media player area
                         .contentShape(Rectangle())
@@ -2341,8 +2341,9 @@ extension NotchShelfView {
         // Use SSOT for consistent padding across all expanded views
         // Island mode: 20pt uniform on ALL sides
         // Notch mode: top = notchHeight (just below physical notch), 20pt on left/right/bottom
+        // External notch style: 20pt vertical, 30pt horizontal (for curved corners)
         // SSOT: contentLayoutNotchHeight for consistent shelf content layout
-        .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: contentLayoutNotchHeight))
+        .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: contentLayoutNotchHeight, isExternalWithNotchStyle: isExternalDisplay && !externalDisplayUseDynamicIsland))
         .onAppear {
             withAnimation(.linear(duration: 25).repeatForever(autoreverses: false)) {
                 dropZoneDashPhase -= 280 // Multiple of 14 (6+8) for smooth loop

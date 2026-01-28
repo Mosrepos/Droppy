@@ -90,6 +90,14 @@ enum NotchLayoutConstants {
         let targetScreen = screen ?? NSScreen.main
         let notch = notchHeight(for: targetScreen)
         
+        // Check if external display using notch visual style (has curved corners)
+        let isExternalWithNotchStyle: Bool = {
+            guard let s = targetScreen else { return false }
+            if s.isBuiltIn { return false }
+            let externalUseDI = UserDefaults.standard.object(forKey: "externalDisplayUseDynamicIsland") as? Bool ?? true
+            return !externalUseDI
+        }()
+        
         if notch > 0 {
             // NOTCH MODE: Top padding = notchHeight + 10 (wing corner compensation)
             // Left/Right = contentPadding, Bottom = contentPadding - 10 (to balance)
@@ -100,8 +108,16 @@ enum NotchLayoutConstants {
                 bottom: contentPadding - 10,
                 trailing: contentPadding
             )
+        } else if isExternalWithNotchStyle {
+            // EXTERNAL WITH NOTCH STYLE: +10pt horizontal for curved corners, normal vertical
+            return EdgeInsets(
+                top: contentPadding,
+                leading: contentPadding + 10,
+                bottom: contentPadding,
+                trailing: contentPadding + 10
+            )
         } else {
-            // ISLAND MODE: 100% symmetrical padding on all edges
+            // PURE ISLAND MODE: 100% symmetrical padding on all edges
             return EdgeInsets(
                 top: contentPadding,
                 leading: contentPadding,
@@ -112,9 +128,11 @@ enum NotchLayoutConstants {
     }
     
     /// Convenience method when you only have notchHeight, not the full screen
-    /// - Parameter notchHeight: The physical notch height (0 for island mode)
+    /// - Parameters:
+    ///   - notchHeight: The physical notch height (0 for island mode)
+    ///   - isExternalWithNotchStyle: Whether this is an external display with notch visual style
     /// - Returns: EdgeInsets for the content
-    static func contentEdgeInsets(notchHeight: CGFloat) -> EdgeInsets {
+    static func contentEdgeInsets(notchHeight: CGFloat, isExternalWithNotchStyle: Bool = false) -> EdgeInsets {
         if notchHeight > 0 {
             // NOTCH MODE: Top + 10pt wing compensation, Bottom - 10pt to balance
             return EdgeInsets(
@@ -123,8 +141,16 @@ enum NotchLayoutConstants {
                 bottom: contentPadding - 10,
                 trailing: contentPadding
             )
+        } else if isExternalWithNotchStyle {
+            // EXTERNAL WITH NOTCH STYLE: +10pt horizontal for curved corners, normal vertical
+            return EdgeInsets(
+                top: contentPadding,
+                leading: contentPadding + 10,
+                bottom: contentPadding,
+                trailing: contentPadding + 10
+            )
         } else {
-            // ISLAND MODE: 100% symmetrical
+            // PURE ISLAND MODE: 100% symmetrical
             return EdgeInsets(
                 top: contentPadding,
                 leading: contentPadding,

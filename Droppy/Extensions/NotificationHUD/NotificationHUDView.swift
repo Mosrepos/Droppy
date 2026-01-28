@@ -252,7 +252,8 @@ struct NotificationHUDView: View {
             }
         }
         // SSOT: Use exact same padding as MediaPlayerView
-        .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: layout.notchHeight))
+        // +10pt horizontal only for external notch style (curved corners don't affect top/bottom)
+        .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: layout.notchHeight, isExternalWithNotchStyle: layout.isExternalWithNotchStyle))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

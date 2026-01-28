@@ -11,6 +11,7 @@ import SwiftUI
 struct TerminalNotchView: View {
     @ObservedObject var manager: TerminalNotchManager
     var notchHeight: CGFloat = 0  // Physical notch height from parent (0 for Dynamic Island)
+    var isExternalWithNotchStyle: Bool = false  // External display with curved notch style
     @FocusState private var isInputFocused: Bool
     
     /// Dynamic Island mode detection based on notchHeight
@@ -19,8 +20,9 @@ struct TerminalNotchView: View {
     }
     
     /// Content padding from SSOT - ensures perfect consistency
+    /// +10pt horizontal only for external notch style (curved corners don't affect top/bottom)
     private var contentPadding: EdgeInsets {
-        NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight)
+        NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight, isExternalWithNotchStyle: isExternalWithNotchStyle)
     }
     
     /// Animated dash phase for marching ants effect on dotted outline

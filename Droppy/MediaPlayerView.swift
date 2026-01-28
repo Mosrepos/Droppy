@@ -182,6 +182,7 @@ enum InlineHUDType: Equatable {
 struct MediaPlayerView: View {
     @ObservedObject var musicManager: MusicManager
     var notchHeight: CGFloat = 0  // Physical notch height to clear (0 for Dynamic Island)
+    var isExternalWithNotchStyle: Bool = false  // External display with curved notch style
     var albumArtNamespace: Namespace.ID? = nil  // MORPH: For matchedGeometryEffect morphing
     var showAlbumArt: Bool = true  // PREMIUM: Set to false when morphing is handled externally
     var showVisualizer: Bool = true  // PREMIUM: Set to false when morphing is handled externally
@@ -322,7 +323,8 @@ struct MediaPlayerView: View {
                 }
             }
             // Use SSOT for consistent padding across all expanded views
-            .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight))
+            // +10pt horizontal only for external notch style (curved corners don't affect top/bottom)
+            .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight, isExternalWithNotchStyle: isExternalWithNotchStyle))
             // MARK: - Premium Ambient Glow (from bottom-left corner to top-right)
             // AFTER padding so it anchors at actual container corner
             .background(alignment: .bottomLeading) {

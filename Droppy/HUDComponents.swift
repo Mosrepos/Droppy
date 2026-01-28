@@ -451,6 +451,185 @@ private class MiniAudioVisualizerState: ObservableObject {
     }
 }
 
+// MARK: - Subtle Scrolling Text for Long File Names
+
+/// A text view that subtly scrolls horizontally to reveal long file names
+/// - Waits ~2 seconds after appearing before first scroll
+/// - Scrolls slowly to show full text, pauses, then scrolls back
+/// - Repeats the cycle every ~6 seconds
+/// - Only scrolls when text is actually truncated
+/// - Uses fade edges for a premium look
+struct SubtleScrollingText: View {
+    let text: String
+    var font: Font = .system(size: 10, weight: .medium)
+    var foregroundStyle: AnyShapeStyle = AnyShapeStyle(.white.opacity(0.9))
+    var maxWidth: CGFloat = 72
+    var lineLimit: Int = 1  // For horizontal scroll: single line
+    var alignment: TextAlignment = .center
+    
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var scrollOffset: CGFloat = 0
+    @State private var scrollPhase: ScrollPhase = .idle
+    @State private var scrollTimer: Timer?
+    
+    private enum ScrollPhase {
+        case idle          // Waiting before first scroll
+        case scrollingEnd  // Scrolling to show end of text
+        case pausingEnd    // Paused at end
+        case scrollingStart // Scrolling back to start
+        case pausingStart  // Paused at start before next cycle
+    }
+    
+    /// Whether text overflows the container (needs scrolling)
+    private var needsScroll: Bool {
+        textWidth > containerWidth + 1 // Small tolerance for rounding
+    }
+    
+    /// Maximum scroll offset (how far to scroll)
+    private var maxScrollOffset: CGFloat {
+        max(0, textWidth - containerWidth)
+    }
+    
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: alignment == .center ? .center : .leading) {
+                // Hidden text to measure full width
+                Text(text)
+                    .font(font)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background(GeometryReader { textGeo in
+                        Color.clear
+                            .onAppear { textWidth = textGeo.size.width }
+                            .onChange(of: text) { _, _ in
+                                DispatchQueue.main.async {
+                                    textWidth = textGeo.size.width
+                                    resetScroll()
+                                }
+                            }
+                    })
+                    .hidden()
+                
+                // Visible clipped text with horizontal scroll offset
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(foregroundStyle)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .offset(x: -scrollOffset)
+                    // Fade mask at left and right edges when scrolling
+                    .mask(
+                        HStack(spacing: 0) {
+                            if scrollOffset > 0 {
+                                LinearGradient(
+                                    colors: [.clear, .white],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: 10)
+                            } else {
+                                Color.white.frame(width: 0)
+                            }
+                            
+                            Rectangle()
+                            
+                            if needsScroll && scrollOffset < maxScrollOffset {
+                                LinearGradient(
+                                    colors: [.white, .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: 12)
+                            } else {
+                                Color.white.frame(width: 0)
+                            }
+                        }
+                    )
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+            .clipped()
+            .onAppear {
+                containerWidth = geo.size.width
+                startScrollCycle()
+            }
+            .onChange(of: geo.size) { _, newSize in
+                containerWidth = newSize.width
+            }
+            .onDisappear {
+                scrollTimer?.invalidate()
+                scrollTimer = nil
+            }
+        }
+        .frame(width: maxWidth, height: 14) // Single line height
+    }
+    
+    private func resetScroll() {
+        scrollTimer?.invalidate()
+        scrollTimer = nil
+        scrollOffset = 0
+        scrollPhase = .idle
+        startScrollCycle()
+    }
+    
+    private func startScrollCycle() {
+        guard needsScroll else { return }
+        
+        scrollPhase = .idle
+        scrollOffset = 0
+        
+        // Wait 2.5 seconds before starting scroll
+        scrollTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
+            advanceScrollPhase()
+        }
+    }
+    
+    private func advanceScrollPhase() {
+        switch scrollPhase {
+        case .idle:
+            // Start scrolling to end
+            scrollPhase = .scrollingEnd
+            withAnimation(.easeInOut(duration: 1.5)) {
+                scrollOffset = maxScrollOffset
+            }
+            // After scroll completes, pause at end
+            scrollTimer = Timer.scheduledTimer(withTimeInterval: 1.7, repeats: false) { _ in
+                advanceScrollPhase()
+            }
+            
+        case .scrollingEnd:
+            // Pause at end
+            scrollPhase = .pausingEnd
+            scrollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+                advanceScrollPhase()
+            }
+            
+        case .pausingEnd:
+            // Scroll back to start
+            scrollPhase = .scrollingStart
+            withAnimation(.easeInOut(duration: 1.2)) {
+                scrollOffset = 0
+            }
+            // After scroll completes, pause at start
+            scrollTimer = Timer.scheduledTimer(withTimeInterval: 1.4, repeats: false) { _ in
+                advanceScrollPhase()
+            }
+            
+        case .scrollingStart:
+            // Pause at start before next cycle
+            scrollPhase = .pausingStart
+            scrollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+                advanceScrollPhase()
+            }
+            
+        case .pausingStart:
+            // Restart cycle
+            scrollPhase = .idle
+            advanceScrollPhase()
+        }
+    }
+}
+
 struct MarqueeText: View {
     let text: String
     let speed: Double // Points per second (unused, kept for API compatibility)

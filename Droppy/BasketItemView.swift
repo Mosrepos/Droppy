@@ -1391,21 +1391,23 @@ private struct BasketItemContent: View {
                     renamingText = item.url.deletingPathExtension().lastPathComponent
                 }
             } else {
-                // FINDER-STYLE: Label with pill selection background
-                Text(item.name)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background {
-                        if isSelected {
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.accentColor)
-                        }
+                // FINDER-STYLE: Label with pill selection background and subtle scroll for long names
+                SubtleScrollingText(
+                    text: item.name,
+                    font: .system(size: 11),
+                    foregroundStyle: AnyShapeStyle(.white),
+                    maxWidth: 64,
+                    lineLimit: 2,
+                    alignment: .center
+                )
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.accentColor)
                     }
-                    .frame(width: 64)
+                }
             }
         }
         .padding(.vertical, 2)
