@@ -74,6 +74,27 @@ Write to `release_notes.txt` with this **EXACT** format:
 - Omit sections with no items (e.g., skip Important if nothing critical)
 - Natural, human language - concise but specific
 
+Also write to `github_release_notes.md` with this **EXACT** footer template:
+
+```markdown
+---
+
+## Installation
+
+<img src="https://raw.githubusercontent.com/iordv/Droppy/main/docs/assets/macos-disk-icon.png" height="24"> **Recommended: Direct Download** (signed & notarized)
+
+Download `Droppy-[VERSION].dmg` below, open it, and drag Droppy to Applications. That's it!
+
+> ✅ **Signed & Notarized by Apple** — No quarantine warnings, no terminal commands needed.
+
+<img src="https://brew.sh/assets/img/homebrew.svg" height="24"> **Alternative: Install via Homebrew**
+\`\`\`bash
+brew install --cask iordv/tap/droppy
+\`\`\`
+```
+
+**IMPORTANT:** Always use the signed/notarized template above. Never include quarantine removal instructions.
+
 ## 4. Run Release Script
 
 ```bash
