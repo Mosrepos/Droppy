@@ -74,8 +74,7 @@ if [ -n "$NOTES_FILE" ] && [ -f "$NOTES_FILE" ]; then
     perl -0777 -i -pe 's/(<!-- CHANGELOG_START -->)(.*?)(<!-- CHANGELOG_END -->)/$1\n$ENV{NEW_NOTES}\n$3/s' README.md
     
     step "Updating Website Version to $VERSION..."
-    # Update DROPPY_VERSION in docs/download.html, docs/index.html, and docs/extensions.html
-    sed -i '' "s/const DROPPY_VERSION = '[^']*';/const DROPPY_VERSION = '$VERSION';/" docs/download.html
+    # Update DROPPY_VERSION in docs/index.html and docs/extensions.html
     sed -i '' "s/const DROPPY_VERSION = '[^']*';/const DROPPY_VERSION = '$VERSION';/" docs/index.html
     sed -i '' "s/const DROPPY_VERSION = '[^']*';/const DROPPY_VERSION = '$VERSION';/" docs/extensions.html
     
