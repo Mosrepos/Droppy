@@ -75,7 +75,7 @@ struct HighAlertHUDView: View {
                         .contentTransition(.numericText())
                 }
                 .padding(.horizontal, symmetricPadding)
-                .frame(height: layout.notchHeight)
+                .frame(width: hudWidth, height: layout.notchHeight)
             } else {
                 // NOTCH MODE: Two wings separated by the notch space
                 let iconSize = layout.iconSize
