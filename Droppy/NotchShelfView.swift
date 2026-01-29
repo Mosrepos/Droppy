@@ -338,12 +338,11 @@ struct NotchShelfView: View {
         return notchWidth + (batteryWingWidth * 2)
     }
     
-    /// High Alert HUD - wider wings than Caps Lock for "Active/Inactive" text
+    /// High Alert HUD - wider wings than Caps Lock for timer text
     private var highAlertHudWidth: CGFloat {
-        // Base content widths:
-        // - DI/external: 200pt (wider for "Active/Inactive" text)
-        let diContentWidth: CGFloat = 140
-        let externalNotchWidth: CGFloat = 200
+        // Base content widths - need space for monospace timer (e.g., "3:59:45")
+        let diContentWidth: CGFloat = 180  // DI mode: icon + timer text
+        let externalNotchWidth: CGFloat = 220  // External notch mode: wider for timer
         
         if isDynamicIslandMode {
             return diContentWidth
