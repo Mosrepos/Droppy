@@ -152,6 +152,8 @@ struct CaffeineInfoView: View {
             }
             .padding(.top, 8)
         }
+        // Left-align and fill parent width
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     private func featureRow(icon: String, text: String) -> some View {
