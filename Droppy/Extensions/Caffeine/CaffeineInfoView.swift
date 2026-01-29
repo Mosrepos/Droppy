@@ -218,8 +218,8 @@ struct CaffeineInfoView: View {
             // Timers Grid
             VStack(alignment: .leading, spacing: 12) {
                 Text("Quick Timers")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
                     timerButton(.indefinite)
@@ -251,8 +251,8 @@ struct CaffeineInfoView: View {
     private var modeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Prevention Mode")
-                .font(.headline)
-                .foregroundStyle(.primary)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             
             VStack(spacing: 0) {
                 ForEach(Array(CaffeineMode.allCases.enumerated()), id: \.element) { index, mode in
