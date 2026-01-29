@@ -1584,38 +1584,52 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Terminal Notch Extension
-                HStack(spacing: 12) {
-                    TerminalHUDIcon(isEnabled: isTerminalNotchInstalled && enableTerminalNotch)
-                    
-                    if isTerminalNotchInstalled {
+                // Termi-Notch Extension
+                if isTerminalNotchInstalled {
+                    HStack(spacing: 12) {
+                        TerminalHUDIcon(isEnabled: enableTerminalNotch)
+                        
                         // Extension is installed - show on/off toggle for HUD visibility
                         Toggle(isOn: $enableTerminalNotch) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Terminal Notch")
+                                Text("Termi-Notch")
                                 Text("Quick command bar in the shelf")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
-                    } else {
-                        // Extension is not installed - greyed out
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Terminal Notch")
-                                .foregroundStyle(.secondary)
-                            Text("Enable in Extension Store")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                } else {
+                    // Extension is not installed - clickable card to open Extension Store
+                    Button {
+                        // Navigate to Extension Store with Termi-Notch selected
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("OpenExtensionStore"),
+                            object: nil,
+                            userInfo: ["extension": ExtensionDefinition.terminalNotch.id]
+                        )
+                    } label: {
+                        HStack(spacing: 12) {
+                            TerminalHUDIcon(isEnabled: false)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Termi-Notch")
+                                    .foregroundStyle(.secondary)
+                                Text("Enable in Extension Store")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
                 
                 // Caffeine Extension
-                HStack(spacing: 12) {
-                    CaffeineHUDIcon(isEnabled: isCaffeineInstalled && enableCaffeine && CaffeineManager.shared.isActive)
-                    
-                    if isCaffeineInstalled {
+                if isCaffeineInstalled {
+                    HStack(spacing: 12) {
+                        CaffeineHUDIcon(isEnabled: enableCaffeine && CaffeineManager.shared.isActive)
+                        
                         // Extension is installed - show on/off toggle for HUD visibility
                         Toggle(isOn: $enableCaffeine) {
                             VStack(alignment: .leading, spacing: 2) {
@@ -1635,17 +1649,31 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                    } else {
-                        // Extension is not installed - greyed out
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Caffeine")
-                                .foregroundStyle(.secondary)
-                            Text("Enable in Extension Store")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                } else {
+                    // Extension is not installed - clickable card to open Extension Store
+                    Button {
+                        // Navigate to Extension Store with Caffeine selected
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("OpenExtensionStore"),
+                            object: nil,
+                            userInfo: ["extension": ExtensionDefinition.caffeine.id]
+                        )
+                    } label: {
+                        HStack(spacing: 12) {
+                            CaffeineHUDIcon(isEnabled: false)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Caffeine")
+                                    .foregroundStyle(.secondary)
+                                Text("Enable in Extension Store")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
             } header: {
                 Text("Extensions")
