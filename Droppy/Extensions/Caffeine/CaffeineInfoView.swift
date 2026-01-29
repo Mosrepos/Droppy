@@ -218,7 +218,7 @@ struct CaffeineInfoView: View {
             // Timers Grid
             VStack(alignment: .leading, spacing: 12) {
                 Text("Quick Timers")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
@@ -251,7 +251,7 @@ struct CaffeineInfoView: View {
     private var modeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Prevention Mode")
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
             
             VStack(spacing: 0) {
