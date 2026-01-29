@@ -473,8 +473,8 @@ struct ExtensionsShopView: View {
             },
             ExtensionListItem(
                 id: "caffeine",
-                iconURL: "https://getdroppy.app/assets/icons/coffee-cup.png",
-                title: "Caffeine",
+                iconURL: "https://getdroppy.app/assets/icons/high-alert.png",
+                title: "High Alert",
                 subtitle: "Keep your Mac awake",
                 category: .productivity,
                 isInstalled: isCaffeineInstalled,

@@ -68,16 +68,16 @@ struct CaffeineInfoView: View {
     private var headerSection: some View {
         VStack(spacing: 12) {
             // Icon
-            CachedAsyncImage(url: URL(string: "https://getdroppy.app/assets/icons/coffee-cup.png")) { image in
+            CachedAsyncImage(url: URL(string: "https://getdroppy.app/assets/icons/high-alert.png")) { image in
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
-                Image(systemName: "cup.and.saucer.fill").font(.system(size: 32)).foregroundStyle(.brown)
+                Image(systemName: "eyes").font(.system(size: 32)).foregroundStyle(.orange)
             }
             .frame(width: 64, height: 64)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .brown.opacity(0.4), radius: 8, y: 4)
+            .shadow(color: .orange.opacity(0.4), radius: 8, y: 4)
             
-            Text("Caffeine")
+            Text("High Alert")
                 .font(.title2.bold())
             
             // Stats Row
@@ -115,10 +115,10 @@ struct CaffeineInfoView: View {
                 // Category Badge
                 Text("Productivity")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.brown)
+                    .foregroundStyle(.orange)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.brown.opacity(0.15)))
+                    .background(Capsule().fill(Color.orange.opacity(0.15)))
             }
             
             Text("Prevent your Mac from sleeping")
@@ -133,12 +133,12 @@ struct CaffeineInfoView: View {
     
     private var featuresSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            featureRow(icon: "cup.and.saucer.fill", text: "Keep system awake indefinitely")
+            featureRow(icon: "eyes", text: "Keep system awake indefinitely")
             featureRow(icon: "timer", text: "Timed modes (15m, 1h, etc)")
             featureRow(icon: "bolt.fill", text: "Low resource usage")
             
             // Screenshot
-            CachedAsyncImage(url: URL(string: "https://getdroppy.app/assets/images/caffeine-screenshot.png")) { image in
+            CachedAsyncImage(url: URL(string: "https://getdroppy.app/assets/images/high-alert-screenshot.png")) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -158,7 +158,7 @@ struct CaffeineInfoView: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.brown)
+                .foregroundStyle(.orange)
                 .frame(width: 24)
             Text(text)
                 .font(.callout)
@@ -240,7 +240,7 @@ struct CaffeineInfoView: View {
                 .padding(.vertical, 6)
         }
         .buttonStyle(isActive 
-                     ? AnyButtonStyle(DroppyAccentButtonStyle(color: .brown, size: .small))
+                     ? AnyButtonStyle(DroppyAccentButtonStyle(color: .orange, size: .small))
                      : AnyButtonStyle(DroppyPillButtonStyle(size: .small)))
     }
     
