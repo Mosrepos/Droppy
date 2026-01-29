@@ -28,6 +28,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.useDynamicIslandStyle) private var useDynamicIslandStyle = PreferenceDefault.useDynamicIslandStyle
     @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
     @AppStorage(AppPreferenceKey.externalDisplayUseDynamicIsland) private var externalDisplayUseDynamicIsland = PreferenceDefault.externalDisplayUseDynamicIsland
+    @AppStorage(AppPreferenceKey.showIdleNotchOnExternalDisplays) private var showIdleNotchOnExternalDisplays = PreferenceDefault.showIdleNotchOnExternalDisplays
     
     // HUD and Media Player settings
     @AppStorage(AppPreferenceKey.enableHUDReplacement) private var enableHUDReplacement = PreferenceDefault.enableHUDReplacement
@@ -319,6 +320,15 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.vertical, 8)
+                    
+                    Toggle(isOn: $showIdleNotchOnExternalDisplays) {
+                        VStack(alignment: .leading) {
+                            Text("Show When Idle")
+                            Text("Keep \(useDynamicIslandStyle ? "island" : "notch") visible when nothing is playing")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Display Mode")
                 }
@@ -371,6 +381,15 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.top, 4)
+                    
+                    Toggle(isOn: $showIdleNotchOnExternalDisplays) {
+                        VStack(alignment: .leading) {
+                            Text("Show When Idle")
+                            Text("Keep \(externalDisplayUseDynamicIsland ? "island" : "notch") visible when nothing is playing")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             } header: {
                 Text("External Displays")

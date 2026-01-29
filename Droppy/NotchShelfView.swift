@@ -22,6 +22,7 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
     @AppStorage(AppPreferenceKey.hideNotchOnExternalDisplays) private var hideNotchOnExternalDisplays = PreferenceDefault.hideNotchOnExternalDisplays
     @AppStorage(AppPreferenceKey.externalDisplayUseDynamicIsland) private var externalDisplayUseDynamicIsland = PreferenceDefault.externalDisplayUseDynamicIsland
+    @AppStorage(AppPreferenceKey.showIdleNotchOnExternalDisplays) private var showIdleNotchOnExternalDisplays = PreferenceDefault.showIdleNotchOnExternalDisplays
     @AppStorage(AppPreferenceKey.enableHUDReplacement) private var enableHUDReplacement = PreferenceDefault.enableHUDReplacement
     @AppStorage(AppPreferenceKey.enableBatteryHUD) private var enableBatteryHUD = PreferenceDefault.enableBatteryHUD
     @AppStorage(AppPreferenceKey.enableCapsLockHUD) private var enableCapsLockHUD = PreferenceDefault.enableCapsLockHUD
@@ -566,8 +567,9 @@ struct NotchShelfView: View {
             }
             // Show when any HUD is visible (using centralized HUDManager)
             if HUDManager.shared.isVisible { return true }
-            // Otherwise hide - Dynamic Island is invisible when idle
-            return false
+            
+            // Dynamic Island idle behavior: respect user setting for external/notchless displays
+            // Fall through to shared idle logic below (don't return false here)
         }
         
         // NOTCH MODE: Legacy behavior - notch is always visible to cover camera
@@ -586,7 +588,8 @@ struct NotchShelfView: View {
         // External displays and notchless MacBooks: hide when idle (no physical camera to cover)
         // Only reaches here if there's nothing to show
         if !isBuiltInDisplay {
-            return false
+            // Allow user to keep notch/island visible when idle on external displays
+            return showIdleNotchOnExternalDisplays && enableNotchShelf
         }
         
         // Built-in display: check if it has a physical notch to cover
@@ -597,8 +600,9 @@ struct NotchShelfView: View {
             }
         }
         
-        // Built-in display WITHOUT notch (old MacBook Air, etc.): hide when idle
-        return false
+        // Built-in display WITHOUT notch (old MacBook Air, etc.): same behavior as external
+        // No physical camera to cover, so respect the idle visibility setting
+        return showIdleNotchOnExternalDisplays && enableNotchShelf
     }
     
     /// Returns appropriate shape for current mode
