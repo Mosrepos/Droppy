@@ -284,6 +284,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let serviceProvider = ServiceProvider()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // FIX #123: Force LaunchServices re-registration on first launch
+        // macOS Tahoe has a bug where apps with LSUIElement=true fail to launch from Finder/Spotlight/Dock
+        // due to stale LaunchServices cache. Running lsregister once after install fixes this.
+        Self.registerWithLaunchServicesIfNeeded()
+        
         // CRITICAL: Register default preference values BEFORE any @AppStorage is read
         // This ensures UserDefaults returns correct defaults for missing keys (fixes #110)
         UserDefaults.standard.register(defaults: [
@@ -508,5 +513,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Route to URLSchemeHandler
         URLSchemeHandler.handle(url)
+    }
+    
+    // MARK: - LaunchServices Registration (Fix #123)
+    
+    /// Key for tracking if LaunchServices registration has been performed
+    private static let launchServicesRegisteredKey = "didRegisterWithLaunchServices"
+    
+    /// Forces LaunchServices to re-register the app bundle on first launch.
+    /// This fixes macOS Tahoe bug where apps with LSUIElement=true fail to launch
+    /// from Finder/Spotlight/Dock due to stale/corrupted LaunchServices cache.
+    private static func registerWithLaunchServicesIfNeeded() {
+        // Only run once per installation
+        guard !UserDefaults.standard.bool(forKey: launchServicesRegisteredKey) else {
+            return
+        }
+        
+        // The lsregister tool is in the CoreServices framework
+        let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        
+        // Run lsregister to re-register the app with LaunchServices
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: lsregisterPath)
+        task.arguments = ["-f", Bundle.main.bundlePath]
+        
+        do {
+            try task.run()
+            task.waitUntilExit()
+            
+            if task.terminationStatus == 0 {
+                print("✅ LaunchServices: Successfully registered Droppy with LaunchServices (Fix #123)")
+                UserDefaults.standard.set(true, forKey: launchServicesRegisteredKey)
+            } else {
+                print("⚠️ LaunchServices: lsregister exited with status \(task.terminationStatus)")
+            }
+        } catch {
+            print("⚠️ LaunchServices: Failed to run lsregister - \(error.localizedDescription)")
+        }
     }
 }
