@@ -329,12 +329,16 @@ final class WindowSnapManager: ObservableObject {
         } else if action.isDisplay2Specific {
             // Snap to specific position on display 2
             let sortedScreens = getScreensSortedByPosition()
+            print("[WindowSnap] Display 2 specific action: \(action.title)")
+            print("[WindowSnap]   Sorted screens: \(sortedScreens.map { "\($0.localizedName) @ x=\($0.frame.origin.x)" })")
             guard sortedScreens.count > 1 else {
                 print("[WindowSnap] Display 2 not available (only \(sortedScreens.count) display)")
                 return
             }
             targetScreen = sortedScreens[1]  // Display 2 (0-indexed)
             targetFrame = action.targetFrame(for: targetScreen)
+            print("[WindowSnap]   Target screen: \(targetScreen.localizedName)")
+            print("[WindowSnap]   Target frame: \(targetFrame)")
         } else if action == .restore {
             // Restore to saved frame or center
             let pid = getFrontmostAppPID()
