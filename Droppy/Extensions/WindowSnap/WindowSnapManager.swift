@@ -327,17 +327,24 @@ final class WindowSnapManager: ObservableObject {
                 return
             }
         } else if action.isDisplay2Specific {
-            // Snap to specific position on display 2
-            let sortedScreens = getScreensSortedByPosition()
+            // Snap to specific position on secondary display (non-primary)
+            // "Display 2" means the external/secondary monitor, not the second in X-sorted order
+            let allScreens = NSScreen.screens
             print("[WindowSnap] Display 2 specific action: \(action.title)")
-            print("[WindowSnap]   Sorted screens: \(sortedScreens.map { "\($0.localizedName) @ x=\($0.frame.origin.x)" })")
-            guard sortedScreens.count > 1 else {
-                print("[WindowSnap] Display 2 not available (only \(sortedScreens.count) display)")
+            print("[WindowSnap]   All screens: \(allScreens.map { "\($0.localizedName) @ x=\($0.frame.origin.x)" })")
+            
+            // Find the secondary display (first non-primary screen)
+            // NSScreen.screens[0] is always the primary display (with menu bar)
+            guard allScreens.count > 1 else {
+                print("[WindowSnap] Display 2 not available (only \(allScreens.count) display)")
                 return
             }
-            targetScreen = sortedScreens[1]  // Display 2 (0-indexed)
+            
+            // Target the first non-primary display (screen at index 1+)
+            targetScreen = allScreens[1]
             targetFrame = action.targetFrame(for: targetScreen)
-            print("[WindowSnap]   Target screen: \(targetScreen.localizedName)")
+            print("[WindowSnap]   Primary screen: \(allScreens[0].localizedName)")
+            print("[WindowSnap]   Target screen (secondary): \(targetScreen.localizedName)")
             print("[WindowSnap]   Target frame: \(targetFrame)")
         } else if action == .restore {
             // Restore to saved frame or center
@@ -748,6 +755,7 @@ final class WindowSnapManager: ObservableObject {
     /// Get target screen for a display movement action
     private func getTargetScreen(for action: SnapAction, from currentScreen: NSScreen) -> NSScreen? {
         let sortedScreens = getScreensSortedByPosition()
+        let allScreens = NSScreen.screens  // [0] is always primary
         
         switch action {
         case .moveToLeftDisplay:
@@ -755,11 +763,14 @@ final class WindowSnapManager: ObservableObject {
         case .moveToRightDisplay:
             return getAdjacentScreen(from: currentScreen, direction: .right)
         case .moveToDisplay1:
-            return sortedScreens.count > 0 ? sortedScreens[0] : nil
+            // Display 1 = primary display (the one with menu bar)
+            return allScreens.count > 0 ? allScreens[0] : nil
         case .moveToDisplay2:
-            return sortedScreens.count > 1 ? sortedScreens[1] : nil
+            // Display 2 = first secondary display
+            return allScreens.count > 1 ? allScreens[1] : nil
         case .moveToDisplay3:
-            return sortedScreens.count > 2 ? sortedScreens[2] : nil
+            // Display 3 = second secondary display
+            return allScreens.count > 2 ? allScreens[2] : nil
         default:
             return currentScreen
         }
