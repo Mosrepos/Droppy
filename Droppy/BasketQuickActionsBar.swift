@@ -41,7 +41,8 @@ struct BasketQuickActionsBar: View {
                     .frame(width: expandedBarWidth, height: buttonSize + 8)
                     .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                     // Track when drag is over the bar area
-                    .onDrop(of: [UTType.fileURL], isTargeted: $isBarAreaTargeted) { _ in
+                    // Include file promise types for Photos.app compatibility
+                    .onDrop(of: [UTType.fileURL, UTType.image, UTType.movie, UTType.data], isTargeted: $isBarAreaTargeted) { _ in
                         return false  // Don't handle drop here
                     }
                     // Clear global state when drag exits the bar area
@@ -93,7 +94,8 @@ struct BasketQuickActionsBar: View {
                         .scaleEffect(isBoltTargeted ? 1.15 : 1.0)
                         .contentShape(Circle().scale(1.3))
                         // DRAG-TO-EXPAND: Detect when files are dragged over the collapsed bolt
-                        .onDrop(of: [UTType.fileURL], isTargeted: $isBoltTargeted) { _ in
+                        // Include file promise types for Photos.app compatibility
+                        .onDrop(of: [UTType.fileURL, UTType.image, UTType.movie, UTType.data], isTargeted: $isBoltTargeted) { _ in
                             // Don't handle the drop here - just expand so user can drop on specific action
                             return false
                         }
@@ -203,81 +205,55 @@ struct QuickDropActionButton: View {
     }
     
     var body: some View {
-        Circle()
-            .fill(useTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
-            .frame(width: size, height: size)
-            .overlay(
-                // Border matches basket style exactly
-                Circle()
-                    .stroke(Color.white.opacity(borderOpacity), lineWidth: 1)
-            )
-            .overlay(
-                Image(systemName: actionType.icon)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
-            )
-            // Grow when file dragged over
-            .scaleEffect(isTargeted ? 1.18 : (isHovering ? 1.05 : 1.0))
-            .animation(DroppyAnimation.hoverBouncy, value: isTargeted)
-            .animation(DroppyAnimation.hoverBouncy, value: isHovering)
-            .onHover { hovering in
-                isHovering = hovering
-                // Update shared state for basket explanation overlay
-                if hovering {
-                    DroppyState.shared.hoveredQuickAction = actionType
-                } else if DroppyState.shared.hoveredQuickAction == actionType {
-                    DroppyState.shared.hoveredQuickAction = nil
-                }
-            }
-            .contentShape(Circle().scale(1.3))
-            .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
-                handleDrop(providers: providers)
-                return true
-            }
-            // CRITICAL: Update shared state when this button is targeted
-            // Only SET the state - clearing is handled by capsule exit or basket targeting
-            .onChange(of: isTargeted) { _, targeted in
-                if targeted {
-                    DroppyState.shared.isQuickActionsTargeted = true
-                    DroppyState.shared.hoveredQuickAction = actionType
-                }
-                // Don't clear here - let capsule/basket handle it
-            }
-            .onTapGesture {
-                let urls = DroppyState.shared.basketItems.map(\.url)
-                if !urls.isEmpty {
-                    HapticFeedback.select()
-                    shareAction(urls)
-                }
-            }
-    }
-    
-    private func handleDrop(providers: [NSItemProvider]) {
-        var urls: [URL] = []
-        let group = DispatchGroup()
-        
-        for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
-                    defer { group.leave() }
-                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        urls.append(url)
-                    } else if let url = item as? URL {
-                        urls.append(url)
-                    }
-                }
+        // Use AppKit-based drop target for reliable Photos.app file promise support
+        FilePromiseDropTarget(isTargeted: $isTargeted, onFilesReceived: { urls in
+            shareAction(urls)
+        }) {
+            Circle()
+                .fill(useTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+                .frame(width: size, height: size)
+                .overlay(
+                    // Border matches basket style exactly
+                    Circle()
+                        .stroke(Color.white.opacity(borderOpacity), lineWidth: 1)
+                )
+                .overlay(
+                    Image(systemName: actionType.icon)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                )
+                // Grow when file dragged over
+                .scaleEffect(isTargeted ? 1.18 : (isHovering ? 1.05 : 1.0))
+                .animation(DroppyAnimation.hoverBouncy, value: isTargeted)
+                .animation(DroppyAnimation.hoverBouncy, value: isHovering)
+        }
+        .onHover { hovering in
+            isHovering = hovering
+            // Update shared state for basket explanation overlay
+            if hovering {
+                DroppyState.shared.hoveredQuickAction = actionType
+            } else if DroppyState.shared.hoveredQuickAction == actionType {
+                DroppyState.shared.hoveredQuickAction = nil
             }
         }
-        
-        group.notify(queue: .main) {
+        .frame(width: size, height: size)
+        // CRITICAL: Update shared state when this button is targeted
+        // Only SET the state - clearing is handled by capsule exit or basket targeting
+        .onChange(of: isTargeted) { _, targeted in
+            if targeted {
+                DroppyState.shared.isQuickActionsTargeted = true
+                DroppyState.shared.hoveredQuickAction = actionType
+            }
+            // Don't clear here - let capsule/basket handle it
+        }
+        .onTapGesture {
+            let urls = DroppyState.shared.basketItems.map(\.url)
             if !urls.isEmpty {
-                HapticFeedback.drop()
+                HapticFeedback.select()
                 shareAction(urls)
-                // Don't auto-hide here - let the share action decide
-                // iCloud sharing needs the window to stay open for the popover
             }
         }
     }
 }
+
 

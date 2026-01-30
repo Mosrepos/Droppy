@@ -237,20 +237,9 @@ struct FloatingBasketView: View {
         .animation(DroppyAnimation.bouncy, value: state.isBasketTargeted)
         .animation(DroppyAnimation.bouncy, value: state.isAirDropZoneTargeted)
         .animation(DroppyAnimation.bouncy, value: state.basketDisplaySlotCount)
-        // WINDOW-WIDE DROP DESTINATION: Catch all file drops anywhere in the basket
-        .dropDestination(for: URL.self) { urls, location in
-            // Add all dropped files to basket
-            for url in urls {
-                let newItem = DroppedItem(url: url)
-                withAnimation(DroppyAnimation.bouncy) {
-                    state.addBasketItem(newItem)
-                }
-            }
-            HapticFeedback.drop()
-            return true
-        } isTargeted: { targeted in
-            state.isBasketTargeted = targeted
-        }
+        // NOTE: Drop handling is managed by the AppKit BasketDragContainer (BasketDragContainer.swift)
+        // which properly handles NSFilePromiseReceiver for Photos.app compatibility.
+        // Do NOT add .dropDestination here - it causes CoreTransferable errors for file promises.
         .coordinateSpace(name: "basketContainer")
         .onPreferenceChange(ItemFramePreferenceKey.self) { frames in
             self.itemFrames = frames

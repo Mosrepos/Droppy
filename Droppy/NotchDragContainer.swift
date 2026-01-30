@@ -671,6 +671,8 @@ class NotchDragContainer: NSView {
         }
 
         // 2. Handle File Promises (e.g. from Outlook, Photos, other apps)
+        // Photos.app uses file promises - the actual file is delivered asynchronously
+        // This can timeout for iCloud photos that need downloading first
         if let promiseReceivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver],
            !promiseReceivers.isEmpty {
             
@@ -678,16 +680,40 @@ class NotchDragContainer: NSView {
             let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("DroppyDrops-\(UUID().uuidString)")
             try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true, attributes: nil)
             
+            // Track success/failure for user feedback
+            let totalCount = promiseReceivers.count
+            var successCount = 0
+            var errorCount = 0
+            let completionLock = NSLock()
+            
             // Process file promises asynchronously
             for receiver in promiseReceivers {
+                print("📦 Shelf: Receiving file promise from \(receiver.fileTypes)")
+                
                 receiver.receivePromisedFiles(atDestination: dropLocation, options: [:], operationQueue: filePromiseQueue) { [targetDisplayID] fileURL, error in
-                    guard error == nil else {
-                        if let error = error {
-                            print("📦 Error receiving promised file: \(error)")
+                    completionLock.lock()
+                    defer { completionLock.unlock() }
+                    
+                    if let error = error {
+                        errorCount += 1
+                        print("📦 Shelf: File promise failed: \(error.localizedDescription)")
+                        
+                        // Show feedback on last item if all failed
+                        if errorCount + successCount == totalCount && errorCount > 0 && successCount == 0 {
+                            DispatchQueue.main.async {
+                                Task {
+                                    await DroppyAlertController.shared.showError(
+                                        title: "Drop Failed",
+                                        message: "Could not receive file from Photos. If using iCloud Photos, ensure the image is downloaded locally first."
+                                    )
+                                }
+                            }
                         }
                         return
                     }
-                    print("📦 Successfully received: \(fileURL)")
+                    
+                    successCount += 1
+                    print("📦 Shelf: Successfully received \(fileURL.lastPathComponent)")
                     DispatchQueue.main.async {
                         withAnimation(DroppyAnimation.transition) {
                             DroppyState.shared.addItems(from: [fileURL])

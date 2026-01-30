@@ -240,11 +240,12 @@ class BasketDragContainer: NSView {
     }
     
     /// Handle AirDrop sharing for dropped files
+    /// Supports both direct file URLs and file promises (Photos.app, etc.)
     private func handleAirDropShare(_ pasteboard: NSPasteboard) -> Bool {
         // Try to read all file URLs from pasteboard
         var urls: [URL] = []
         
-        // Method 1: Read objects
+        // Method 1: Read objects (direct file URLs)
         if let readUrls = pasteboard.readObjects(forClasses: [NSURL.self], 
             options: [.urlReadingFileURLsOnly: true]) as? [URL] {
             urls = readUrls
@@ -257,6 +258,71 @@ class BasketDragContainer: NSView {
                    let url = URL(string: urlString) {
                     urls.append(url)
                 }
+            }
+        }
+        
+        // Method 3: Handle file promises (Photos.app uses these)
+        // If no direct URLs found, try file promises
+        if urls.isEmpty {
+            if let promiseReceivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver],
+               !promiseReceivers.isEmpty {
+                
+                print("📡 AirDrop: Receiving file promises from Photos.app...")
+                
+                // Create a temp location for promised files
+                let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("DroppyAirDrop-\(UUID().uuidString)")
+                try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true)
+                
+                // Process promises asynchronously, then trigger AirDrop
+                let group = DispatchGroup()
+                var receivedURLs: [URL] = []
+                let urlsLock = NSLock()
+                
+                for receiver in promiseReceivers {
+                    group.enter()
+                    receiver.receivePromisedFiles(atDestination: dropLocation, options: [:], operationQueue: filePromiseQueue) { fileURL, error in
+                        defer { group.leave() }
+                        
+                        if let error = error {
+                            print("📡 AirDrop: File promise failed: \(error.localizedDescription)")
+                            return
+                        }
+                        
+                        urlsLock.lock()
+                        receivedURLs.append(fileURL)
+                        urlsLock.unlock()
+                        print("📡 AirDrop: Received \(fileURL.lastPathComponent)")
+                    }
+                }
+                
+                // Wait for promises and trigger AirDrop
+                group.notify(queue: .main) {
+                    if !receivedURLs.isEmpty {
+                        if let airDropService = NSSharingService(named: .sendViaAirDrop),
+                           airDropService.canPerform(withItems: receivedURLs) {
+                            airDropService.perform(withItems: receivedURLs)
+                            FloatingBasketWindowController.shared.hideBasket()
+                        } else {
+                            print("📡 AirDrop: Cannot perform with promised files")
+                            Task {
+                                await DroppyAlertController.shared.showError(
+                                    title: "AirDrop Failed",
+                                    message: "Could not share via AirDrop. Check that AirDrop is enabled."
+                                )
+                            }
+                        }
+                    } else {
+                        print("📡 AirDrop: No files received from promises")
+                        Task {
+                            await DroppyAlertController.shared.showError(
+                                title: "AirDrop Failed",
+                                message: "Could not receive file from Photos. If using iCloud Photos, ensure the image is downloaded locally first."
+                            )
+                        }
+                    }
+                }
+                return true // Return immediately, AirDrop triggers async
             }
         }
         
@@ -335,17 +401,71 @@ class BasketDragContainer: NSView {
         }
         
         // Handle File Promises (e.g. from Outlook, Photos)
+        // Photos.app uses file promises - the actual file is delivered asynchronously
+        // This can timeout for iCloud photos that need downloading
         if let promiseReceivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver],
            !promiseReceivers.isEmpty {
             
             let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("DroppyDrops-\(UUID().uuidString)")
             try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true, attributes: nil)
             
+            // Track success/failure for user feedback
+            let totalCount = promiseReceivers.count
+            var successCount = 0
+            var errorCount = 0
+            let completionLock = NSLock()
+            
+            // CRITICAL: Mark file operation in progress BEFORE async delivery
+            // This prevents the basket from hiding while waiting for Photos.app to deliver files
+            DispatchQueue.main.async {
+                DroppyState.shared.beginFileOperation()
+            }
+            
             for receiver in promiseReceivers {
+                // Log the file types being received for debugging
+                print("📦 Basket: Receiving file promise from \(receiver.fileTypes)")
+                
                 receiver.receivePromisedFiles(atDestination: dropLocation, options: [:], operationQueue: filePromiseQueue) { fileURL, error in
-                    guard error == nil else { return }
+                    completionLock.lock()
+                    
+                    if let error = error {
+                        errorCount += 1
+                        print("📦 Basket: File promise failed: \(error.localizedDescription)")
+                        
+                        // Show feedback on last item if all failed
+                        if errorCount + successCount == totalCount && errorCount > 0 && successCount == 0 {
+                            DispatchQueue.main.async {
+                                // End file operation before showing error
+                                DroppyState.shared.endFileOperation()
+                                Task {
+                                    await DroppyAlertController.shared.showError(
+                                        title: "Drop Failed",
+                                        message: "Could not receive file from Photos. If using iCloud Photos, ensure the image is downloaded locally first."
+                                    )
+                                }
+                            }
+                        }
+                        // End file operation if this is the last promise (all failed or mixed)
+                        else if errorCount + successCount == totalCount {
+                            DispatchQueue.main.async {
+                                DroppyState.shared.endFileOperation()
+                            }
+                        }
+                        completionLock.unlock()
+                        return
+                    }
+                    
+                    successCount += 1
+                    let isLastPromise = (errorCount + successCount == totalCount)
+                    completionLock.unlock()
+                    
+                    print("📦 Basket: Successfully received \(fileURL.lastPathComponent)")
                     DispatchQueue.main.async {
                         DroppyState.shared.addBasketItems(from: [fileURL])
+                        // End file operation after last promise completes
+                        if isLastPromise {
+                            DroppyState.shared.endFileOperation()
+                        }
                     }
                 }
             }

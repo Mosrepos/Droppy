@@ -34,6 +34,16 @@ final class PermissionManager: ObservableObject {
     private var hasPromptedAccessibility = false
     private var hasPromptedScreenRecording = false
     
+    // MARK: - TCC Race Condition Fix (Issue: prompts on every reboot)
+    // After macOS reboots, TCC can take 10-15s to report correct permission status
+    // During this grace period, we trust the cached permission value unconditionally
+    private let launchTime = Date()
+    private let tccGracePeriod: TimeInterval = 15.0
+    
+    // Track last prompt time to avoid prompting twice in same boot cycle
+    private let lastAccessibilityPromptBootTimeKey = "lastAccessibilityPromptBootTime"
+    private let lastScreenRecordingPromptBootTimeKey = "lastScreenRecordingPromptBootTime"
+    
     private init() {
         print("🔐 PermissionManager: Initialized")
         printFullStatus()
@@ -87,9 +97,18 @@ final class PermissionManager: ObservableObject {
             return true
         }
         
-        // TCC says NOT trusted - trust persistent cache
-        // User may have granted permission but TCC hasn't synced yet
+        // TCC says NOT trusted - check cache with grace period logic
         let cacheValue = UserDefaults.standard.bool(forKey: accessibilityGrantedKey)
+        
+        // During grace period after launch, trust cache unconditionally
+        // This handles macOS TCC delay after reboot (can take 10-15s to sync)
+        let timeSinceLaunch = Date().timeIntervalSince(launchTime)
+        if timeSinceLaunch < tccGracePeriod && cacheValue {
+            print("🔐 PermissionManager: In TCC grace period (\(String(format: "%.1f", timeSinceLaunch))s), trusting cache")
+            return true
+        }
+        
+        // After grace period, still trust cache but log normally
         if cacheValue {
             print("🔐 PermissionManager: Accessibility - TCC=false but cache=true (trusting cache)")
         }
@@ -103,7 +122,19 @@ final class PermissionManager: ObservableObject {
             print("🔐 PermissionManager: Skipping accessibility prompt (already prompted this session)")
             return
         }
+        
+        // Prevent duplicate prompts in same boot cycle
+        // This handles the case where app quits and relaunches quickly after reboot
+        if let lastPromptTime = UserDefaults.standard.object(forKey: lastAccessibilityPromptBootTimeKey) as? Date,
+           let bootTime = getSystemBootTime(),
+           lastPromptTime > bootTime {
+            print("🔐 PermissionManager: Skipping accessibility prompt (already prompted this boot cycle)")
+            hasPromptedAccessibility = true // Prevent further prompts this session
+            return
+        }
+        
         hasPromptedAccessibility = true
+        UserDefaults.standard.set(Date(), forKey: lastAccessibilityPromptBootTimeKey)
         
         print("🔐 PermissionManager: Requesting accessibility permission (showing macOS dialog)...")
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -111,6 +142,15 @@ final class PermissionManager: ObservableObject {
         
         // Start polling immediately in case user grants it quickly
         startPollingForAccessibility()
+    }
+    
+    /// Get the system boot time for boot-cycle tracking
+    private func getSystemBootTime() -> Date? {
+        var tv = timeval()
+        var size = MemoryLayout<timeval>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, 2, &tv, &size, nil, 0) == 0 else { return nil }
+        return Date(timeIntervalSince1970: Double(tv.tv_sec))
     }
     
     /// Poll for accessibility permission (e.g. when app becomes active)
@@ -158,8 +198,17 @@ final class PermissionManager: ObservableObject {
             return true
         }
         
-        // TCC says NOT granted - trust persistent cache
+        // TCC says NOT granted - check cache with grace period logic
         let cacheValue = UserDefaults.standard.bool(forKey: screenRecordingGrantedKey)
+        
+        // During grace period after launch, trust cache unconditionally
+        let timeSinceLaunch = Date().timeIntervalSince(launchTime)
+        if timeSinceLaunch < tccGracePeriod && cacheValue {
+            print("🔐 PermissionManager: Screen Recording in TCC grace period (\(String(format: "%.1f", timeSinceLaunch))s), trusting cache")
+            return true
+        }
+        
+        // After grace period, still trust cache but log normally
         if cacheValue {
             print("🔐 PermissionManager: Screen Recording - TCC=false but cache=true (trusting cache)")
         }
@@ -174,7 +223,18 @@ final class PermissionManager: ObservableObject {
             print("🔐 PermissionManager: Skipping screen recording prompt (already prompted this session)")
             return isScreenRecordingGranted
         }
+        
+        // Prevent duplicate prompts in same boot cycle
+        if let lastPromptTime = UserDefaults.standard.object(forKey: lastScreenRecordingPromptBootTimeKey) as? Date,
+           let bootTime = getSystemBootTime(),
+           lastPromptTime > bootTime {
+            print("🔐 PermissionManager: Skipping screen recording prompt (already prompted this boot cycle)")
+            hasPromptedScreenRecording = true
+            return isScreenRecordingGranted
+        }
+        
         hasPromptedScreenRecording = true
+        UserDefaults.standard.set(Date(), forKey: lastScreenRecordingPromptBootTimeKey)
         
         print("🔐 PermissionManager: Requesting screen recording permission (showing macOS dialog)...")
         return CGRequestScreenCaptureAccess()

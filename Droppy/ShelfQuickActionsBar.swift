@@ -90,86 +90,62 @@ struct ShelfQuickActionButton: View {
     }
     
     var body: some View {
-        Circle()
-            // Transparent mode: use material, Dark mode: pure black
-            .fill(useTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
-            .frame(width: size, height: size)
-            .overlay(
-                Circle()
-                    .stroke(Color.white.opacity(borderOpacity), lineWidth: 1)
-            )
-            .overlay(
-                Image(systemName: actionType.icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-            )
-            .scaleEffect(isTargeted ? 1.18 : (isHovering ? 1.05 : 1.0))
-            .animation(DroppyAnimation.hoverBouncy, value: isTargeted)
-            .animation(DroppyAnimation.hoverBouncy, value: isHovering)
-            .onHover { hovering in
-                isHovering = hovering
-                // Update shared state for shelf explanation overlay
-                if hovering {
-                    DroppyState.shared.hoveredShelfQuickAction = actionType
-                } else if DroppyState.shared.hoveredShelfQuickAction == actionType {
-                    DroppyState.shared.hoveredShelfQuickAction = nil
-                }
+        // Use AppKit-based drop target for reliable Photos.app file promise support
+        FilePromiseDropTarget(isTargeted: $isTargeted, onFilesReceived: { urls in
+            shareAction(urls)
+        }) {
+            Circle()
+                // Transparent mode: use material, Dark mode: pure black
+                .fill(useTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+                .frame(width: size, height: size)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(borderOpacity), lineWidth: 1)
+                )
+                .overlay(
+                    Image(systemName: actionType.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                )
+                .scaleEffect(isTargeted ? 1.18 : (isHovering ? 1.05 : 1.0))
+                .animation(DroppyAnimation.hoverBouncy, value: isTargeted)
+                .animation(DroppyAnimation.hoverBouncy, value: isHovering)
+        }
+        .onHover { hovering in
+            isHovering = hovering
+            // Update shared state for shelf explanation overlay
+            if hovering {
+                DroppyState.shared.hoveredShelfQuickAction = actionType
+            } else if DroppyState.shared.hoveredShelfQuickAction == actionType {
+                DroppyState.shared.hoveredShelfQuickAction = nil
             }
-            .contentShape(Circle().scale(1.3))
-            .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
-                handleDrop(providers: providers)
-                return true
-            }
-            // Update shared state when this button is targeted
-            .onChange(of: isTargeted) { _, targeted in
-                if targeted {
-                    DroppyState.shared.isShelfQuickActionsTargeted = true
-                    DroppyState.shared.hoveredShelfQuickAction = actionType
-                } else {
-                    // Clear hover state when drag leaves this button
-                    if DroppyState.shared.hoveredShelfQuickAction == actionType {
-                        DroppyState.shared.hoveredShelfQuickAction = nil
-                    }
-                }
-            }
-            // Clear hover state when button disappears
-            .onDisappear {
+        }
+        .frame(width: size, height: size)
+        // Update shared state when this button is targeted
+        .onChange(of: isTargeted) { _, targeted in
+            if targeted {
+                DroppyState.shared.isShelfQuickActionsTargeted = true
+                DroppyState.shared.hoveredShelfQuickAction = actionType
+            } else {
+                // Clear hover state when drag leaves this button
                 if DroppyState.shared.hoveredShelfQuickAction == actionType {
                     DroppyState.shared.hoveredShelfQuickAction = nil
                 }
             }
-            .onTapGesture {
-                let urls = DroppyState.shared.items.map(\.url)
-                if !urls.isEmpty {
-                    HapticFeedback.select()
-                    shareAction(urls)
-                }
-            }
-    }
-    
-    private func handleDrop(providers: [NSItemProvider]) {
-        var urls: [URL] = []
-        let group = DispatchGroup()
-        
-        for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
-                    defer { group.leave() }
-                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                        urls.append(url)
-                    } else if let url = item as? URL {
-                        urls.append(url)
-                    }
-                }
+        }
+        // Clear hover state when button disappears
+        .onDisappear {
+            if DroppyState.shared.hoveredShelfQuickAction == actionType {
+                DroppyState.shared.hoveredShelfQuickAction = nil
             }
         }
-        
-        group.notify(queue: .main) {
+        .onTapGesture {
+            let urls = DroppyState.shared.items.map(\.url)
             if !urls.isEmpty {
-                HapticFeedback.drop()
+                HapticFeedback.select()
                 shareAction(urls)
             }
         }
     }
 }
+
