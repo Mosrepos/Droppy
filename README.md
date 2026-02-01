@@ -43,17 +43,27 @@
 **📂 File Shelf**<br>
 Drop files into your notch for quick access.
 
-🔍 Peek at contents · 🎯 Drag anywhere<br>
-🔄 Auto-sync folders · ⚡ ZIP & convert
+• Drag files, folders, or URLs into the notch<br>
+• Preview files with Quick Look peek<br>
+• Interact with items inside folder previews<br>
+• Tracked folders auto-sync with Finder<br>
+• ZIP, unzip, and convert files in-place<br>
+• Create new folders with auto-rename<br>
+• Smart stacking with fan-out on hover
 
 </td>
 <td width="50%" align="center">
 
 **🧺 Floating Basket**<br>
-Jiggle mouse to summon a floating basket.
+Jiggle mouse at screen edge for instant basket.
 
-📍 Appears anywhere · 📊 Grid/list view<br>
-⚡ Batch actions · 👻 Auto-hides
+• Appears anywhere — drag to position<br>
+• Switch between grid and list views<br>
+• Batch actions: delete, open, share all<br>
+• App-specific autofade timers<br>
+• Display-specific autofade rules<br>
+• Expands naturally to fit content<br>
+• Ghost mode — auto-hides when idle
 
 </td>
 </tr>
@@ -61,24 +71,35 @@ Jiggle mouse to summon a floating basket.
 <td width="50%" align="center">
 
 **📋 Clipboard Manager**<br>
-`⌘⇧Space` opens clipboard history.
+`⌘⇧Space` opens your clipboard history.
 
-🔍 Search history · 📌 Pin favorites<br>
-🏷️ Tag clips · 🖼️ Rich previews
+• Unlimited clipboard history storage<br>
+• Full-text search across all clips<br>
+• Pin frequently used items<br>
+• Tag clips with custom labels<br>
+• Rich previews for images and files<br>
+• One-click paste any previous clip<br>
+• Clear history or individual items
 
 </td>
 <td width="50%" align="center">
 
 **🎨 Beautiful HUDs**<br>
-System indicators in your notch.
+System indicators reimagined for your notch.
 
-🔊 Volume/brightness · 🎵 Now playing<br>
-🔋 Battery status · 🎙️ AirPods & Focus
+• Volume & brightness with visual bars<br>
+• Now Playing with album art & controls<br>
+• Audio visualizer in the notch<br>
+• AirPods connection & battery status<br>
+• Focus/DND mode indicator<br>
+• Hide incognito browser media<br>
+• Hide physical notch with black bar
 
 </td>
 </tr>
 </table>
 </div>
+
 
 
 
