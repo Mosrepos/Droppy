@@ -332,19 +332,21 @@ struct MenuBarManagerInfoView: View {
                     ), in: -8...8, step: 1)
                         .controlSize(.small)
                     
-                    Button("Apply") {
+                    Button {
                         Task {
-                            try? await manager.applyItemSpacing()
+                            await manager.applyItemSpacing()
+                        }
+                    } label: {
+                        if manager.isApplyingSpacing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 50)
+                        } else {
+                            Text("Apply")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-                
-                if manager.spacingChangesPending {
-                    Text("⚠️ Log out or restart apps for changes to take effect")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
+                    .droppyAccentButton(color: .blue, size: .small)
+                    .disabled(manager.isApplyingSpacing)
                 }
             }
         }
