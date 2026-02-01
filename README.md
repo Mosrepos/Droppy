@@ -34,62 +34,81 @@
 
 ---
 
-## Core Features
+## ✨ Core Features
 
-### 1. File Shelf
+<table>
+<tr>
+<td width="50%">
+
+### 📂 File Shelf
 Drop files into your notch for quick access. Your notch becomes a persistent staging area.
-- Hover to peek at file contents without opening
-- Drag files out to use anywhere in macOS
-- Auto-sync with tracked folders
-- Quick actions: compress, convert, share, and more
 
-### 2. Floating Basket
+- 🔍 Hover to peek at file contents
+- 🎯 Drag files out to use anywhere
+- 🔄 Auto-sync with tracked folders
+- ⚡ ZIP, unzip, convert, share & more
+
+</td>
+<td width="50%">
+
+### 🧺 Floating Basket
 Jiggle your mouse to summon a floating basket for temporary file staging.
-- Appears anywhere on screen when you need it
-- Grid or list view for easy organization
-- Quick actions bar for batch operations
-- Disappears when not in use
 
-### 3. Clipboard Manager
-`⌘⇧Space` opens your clipboard history with powerful organization features.
-- Unlimited clipboard history with search
-- Pin frequently used items as favorites
-- Tag system for categorizing clips
-- Rich previews for images, links, and documents
-- One-click paste or drag to any app
+- 📍 Appears anywhere on screen
+- 📊 Grid or list view modes
+- ⚡ Quick actions for batch ops
+- 👻 Auto-hides when not needed
 
-### 4. Beautiful HUDs
-Gorgeous replacements for macOS system indicators — all displayed elegantly in your notch.
-- Volume and brightness controls with smooth animations
-- Now playing with album art and playback controls
-- Lock screen media widget with premium unlocking animations
-- Battery status with charging indicators
-- Caps Lock, Focus mode, and AirPods status
-- Real-time audio visualizer synced to your music
+</td>
+</tr>
+<tr>
+<td width="50%">
 
-### 5. Powerful Extensions
-Modular extensions add even more functionality. Install only what you need.
+### 📋 Clipboard Manager
+Press `⌘⇧Space` to open your clipboard history with powerful organization.
+
+- 🔍 Unlimited history with search
+- 📌 Pin favorites for quick access
+- 🏷️ Tags for categorizing clips
+- 🖼️ Rich previews for all types
+
+</td>
+<td width="50%">
+
+### 🎨 Beautiful HUDs
+Gorgeous replacements for macOS system indicators — all in your notch.
+
+- 🔊 Volume & brightness controls
+- 🎵 Now playing with album art
+- 🔋 Battery & charging status
+- 🎙️ Caps Lock, Focus & AirPods
+
+</td>
+</tr>
+</table>
 
 ---
 
 ## <img src="https://getdroppy.app/assets/icons/extensions.png" width="24"> Extensions
 
+Modular extensions add even more power. **Install only what you need.**
+
 | Icon | Extension | Description |
 |:----:|-----------|-------------|
-| <img src="https://getdroppy.app/assets/icons/apple-music.png" width="24"> | **Apple Music** | Full playback controls, shuffle, repeat, love tracks |
-| <img src="https://getdroppy.app/assets/icons/spotify.png" width="24"> | **Spotify** | Spotify integration with album art & visualizer |
-| <img src="https://getdroppy.app/assets/icons/notification-hud.png" width="24"> | **Notify Me!** | Beautiful notification banners in your notch |
-| <img src="https://getdroppy.app/assets/icons/window-snap.jpg" width="24"> | **Window Snap** | Keyboard shortcuts for window management |
-| <img src="https://getdroppy.app/assets/icons/high-alert.jpg" width="24"> | **High Alert** | Keep your Mac awake with timers |
-| <img src="https://getdroppy.app/assets/icons/terminotch.jpg" width="24"> | **Termi-Notch** | Quick terminal access from the notch |
-| <img src="https://getdroppy.app/assets/icons/alfred.png" width="24"> | **Alfred** | Deep Alfred integration for workflows |
-| <img src="https://getdroppy.app/assets/icons/finder.png" width="24"> | **Finder Services** | Quick actions for Finder items |
-| <img src="https://getdroppy.app/assets/icons/quickshare.jpg" width="24"> | **Quickshare** | Share files instantly via cloud services |
-| <img src="https://getdroppy.app/assets/icons/targeted-video-size.jpg" width="24"> | **Video Target Size** | Compress videos to exact file sizes |
-| <img src="https://getdroppy.app/assets/icons/element-capture.jpg" width="24"> | **Element Capture** | Capture UI elements from any app |
-| <img src="https://getdroppy.app/assets/icons/voice-transcribe.jpg" width="24"> | **Voice Transcribe** | Transcribe audio using AI |
-| <img src="https://getdroppy.app/assets/icons/ai-bg.jpg" width="24"> | **Background Removal** | AI-powered background removal |
-| <img src="https://getdroppy.app/assets/icons/menubarmanager.png" width="24"> | **Menu Bar Manager** | Hide menu bar icons with a toggle |
+| <img src="https://getdroppy.app/assets/icons/apple-music.png" width="24"> | [**Apple Music**](https://getdroppy.app/extensions.html) | Full playback controls with shuffle, repeat, love tracks & lyrics |
+| <img src="https://getdroppy.app/assets/icons/spotify.png" width="24"> | [**Spotify**](https://getdroppy.app/extensions.html) | Spotify playback with album art, visualizer & media controls |
+| <img src="https://getdroppy.app/assets/icons/notification-hud.png" width="24"> | [**Notify Me!**](https://getdroppy.app/extensions.html) | Beautiful notification banners that appear in your notch |
+| <img src="https://getdroppy.app/assets/icons/window-snap.jpg" width="24"> | [**Window Snap**](https://getdroppy.app/extensions.html) | Keyboard shortcuts for snapping windows to screen edges & displays |
+| <img src="https://getdroppy.app/assets/icons/high-alert.jpg" width="24"> | [**High Alert**](https://getdroppy.app/extensions.html) | Keep your Mac awake with customizable timers & schedules |
+| <img src="https://getdroppy.app/assets/icons/terminotch.jpg" width="24"> | [**Termi-Notch**](https://getdroppy.app/extensions.html) | Quick terminal access with hotkey — run commands instantly |
+| <img src="https://getdroppy.app/assets/icons/alfred.png" width="24"> | [**Alfred**](https://getdroppy.app/extensions.html) | Deep Alfred integration — trigger workflows from your notch |
+| <img src="https://getdroppy.app/assets/icons/finder.png" width="24"> | [**Finder Services**](https://getdroppy.app/extensions.html) | Right-click in Finder to add files to Shelf or Basket |
+| <img src="https://getdroppy.app/assets/icons/quickshare.jpg" width="24"> | [**Quickshare**](https://getdroppy.app/extensions.html) | Upload files to the cloud, get instant shareable links |
+| <img src="https://getdroppy.app/assets/icons/targeted-video-size.jpg" width="24"> | [**Video Target Size**](https://getdroppy.app/extensions.html) | Compress videos to exact file sizes using FFmpeg |
+| <img src="https://getdroppy.app/assets/icons/element-capture.jpg" width="24"> | [**Element Capture**](https://getdroppy.app/extensions.html) | Capture specific UI elements from any app on screen |
+| <img src="https://getdroppy.app/assets/icons/voice-transcribe.jpg" width="24"> | [**Voice Transcribe**](https://getdroppy.app/extensions.html) | Transcribe audio to text using on-device AI |
+| <img src="https://getdroppy.app/assets/icons/ai-bg.jpg" width="24"> | [**Background Removal**](https://getdroppy.app/extensions.html) | Remove image backgrounds with AI — one click |
+| <img src="https://getdroppy.app/assets/icons/menubarmanager.png" width="24"> | [**Menu Bar Manager**](https://getdroppy.app/extensions.html) | Hide & organize menu bar icons with hover reveal |
 
 ---
 
