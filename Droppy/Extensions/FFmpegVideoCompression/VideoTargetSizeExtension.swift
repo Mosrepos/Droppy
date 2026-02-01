@@ -28,7 +28,7 @@ struct VideoTargetSizeExtension: ExtensionDefinition {
     }
     
     static var iconURL: URL? {
-        URL(string: "https://getdroppy.app/assets/icons/video-target-size.png")
+        URL(string: "https://getdroppy.app/assets/icons/targeted-video-size.jpg")
     }
     
     static let iconPlaceholder = "film"

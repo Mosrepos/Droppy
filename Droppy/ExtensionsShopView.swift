@@ -284,7 +284,7 @@ struct ExtensionsShopView: View {
             // Media Extensions
             ExtensionListItem(
                 id: "ffmpegVideoCompression",
-                iconURL: "https://getdroppy.app/assets/icons/video-target-size.png",
+                iconURL: "https://getdroppy.app/assets/icons/targeted-video-size.jpg",
                 title: "Video Target Size",
                 subtitle: "Compress videos to size",
                 category: .media,
@@ -417,7 +417,7 @@ struct ExtensionsShopView: View {
             },
             ExtensionListItem(
                 id: "terminalNotch",
-                iconURL: "https://getdroppy.app/assets/icons/termi-notch.jpg",
+                iconURL: "https://getdroppy.app/assets/icons/terminotch.jpg",
                 title: "Termi-Notch",
                 subtitle: "Quick terminal access",
                 category: .productivity,
