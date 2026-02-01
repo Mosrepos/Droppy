@@ -73,6 +73,9 @@ v10.2.1 Hotfix
 
 🐛 Bug Fixes
 - Fixed Menu Bar Manager not enabled by default for new users
+- Fixed High Alert HUD not visible on MacBook notch (hardware notch width mismatch)
+- Fixed High Alert hover indicator not showing over media HUD on MacBook
+- Fixed High Alert hover affecting all displays instead of only hovered screen
 - Disabled problematic lock screen features (Skylight API causing crashes/hangs)
 - Lock Screen HUD and Media Widget are now disabled for all users
 - Existing users with lock screen features enabled will have them auto-disabled on update

@@ -14,7 +14,7 @@ struct HighAlertHUDView: View {
     let isActive: Bool
     let hudWidth: CGFloat     // Total HUD width
     var targetScreen: NSScreen? = nil  // Target screen for multi-monitor support
-    var notchHeight: CGFloat = 0  // Pass through for layout calculations
+    var notchWidth: CGFloat = 180  // Actual notch width from caller (for proper spacer alignment)
     
     // Access CaffeineManager for timer display
     private var caffeineManager: CaffeineManager { CaffeineManager.shared }
@@ -38,74 +38,80 @@ struct HighAlertHUDView: View {
         }
     }
     
-    /// Icon size matching hover indicators
+    /// Icon size matching other HUDs
     private var iconSize: CGFloat {
-        layout.isDynamicIslandMode ? 16 : 14
+        layout.iconSize
     }
     
-    /// Text size - larger for ∞ symbol, matching hover indicators
+    /// Text size - larger for ∞ symbol
     private var textSize: CGFloat {
         if isActive && caffeineManager.formattedRemaining == "∞" {
             return 20
         }
-        return 12
+        return layout.labelFontSize
     }
     
     var body: some View {
-        if layout.isDynamicIslandMode {
-            // DYNAMIC ISLAND MODE: Icon on left, timer on right with symmetric padding
-            let symmetricPadding = layout.symmetricPadding(for: iconSize)
-            
-            HStack {
-                // Left: Eyes Icon
-                Image(systemName: "eyes")
-                    .font(.system(size: iconSize, weight: .medium))
-                    .foregroundStyle(accentColor)
-                    .symbolEffect(.bounce.up, value: isActive)
+        VStack(alignment: .center, spacing: 0) {
+            if layout.isDynamicIslandMode {
+                // DYNAMIC ISLAND: Icon on left edge, Timer on right edge
+                let symmetricPadding = layout.symmetricPadding(for: iconSize)
                 
-                Spacer()
-                
-                // Right: Timer/Status Text
-                Text(statusText)
-                    .font(.system(size: textSize, weight: .medium, design: isActive && statusText != "∞" ? .monospaced : .default))
-                    .foregroundStyle(accentColor)
-                    .contentTransition(.numericText())
-            }
-            .padding(.horizontal, symmetricPadding)
-            .frame(height: layout.notchHeight)
-        } else {
-            // NOTCH MODE: Position in wings around the notch
-            let wingWidth = (hudWidth - layout.notchWidth) / 2
-            let symmetricPadding = layout.symmetricPadding(for: iconSize)
-            
-            HStack(spacing: 0) {
-                // Left wing: Eyes Icon
                 HStack {
+                    // Eyes icon - .leading alignment within frame
                     Image(systemName: "eyes")
-                        .font(.system(size: iconSize, weight: .medium))
-                        .foregroundStyle(accentColor)
+                        .font(.system(size: iconSize, weight: .semibold))
+                        .foregroundStyle(layout.adjustedColor(accentColor))
                         .symbolEffect(.bounce.up, value: isActive)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, symmetricPadding)
-                .frame(width: wingWidth)
-                
-                // Notch spacer
-                Spacer()
-                    .frame(width: layout.notchWidth)
-                
-                // Right wing: Timer/Status Text
-                HStack {
-                    Spacer(minLength: 0)
+                        .frame(width: 20, height: iconSize, alignment: .leading)
+                    
+                    Spacer()
+                    
+                    // Timer/Status text
                     Text(statusText)
-                        .font(.system(size: textSize, weight: .medium, design: isActive && statusText != "∞" ? .monospaced : .default))
-                        .foregroundStyle(accentColor)
+                        .font(.system(size: textSize, weight: .semibold, design: isActive && statusText != "∞" ? .monospaced : .default))
+                        .foregroundStyle(layout.adjustedColor(accentColor))
                         .contentTransition(.numericText())
                 }
-                .padding(.trailing, symmetricPadding)
-                .frame(width: wingWidth)
+                .padding(.horizontal, symmetricPadding)
+                .frame(height: layout.notchHeight)
+            } else {
+                // NOTCH MODE: Two wings separated by the notch space
+                let symmetricPadding = layout.symmetricPadding(for: iconSize)
+                // Use the actual notchWidth passed by caller for correct spacer alignment
+                let actualNotchWidth = layout.isDynamicIslandMode ? layout.notchWidth : self.notchWidth
+                let wingWidth = (hudWidth - actualNotchWidth) / 2
+                
+                HStack(spacing: 0) {
+                    // Left wing: Eyes icon near left edge
+                    HStack {
+                        Image(systemName: "eyes")
+                            .font(.system(size: iconSize, weight: .semibold))
+                            .foregroundStyle(accentColor)
+                            .symbolEffect(.bounce.up, value: isActive)
+                            .frame(width: iconSize, height: iconSize, alignment: .leading)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, symmetricPadding)
+                    .frame(width: wingWidth)
+                    
+                    // Camera notch area (spacer) - use actual notch width for alignment
+                    Spacer()
+                        .frame(width: actualNotchWidth)
+                    
+                    // Right wing: Timer near right edge
+                    HStack {
+                        Spacer(minLength: 0)
+                        Text(statusText)
+                            .font(.system(size: textSize, weight: .semibold, design: isActive && statusText != "∞" ? .monospaced : .default))
+                            .foregroundStyle(accentColor)
+                            .contentTransition(.numericText())
+                    }
+                    .padding(.trailing, symmetricPadding)
+                    .frame(width: wingWidth)
+                }
+                .frame(height: layout.notchHeight)
             }
-            .frame(width: hudWidth, height: layout.notchHeight)
         }
     }
 }

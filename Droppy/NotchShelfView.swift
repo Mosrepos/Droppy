@@ -292,7 +292,11 @@ struct NotchShelfView: View {
     /// Using fixed sizes ensures consistent content positioning across all screen resolutions
     private let volumeWingWidth: CGFloat = 135  // For volume/brightness - wide for icon + label + slider
     private let batteryWingWidth: CGFloat = 65  // For battery icon + percentage (must fit "100%")
-    private let highAlertWingWidth: CGFloat = 80  // For High Alert - icon + timer text in monospace
+    /// For High Alert - use consistently wide wings for timer text
+    /// 130pt ensures "H:MM:SS" format fits with monospaced font
+    private var highAlertWingWidth: CGFloat {
+        return 130  // Wide enough for all timer formats
+    }
     private let mediaWingWidth: CGFloat = 50    // For album art + visualizer
     private let updateWingWidth: CGFloat = 110  // For Update HUD - icon + "Update" + "Droppy X.X.X"
     
@@ -345,9 +349,9 @@ struct NotchShelfView: View {
     
     /// High Alert HUD - wider wings than Caps Lock for timer text
     private var highAlertHudWidth: CGFloat {
-        // Base content widths - need space for monospace timer (e.g., "3:59:45")
-        let diContentWidth: CGFloat = 180  // DI mode: icon + timer text
-        let externalNotchWidth: CGFloat = 220  // External notch mode: wider for timer
+        // Fixed content widths - always wide enough for any timer format
+        let diContentWidth: CGFloat = 240  // DI mode: icon + timer text (monospaced)
+        let externalNotchWidth: CGFloat = 280  // External notch mode: wider for timer
         
         if isDynamicIslandMode {
             return diContentWidth
@@ -355,7 +359,7 @@ struct NotchShelfView: View {
         if isExternalDisplay {
             return externalNotchWidth
         }
-        // Built-in notch: geometry-based
+        // Built-in notch: geometry-based - MUST match batteryHudWidth pattern
         return notchWidth + (highAlertWingWidth * 2)
     }
     
@@ -401,6 +405,9 @@ struct NotchShelfView: View {
         // Media features require macOS 15.0+
         guard musicManager.isMediaAvailable else { return false }
         
+        // CAFFEINE HOVER TAKES PRIORITY: When hovering with caffeine active, suppress media
+        if isCaffeineHoverActive { return false }
+        
         // FORCED MODE: Show if user swiped to show media, regardless of playback state
         // (as long as there's a track to show)
         if musicManager.isMediaHUDForced && !musicManager.isPlayerIdle {
@@ -423,6 +430,12 @@ struct NotchShelfView: View {
         return showMediaPlayer && musicManager.isPlaying && !hudIsVisible && !isExpandedOnThisScreen
     }
     
+    /// Whether caffeine hover indicator should show (takes priority over media HUD)
+    /// CRITICAL: Uses isHoveringOnThisScreen for multi-monitor awareness
+    private var isCaffeineHoverActive: Bool {
+        isHoveringOnThisScreen && CaffeineManager.shared.isActive && !isExpandedOnThisScreen && !HUDManager.shared.isVisible
+    }
+    
     /// Current notch width based on state
     private var currentNotchWidth: CGFloat {
         // When temporarily hidden, shrink to 0 (same animation as collapse)
@@ -434,7 +447,10 @@ struct NotchShelfView: View {
             return expandedWidth
         } else if hudIsVisible {
             return currentHudTypeWidth  // Content-based width (Brightness is wider than Volume)
-        } else if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD {
+        // CAFFEINE HOVER TAKES HIGHEST PRIORITY (after volume/brightness HUDs)
+        } else if isCaffeineHoverActive {
+            return highAlertHudWidth
+        } else if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD && !isCaffeineHoverActive {
             return batteryHudWidth  // Lock Screen HUD uses same width as battery HUD
         } else if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD {
             return hudWidth  // AirPods HUD uses same width as Media HUD
@@ -1284,7 +1300,7 @@ struct NotchShelfView: View {
         }
         
         // Battery HUD - uses centralized HUDManager
-        if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
             BatteryHUDView(
                 batteryManager: batteryManager,
                 hudWidth: batteryHudWidth,
@@ -1296,7 +1312,7 @@ struct NotchShelfView: View {
         }
         
         // Caps Lock HUD - uses centralized HUDManager
-        if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
             CapsLockHUDView(
                 capsLockManager: capsLockManager,
                 hudWidth: batteryHudWidth,
@@ -1308,12 +1324,12 @@ struct NotchShelfView: View {
         }
         
         // High Alert HUD - uses centralized HUDManager
-        if HUDManager.shared.isHighAlertHUDVisible && CaffeineManager.shared.isInstalled && caffeineEnabled && !hudIsVisible && !isExpandedOnThisScreen {
+        if HUDManager.shared.isHighAlertHUDVisible && CaffeineManager.shared.isInstalled && caffeineEnabled && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
             HighAlertHUDView(
                 isActive: caffeineManager.isActive,
                 hudWidth: highAlertHudWidth,
                 targetScreen: targetScreen,
-                notchHeight: notchHeight
+                notchWidth: notchWidth
             )
             .frame(width: highAlertHudWidth, height: notchHeight)
             .transition(.premiumHUD.animation(DroppyAnimation.notchState))
@@ -1321,7 +1337,7 @@ struct NotchShelfView: View {
         }
         
         // Focus/DND HUD - uses centralized HUDManager
-        if HUDManager.shared.isDNDHUDVisible && enableDNDHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        if HUDManager.shared.isDNDHUDVisible && enableDNDHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
             DNDHUDView(
                 dndManager: dndManager,
                 hudWidth: batteryHudWidth,
@@ -1333,7 +1349,7 @@ struct NotchShelfView: View {
         }
         
         // Update HUD - uses centralized HUDManager
-        if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
             UpdateHUDView(
                 hudWidth: updateHudWidth,
                 targetScreen: targetScreen
@@ -1344,7 +1360,7 @@ struct NotchShelfView: View {
         }
         
         // AirPods HUD - uses centralized HUDManager
-        if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD && !hudIsVisible && !isExpandedOnThisScreen, let airPods = airPodsManager.connectedAirPods {
+        if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive, let airPods = airPodsManager.connectedAirPods {
             AirPodsHUDView(
                 airPods: airPods,
                 hudWidth: hudWidth,
@@ -1356,7 +1372,7 @@ struct NotchShelfView: View {
         }
         
         // Lock Screen HUD - uses centralized HUDManager
-        if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD && !hudIsVisible && !isExpandedOnThisScreen {
+        if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
             LockScreenHUDView(
                 lockScreenManager: lockScreenManager,
                 hudWidth: batteryHudWidth,
@@ -1385,7 +1401,7 @@ struct NotchShelfView: View {
             }
         }()
 
-        if isNotificationHUDActive && hasNotification && !hudIsVisible {
+        if isNotificationHUDActive && hasNotification && !hudIsVisible && !isCaffeineHoverActive {
             let notifWidth = isDynamicIslandMode ? hudWidth : expandedWidth
             // SSOT (v21.72): Different heights for different modes
             // - Island mode: 70pt compact
@@ -1404,73 +1420,24 @@ struct NotchShelfView: View {
             .zIndex(100) // High z-index to stay on top of shelf content
         }
         
-        // Caffeine Hover Indicators (Strict UI Requirement)
+        // Caffeine Hover Indicators (HIGHEST PRIORITY when hovering + caffeine active)
         // Shows only when:
         // 1. Hovering (state.isMouseHovering)
         // 2. Caffeine is ACTIVE
         // 3. Shelf is NOT expanded
-        // 4. No other HUD visible
-        if state.isMouseHovering && CaffeineManager.shared.isActive && !isExpandedOnThisScreen && !hudIsVisible {
-            // Use HUDLayoutCalculator for consistent positioning across all screen types
-            let layout = HUDLayoutCalculator(screen: targetScreen)
-            let iconSize: CGFloat = layout.isDynamicIslandMode ? 16 : 14
-            let textSize: CGFloat = CaffeineManager.shared.formattedRemaining == "∞" ? 20 : 12
-            
-            if layout.isDynamicIslandMode {
-                // DYNAMIC ISLAND MODE: Icon on left, timer on right with symmetric padding
-                let symmetricPadding = layout.symmetricPadding(for: iconSize)
-                
-                HStack {
-                    // Left: Eyes Icon
-                    Image(systemName: "eyes")
-                        .font(.system(size: iconSize, weight: .medium))
-                        .foregroundStyle(.orange)
-                    
-                    Spacer()
-                    
-                    // Right: Timer Text
-                    Text(CaffeineManager.shared.formattedRemaining)
-                        .font(.system(size: textSize, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.orange)
-                }
-                .padding(.horizontal, symmetricPadding)
-                .frame(height: layout.notchHeight)
-                .transition(.premiumHUD.animation(DroppyAnimation.notchState))
-                .zIndex(6)
-            } else {
-                // NOTCH MODE: Position in wings around the notch
-                let wingWidth = (highAlertHudWidth - layout.notchWidth) / 2
-                let symmetricPadding = layout.symmetricPadding(for: iconSize)
-                
-                HStack(spacing: 0) {
-                    // Left wing: Eyes Icon
-                    HStack {
-                        Image(systemName: "eyes")
-                            .font(.system(size: iconSize, weight: .medium))
-                            .foregroundStyle(.orange)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.leading, symmetricPadding)
-                    .frame(width: wingWidth)
-                    
-                    // Notch spacer
-                    Spacer()
-                        .frame(width: layout.notchWidth)
-                    
-                    // Right wing: Timer Text
-                    HStack {
-                        Spacer(minLength: 0)
-                        Text(CaffeineManager.shared.formattedRemaining)
-                            .font(.system(size: textSize, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.orange)
-                    }
-                    .padding(.trailing, symmetricPadding)
-                    .frame(width: wingWidth)
-                }
-                .frame(width: highAlertHudWidth, height: layout.notchHeight)
-                .transition(.premiumHUD.animation(DroppyAnimation.notchState))
-                .zIndex(6)
-            }
+        // 4. No centralized HUD visible (volume/brightness)
+        // NOTE: This REPLACES ALL other HUDs when hovering - morphs into timer display
+        // CRITICAL: Uses isCaffeineHoverActive computed property for consistent suppression
+        if isCaffeineHoverActive {
+            HighAlertHUDView(
+                isActive: true,
+                hudWidth: highAlertHudWidth,
+                targetScreen: targetScreen,
+                notchWidth: notchWidth
+            )
+            .frame(width: highAlertHudWidth, height: notchHeight)
+            .transition(.premiumHUD.animation(DroppyAnimation.notchState))
+            .zIndex(200)  // Highest priority - always on top of other HUDs
         }
     }
     
@@ -1501,7 +1468,11 @@ struct NotchShelfView: View {
         let shouldShowNormal = showMediaPlayer && noHUDsVisible && notExpanded && notInFullscreen && 
                               (bypassSafeguards ? hasContent : (mediaIsPlaying && notFadedOrTransitioning && debounceOk))
         
-        if shouldShowForced || shouldShowNormal {
+        // MORPH BEHAVIOR: Hide media HUD when Caffeine Hover Indicators are showing
+        // This allows the caffeine timer to temporarily replace the media HUD on hover
+        let caffeineHoverIsActive = state.isMouseHovering && CaffeineManager.shared.isActive && !hudIsVisible
+        
+        if (shouldShowForced || shouldShowNormal) && !caffeineHoverIsActive {
             // Title morphing is handled by overlay for both DI and notch modes
             MediaHUDView(musicManager: musicManager, isHovered: $mediaHUDIsHovered, notchWidth: notchWidth, notchHeight: notchHeight, hudWidth: hudWidth, targetScreen: targetScreen, albumArtNamespace: albumArtNamespace, showAlbumArt: false, showVisualizer: false, showTitle: false)
                 .frame(width: hudWidth, alignment: .top)
@@ -1867,6 +1838,11 @@ struct NotchShelfView: View {
     
     /// Whether the media HUD should be visible (for morphing calculation)
     private var shouldShowMediaHUDForMorphing: Bool {
+        // MORPH BEHAVIOR: Hide all media overlays when Caffeine Hover Indicators are showing
+        // This allows the caffeine timer to temporarily replace the media HUD on hover
+        let caffeineHoverIsActive = state.isMouseHovering && CaffeineManager.shared.isActive && !hudIsVisible
+        guard !caffeineHoverIsActive else { return false }
+        
         let noHUDsVisible = !hudIsVisible && !HUDManager.shared.isVisible
         let notExpanded = !isExpandedOnThisScreen
         let targetDisplayID = targetScreen?.displayID ?? 0

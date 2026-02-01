@@ -185,7 +185,6 @@ Droppy is released under the [GPL-3.0 License with Commons Clause](LICENSE).
 <sub>
 <br>
 <b>Alcove</b> — Inspiration for beautiful notch design (<a href="https://tryalcove.com/">tryalcove.com</a>)<br>
-<b>Atoll</b> — Animations & foundational patterns (<a href="https://github.com/Ebullioscopic/Atoll">github</a>)<br>
 <b>Boringnotch</b> — Pioneered notch creativity on macOS (<a href="https://github.com/TheBoredTeam/boring.notch">github</a>)
 </sub>
 </details>
