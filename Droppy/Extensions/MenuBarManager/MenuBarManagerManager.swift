@@ -9,6 +9,71 @@ import SwiftUI
 import AppKit
 import Combine
 
+// MARK: - Icon Set
+
+/// Available icon sets for the main toggle button
+enum MBMIconSet: String, CaseIterable, Identifiable {
+    case eye = "eye"
+    case chevron = "chevron"
+    case arrow = "arrow"
+    case circle = "circle"
+    case door = "door"
+    
+    var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .eye: return "Eye"
+        case .chevron: return "Chevron"
+        case .arrow: return "Arrow"
+        case .circle: return "Circle"
+        case .door: return "Door"
+        }
+    }
+    
+    /// Icon when items are hidden (collapsed state)
+    var hiddenSymbol: String {
+        switch self {
+        case .eye: return "eye.slash.fill"
+        case .chevron: return "chevron.left"
+        case .arrow: return "arrowshape.left.fill"
+        case .circle: return "circle.fill"
+        case .door: return "door.left.hand.closed"
+        }
+    }
+    
+    /// Icon when items are visible (expanded state)
+    var visibleSymbol: String {
+        switch self {
+        case .eye: return "eye.fill"
+        case .chevron: return "chevron.right"
+        case .arrow: return "arrowshape.right.fill"
+        case .circle: return "circle"
+        case .door: return "door.left.hand.open"
+        }
+    }
+}
+
+// MARK: - Status Item Defaults (Position Caching)
+
+/// Proxy for status item UserDefaults values - critical for position persistence
+private enum StatusItemDefaults {
+    static subscript(autosaveName: String) -> CGFloat? {
+        get {
+            let key = "NSStatusItem Preferred Position \(autosaveName)"
+            return UserDefaults.standard.object(forKey: key) as? CGFloat
+        }
+        set {
+            let key = "NSStatusItem Preferred Position \(autosaveName)"
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+    }
+}
+
 // MARK: - Menu Bar Manager
 
 @MainActor
@@ -18,8 +83,8 @@ final class MenuBarManager: ObservableObject {
     // MARK: - State
     
     enum HidingState {
-        case hideItems  // Separator expanded to 10,000pt, icons pushed off
-        case showItems  // Separator at normal width, icons visible
+        case hideItems  // Divider expanded to 10,000pt, icons pushed off
+        case showItems  // Divider at normal width, icons visible
     }
     
     /// Whether the extension is enabled
@@ -28,8 +93,35 @@ final class MenuBarManager: ObservableObject {
     /// Current hiding state
     @Published private(set) var state = HidingState.showItems
     
+    /// Whether hover-to-show is enabled
+    @Published var showOnHover = false {
+        didSet {
+            UserDefaults.standard.set(showOnHover, forKey: Keys.showOnHover)
+            updateMouseMonitor()
+        }
+    }
+    
+    /// Delay before showing/hiding on hover (0.0 - 1.0 seconds)
+    @Published var showOnHoverDelay: TimeInterval = 0.2 {
+        didSet {
+            UserDefaults.standard.set(showOnHoverDelay, forKey: Keys.showOnHoverDelay)
+        }
+    }
+    
+    /// Selected icon set for the main toggle button
+    @Published var iconSet: MBMIconSet = .eye {
+        didSet {
+            UserDefaults.standard.set(iconSet.rawValue, forKey: Keys.iconSet)
+            updateMainItem()
+        }
+    }
+    
     /// Convenience: whether icons are currently visible
     var isExpanded: Bool { state == .showItems }
+    
+    /// Prevents hover-to-show temporarily (e.g., when clicking menu bar items)
+    private var isShowOnHoverPrevented = false
+    private var preventShowOnHoverTask: Task<Void, Never>?
     
     // MARK: - Status Items
     
@@ -39,22 +131,32 @@ final class MenuBarManager: ObservableObject {
     /// The hidden section divider (to the LEFT of main, expands to push icons off screen)
     private var dividerItem: NSStatusItem?
     
-    // Autosave names - following Ice's pattern
+    // Autosave names for position persistence
     private static let mainAutosaveName = "DroppyMBM_Icon"
     private static let dividerAutosaveName = "DroppyMBM_Hidden"
     
-    // MARK: - Constants (from Ice)
+    // MARK: - Constants
     
     /// Standard length for visible control items
     private let lengthStandard = NSStatusItem.variableLength
     
-    /// Expanded length to push items off screen (Ice uses 10_000)
+    /// Expanded length to push items off screen
     private let lengthExpanded: CGFloat = 10_000
     
-    // MARK: - Persistence Keys
+    // MARK: - Mouse Monitoring
     
-    private let enabledKey = "menuBarManagerEnabled"
-    private let stateKey = "menuBarManagerState"  // "hideItems" or "showItems"
+    private var mouseMovedMonitor: Any?
+    private var mouseDownMonitor: Any?
+    
+    // MARK: - Keys
+    
+    private enum Keys {
+        static let enabled = "menuBarManagerEnabled"
+        static let state = "menuBarManagerState"
+        static let showOnHover = "menuBarManagerShowOnHover"
+        static let showOnHoverDelay = "menuBarManagerShowOnHoverDelay"
+        static let iconSet = "menuBarManagerIconSet"
+    }
     
     // MARK: - Initialization
     
@@ -62,41 +164,18 @@ final class MenuBarManager: ObservableObject {
         // Only start if extension is not removed
         guard !ExtensionType.menuBarManager.isRemoved else { return }
         
-        if UserDefaults.standard.bool(forKey: enabledKey) {
+        // Load settings
+        showOnHover = UserDefaults.standard.bool(forKey: Keys.showOnHover)
+        showOnHoverDelay = UserDefaults.standard.double(forKey: Keys.showOnHoverDelay)
+        if showOnHoverDelay == 0 { showOnHoverDelay = 0.2 } // Default
+        
+        if let iconRaw = UserDefaults.standard.string(forKey: Keys.iconSet),
+           let icon = MBMIconSet(rawValue: iconRaw) {
+            iconSet = icon
+        }
+        
+        if UserDefaults.standard.bool(forKey: Keys.enabled) {
             enable()
-        }
-    }
-    
-    // MARK: - Position Management (Ice Pattern)
-    
-    /// Get the preferred position from UserDefaults
-    private static func getPreferredPosition(for autosaveName: String) -> CGFloat? {
-        let key = "NSStatusItem Preferred Position \(autosaveName)"
-        return UserDefaults.standard.object(forKey: key) as? CGFloat
-    }
-    
-    /// Set the preferred position in UserDefaults
-    private static func setPreferredPosition(_ position: CGFloat?, for autosaveName: String) {
-        let key = "NSStatusItem Preferred Position \(autosaveName)"
-        if let position = position {
-            UserDefaults.standard.set(position, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-    
-    /// Seed initial positions BEFORE creating items (Ice pattern)
-    /// Only seeds if positions are not already set
-    private static func seedPositionsIfNeeded() {
-        // Main icon at position 0 (rightmost)
-        if getPreferredPosition(for: mainAutosaveName) == nil {
-            setPreferredPosition(0, for: mainAutosaveName)
-            print("[MenuBarManager] Seeded main icon position")
-        }
-        // Divider at position 1 (to the left of main)
-        if getPreferredPosition(for: dividerAutosaveName) == nil {
-            setPreferredPosition(1, for: dividerAutosaveName)
-            print("[MenuBarManager] Seeded divider position")
         }
     }
     
@@ -107,21 +186,24 @@ final class MenuBarManager: ObservableObject {
         guard !isEnabled else { return }
         
         isEnabled = true
-        UserDefaults.standard.set(true, forKey: enabledKey)
+        UserDefaults.standard.set(true, forKey: Keys.enabled)
         
-        // Seed positions BEFORE creating items (critical Ice pattern)
-        Self.seedPositionsIfNeeded()
+        // Seed positions BEFORE creating items (critical pattern)
+        seedPositionsIfNeeded()
         
         // Create status items
         createStatusItems()
         
         // Restore previous state
-        if let savedState = UserDefaults.standard.string(forKey: stateKey) {
+        if let savedState = UserDefaults.standard.string(forKey: Keys.state) {
             state = savedState == "hideItems" ? .hideItems : .showItems
         } else {
-            state = .showItems  // Default: show all icons
+            state = .showItems
         }
         applyState()
+        
+        // Start mouse monitoring if hover is enabled
+        updateMouseMonitor()
         
         print("[MenuBarManager] Enabled, state: \(state)")
     }
@@ -137,7 +219,10 @@ final class MenuBarManager: ObservableObject {
         }
         
         isEnabled = false
-        UserDefaults.standard.set(false, forKey: enabledKey)
+        UserDefaults.standard.set(false, forKey: Keys.enabled)
+        
+        // Stop monitors
+        stopMouseMonitors()
         
         // Remove status items (with position preservation)
         removeStatusItems()
@@ -148,13 +233,28 @@ final class MenuBarManager: ObservableObject {
     /// Toggle between showing and hiding items
     func toggle() {
         state = (state == .showItems) ? .hideItems : .showItems
-        UserDefaults.standard.set(state == .hideItems ? "hideItems" : "showItems", forKey: stateKey)
+        UserDefaults.standard.set(state == .hideItems ? "hideItems" : "showItems", forKey: Keys.state)
         applyState()
         
         // Notify for Droppy menu refresh
         NotificationCenter.default.post(name: .menuBarManagerStateChanged, object: nil)
         
+        // Allow hover after toggle
+        allowShowOnHover()
+        
         print("[MenuBarManager] Toggled to: \(state)")
+    }
+    
+    /// Show hidden items
+    func show() {
+        guard state == .hideItems else { return }
+        toggle()
+    }
+    
+    /// Hide items
+    func hide() {
+        guard state == .showItems else { return }
+        toggle()
     }
     
     /// Legacy compatibility
@@ -162,17 +262,51 @@ final class MenuBarManager: ObservableObject {
         toggle()
     }
     
+    /// Temporarily prevent hover-to-show (used when clicking items)
+    func preventShowOnHover() {
+        isShowOnHoverPrevented = true
+        preventShowOnHoverTask?.cancel()
+    }
+    
+    /// Allow hover-to-show again
+    func allowShowOnHover() {
+        preventShowOnHoverTask?.cancel()
+        preventShowOnHoverTask = Task {
+            try? await Task.sleep(for: .seconds(0.5))
+            isShowOnHoverPrevented = false
+        }
+    }
+    
     /// Clean up all resources
     func cleanup() {
         disable()
-        UserDefaults.standard.removeObject(forKey: enabledKey)
-        UserDefaults.standard.removeObject(forKey: stateKey)
+        UserDefaults.standard.removeObject(forKey: Keys.enabled)
+        UserDefaults.standard.removeObject(forKey: Keys.state)
+        UserDefaults.standard.removeObject(forKey: Keys.showOnHover)
+        UserDefaults.standard.removeObject(forKey: Keys.showOnHoverDelay)
+        UserDefaults.standard.removeObject(forKey: Keys.iconSet)
         
         // Clear saved positions for fresh start on next enable
-        Self.setPreferredPosition(nil, for: Self.mainAutosaveName)
-        Self.setPreferredPosition(nil, for: Self.dividerAutosaveName)
+        StatusItemDefaults[Self.mainAutosaveName] = nil
+        StatusItemDefaults[Self.dividerAutosaveName] = nil
         
         print("[MenuBarManager] Cleanup complete")
+    }
+    
+    // MARK: - Position Management
+    
+    /// Seed initial positions BEFORE creating items
+    private func seedPositionsIfNeeded() {
+        // Main icon at position 0 (rightmost)
+        if StatusItemDefaults[Self.mainAutosaveName] == nil {
+            StatusItemDefaults[Self.mainAutosaveName] = 0
+            print("[MenuBarManager] Seeded main icon position")
+        }
+        // Divider at position 1 (to the left of main)
+        if StatusItemDefaults[Self.dividerAutosaveName] == nil {
+            StatusItemDefaults[Self.dividerAutosaveName] = 1
+            print("[MenuBarManager] Seeded divider position")
+        }
     }
     
     // MARK: - Status Items Creation
@@ -202,29 +336,29 @@ final class MenuBarManager: ObservableObject {
     }
     
     private func removeStatusItems() {
-        // Ice pattern: Cache positions before removing, then restore after
+        // Critical pattern: Cache positions before removing, then restore after
         // This prevents NSStatusBar from clearing the preferred positions
         
         if let item = mainItem {
             let autosave = item.autosaveName as String
-            let cached = Self.getPreferredPosition(for: autosave)
+            let cached = StatusItemDefaults[autosave]
             NSStatusBar.system.removeStatusItem(item)
-            Self.setPreferredPosition(cached, for: autosave)
+            StatusItemDefaults[autosave] = cached
             mainItem = nil
         }
         
         if let item = dividerItem {
             let autosave = item.autosaveName as String
-            let cached = Self.getPreferredPosition(for: autosave)
+            let cached = StatusItemDefaults[autosave]
             NSStatusBar.system.removeStatusItem(item)
-            Self.setPreferredPosition(cached, for: autosave)
+            StatusItemDefaults[autosave] = cached
             dividerItem = nil
         }
         
         print("[MenuBarManager] Removed status items")
     }
     
-    // MARK: - State Application (Ice Pattern)
+    // MARK: - State Application
     
     private func applyState() {
         updateMainItem()
@@ -236,16 +370,9 @@ final class MenuBarManager: ObservableObject {
         
         let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
         
-        switch state {
-        case .showItems:
-            // Icons are visible - show eye icon
-            button.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "Hide menu bar icons")?
-                .withSymbolConfiguration(config)
-        case .hideItems:
-            // Icons are hidden - show slashed eye
-            button.image = NSImage(systemSymbolName: "eye.slash.fill", accessibilityDescription: "Show menu bar icons")?
-                .withSymbolConfiguration(config)
-        }
+        let symbolName = (state == .showItems) ? iconSet.visibleSymbol : iconSet.hiddenSymbol
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: state == .showItems ? "Hide menu bar icons" : "Show menu bar icons")?
+            .withSymbolConfiguration(config)
         button.image?.isTemplate = true
     }
     
@@ -265,12 +392,83 @@ final class MenuBarManager: ObservableObject {
             button.image?.isTemplate = true
             
         case .hideItems:
-            // Expanded to push icons off - hide the button content (Ice pattern)
+            // Expanded to push icons off - Button Stealth Pattern
             dividerItem.length = lengthExpanded
             button.cell?.isEnabled = false  // Prevent highlighting
             button.isHighlighted = false     // Force unhighlight
             button.image = nil               // Hide the chevron
         }
+    }
+    
+    // MARK: - Mouse Monitoring
+    
+    private func updateMouseMonitor() {
+        if showOnHover && isEnabled {
+            startMouseMonitors()
+        } else {
+            stopMouseMonitors()
+        }
+    }
+    
+    private func startMouseMonitors() {
+        guard mouseMovedMonitor == nil else { return }
+        
+        mouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+            self?.handleShowOnHover()
+        }
+        
+        mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            self?.handleMouseDown(event)
+        }
+        
+        print("[MenuBarManager] Started mouse monitors")
+    }
+    
+    private func stopMouseMonitors() {
+        if let monitor = mouseMovedMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMovedMonitor = nil
+        }
+        if let monitor = mouseDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseDownMonitor = nil
+        }
+        print("[MenuBarManager] Stopped mouse monitors")
+    }
+    
+    private var isMouseInsideMenuBar: Bool {
+        guard let screen = NSScreen.main else { return false }
+        let mouseLocation = NSEvent.mouseLocation
+        return mouseLocation.y > screen.visibleFrame.maxY && mouseLocation.y <= screen.frame.maxY
+    }
+    
+    private var isMouseInsideEmptyMenuBarSpace: Bool {
+        // Simple heuristic: mouse is in menu bar and not directly over any known items
+        // For full accuracy, would need to query WindowInfo, but this works for most cases
+        isMouseInsideMenuBar
+    }
+    
+    private func handleShowOnHover() {
+        guard showOnHover, !isShowOnHoverPrevented, isEnabled else { return }
+        
+        Task {
+            if state == .hideItems && isMouseInsideEmptyMenuBarSpace {
+                // Want to show
+                try? await Task.sleep(for: .seconds(showOnHoverDelay))
+                guard isMouseInsideEmptyMenuBarSpace else { return }
+                await MainActor.run { show() }
+            } else if state == .showItems && !isMouseInsideMenuBar {
+                // Want to hide
+                try? await Task.sleep(for: .seconds(showOnHoverDelay))
+                guard !isMouseInsideMenuBar else { return }
+                await MainActor.run { hide() }
+            }
+        }
+    }
+    
+    private func handleMouseDown(_ event: NSEvent) {
+        guard showOnHover, isMouseInsideMenuBar else { return }
+        preventShowOnHover()
     }
     
     // MARK: - Actions
@@ -306,6 +504,14 @@ final class MenuBarManager: ObservableObject {
         
         menu.addItem(.separator())
         
+        // Hover to show toggle
+        let hoverItem = NSMenuItem(title: "Show on Hover", action: #selector(toggleHoverFromMenu), keyEquivalent: "")
+        hoverItem.target = self
+        hoverItem.state = showOnHover ? .on : .off
+        menu.addItem(hoverItem)
+        
+        menu.addItem(.separator())
+        
         menu.addItem(withTitle: "How to Use", action: #selector(showHowTo), keyEquivalent: "")
         menu.items.last?.target = self
         
@@ -321,6 +527,10 @@ final class MenuBarManager: ObservableObject {
     
     @objc private func toggleFromMenu() {
         toggle()
+    }
+    
+    @objc private func toggleHoverFromMenu() {
+        showOnHover.toggle()
     }
     
     @objc private func showHowTo() {

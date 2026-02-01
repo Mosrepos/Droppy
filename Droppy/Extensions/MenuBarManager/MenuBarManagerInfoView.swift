@@ -41,6 +41,9 @@ struct MenuBarManagerInfoView: View {
                     // Usage instructions (when enabled)
                     if manager.isEnabled {
                         usageSection
+                        
+                        // Settings section
+                        settingsSection
                     }
                 }
                 .padding(.horizontal, 24)
@@ -255,6 +258,97 @@ struct MenuBarManagerInfoView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
+    }
+    
+    private var settingsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Settings")
+                .font(.headline)
+            
+            // Hover to show toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show on Hover")
+                        .font(.callout)
+                    Text("Automatically show icons when hovering over the menu bar")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $manager.showOnHover)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+            
+            // Hover delay slider (only visible when hover is enabled)
+            if manager.showOnHover {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Hover Delay")
+                            .font(.callout)
+                        Spacer()
+                        Text(String(format: "%.1fs", manager.showOnHoverDelay))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $manager.showOnHoverDelay, in: 0.0...1.0, step: 0.1)
+                        .controlSize(.small)
+                }
+                .padding(.leading, 4)
+            }
+            
+            Divider()
+            
+            // Icon picker
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Toggle Icon")
+                    .font(.callout)
+                
+                // Icon options in a grid
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 8) {
+                    ForEach(MBMIconSet.allCases) { iconSet in
+                        iconOption(iconSet)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+    
+    private func iconOption(_ iconSet: MBMIconSet) -> some View {
+        let isSelected = manager.iconSet == iconSet
+        
+        return Button {
+            manager.iconSet = iconSet
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 2) {
+                    Image(systemName: iconSet.visibleSymbol)
+                        .font(.system(size: 14, weight: .medium))
+                    Image(systemName: iconSet.hiddenSymbol)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Text(iconSet.displayName)
+                    .font(.caption2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.blue.opacity(0.2) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isSelected ? Color.blue : Color.white.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
     
     private func instructionRow(step: String, text: String) -> some View {
