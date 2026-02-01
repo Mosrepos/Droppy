@@ -921,7 +921,16 @@ final class MenuBarManager: ObservableObject {
         
         // Check if mouse is in the menu bar area
         let menuBarHeight: CGFloat = 24
-        let isInMenuBar = mouseLocation.y >= screen.frame.maxY - menuBarHeight
+        let isAtTop = mouseLocation.y >= screen.frame.maxY - menuBarHeight
+        
+        // CRITICAL: Exclude the notch/island area in the center of the screen
+        // The notch/Dynamic Island belongs to Droppy's shelf, not the menu bar
+        // Approximate notch zone: center ±150px (wider to be safe with different island widths)
+        let screenCenterX = screen.frame.midX
+        let notchExclusionWidth: CGFloat = 200  // ±100px from center
+        let isOverNotchArea = abs(mouseLocation.x - screenCenterX) < notchExclusionWidth
+        
+        let isInMenuBar = isAtTop && !isOverNotchArea
         
         if let hiddenSection = section(withName: .hidden) {
             if isInMenuBar && hiddenSection.isHidden {
