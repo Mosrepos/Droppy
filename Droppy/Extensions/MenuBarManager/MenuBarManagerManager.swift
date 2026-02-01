@@ -370,36 +370,35 @@ final class ControlItem {
             // Icon changes handled by MenuBarManager
             
         case .hidden:
-            switch state {
-            case .hideItems:
-                isVisible = true
-                // Prevent the cell from highlighting while expanded
-                button.cell?.isEnabled = false
-                // Cell still sometimes briefly flashes on expansion unless manually unhighlighted
-                button.isHighlighted = false
-                button.image = nil
-                
-            case .showItems:
-                isVisible = true
-                // Enable the cell, as it may have been previously disabled
-                button.cell?.isEnabled = true
-                // Set the divider chevron image
-                button.alphaValue = 0.7
-                let image = NSImage(size: CGSize(width: 12, height: 12), flipped: false) { bounds in
-                    let insetBounds = bounds.insetBy(dx: 1, dy: 1)
-                    let path = NSBezierPath()
+            // Chevron divider is always visible
+            isVisible = true
+            button.cell?.isEnabled = true
+            button.alphaValue = 0.7
+            
+            // Draw chevron pointing left (items hidden) or right (items shown)
+            let pointsLeft = (state == .hideItems)
+            let image = NSImage(size: CGSize(width: 12, height: 12), flipped: false) { bounds in
+                let insetBounds = bounds.insetBy(dx: 1, dy: 1)
+                let path = NSBezierPath()
+                if pointsLeft {
+                    // Chevron pointing left (items are hidden)
+                    path.move(to: CGPoint(x: (insetBounds.minX + insetBounds.midX) / 2, y: insetBounds.maxY))
+                    path.line(to: CGPoint(x: (insetBounds.midX + insetBounds.maxX) / 2, y: insetBounds.midY))
+                    path.line(to: CGPoint(x: (insetBounds.minX + insetBounds.midX) / 2, y: insetBounds.minY))
+                } else {
+                    // Chevron pointing right (items are shown)
                     path.move(to: CGPoint(x: (insetBounds.midX + insetBounds.maxX) / 2, y: insetBounds.maxY))
                     path.line(to: CGPoint(x: (insetBounds.minX + insetBounds.midX) / 2, y: insetBounds.midY))
                     path.line(to: CGPoint(x: (insetBounds.midX + insetBounds.maxX) / 2, y: insetBounds.minY))
-                    path.lineWidth = 2
-                    path.lineCapStyle = .butt
-                    NSColor.black.setStroke()
-                    path.stroke()
-                    return true
                 }
-                image.isTemplate = true
-                button.image = image
+                path.lineWidth = 2
+                path.lineCapStyle = .butt
+                NSColor.black.setStroke()
+                path.stroke()
+                return true
             }
+            image.isTemplate = true
+            button.image = image
         }
     }
     
