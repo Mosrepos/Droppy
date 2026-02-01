@@ -15,8 +15,7 @@ struct MenuBarManagerInfoView: View {
     var installCount: Int?
     var rating: AnalyticsService.ExtensionRating?
     
-    @State private var isHoveringClose = false
-    @State private var isHoveringEnable = false
+    
     @State private var showReviewsSheet = false
     
     var body: some View {
@@ -33,11 +32,7 @@ struct MenuBarManagerInfoView: View {
                     // Features section
                     featuresSection
                     
-                    // Enable section (when disabled)
-                    if !manager.isEnabled {
-                        enableSection
-                    }
-                    
+
                     // Usage instructions (when enabled)
                     if manager.isEnabled {
                         usageSection
@@ -57,10 +52,10 @@ struct MenuBarManagerInfoView: View {
             // Buttons (fixed, non-scrolling)
             buttonSection
         }
-        .frame(width: 500)
+        .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
         .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .menuBarManager)
         }
@@ -183,49 +178,7 @@ struct MenuBarManagerInfoView: View {
         }
     }
     
-    private var enableSection: some View {
-        VStack(spacing: 16) {
-            Text("Enable Menu Bar Manager to get started")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            
-            Text("An eye icon will appear in your menu bar. Click it to show/hide icons to its left.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button {
-                manager.enable()
-                
-                // Track activation
-                AnalyticsService.shared.trackExtensionActivation(extensionId: "menuBarManager")
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "power")
-                    Text("Enable")
-                }
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isHoveringEnable ? Color.blue.opacity(0.9) : Color.blue)
-                )
-            }
-            .buttonStyle(.plain)
-            .onHover { h in
-                withAnimation(.easeInOut(duration: 0.15)) { isHoveringEnable = h }
-            }
-        }
-        .padding(20)
-        .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
-    }
+
     
     private var usageSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -366,31 +319,24 @@ struct MenuBarManagerInfoView: View {
     }
     
     private var buttonSection: some View {
-        HStack(spacing: 10) {
-            Button {
-                dismiss()
-            } label: {
-                Text("Close")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(isHoveringClose ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
-            .onHover { h in
-                withAnimation(.easeInOut(duration: 0.15)) { isHoveringClose = h }
-            }
+        HStack {
+            Button("Close") { dismiss() }
+                .buttonStyle(DroppyPillButtonStyle(size: .small))
             
             Spacer()
             
-            DisableExtensionButton(extensionType: .menuBarManager)
+            if manager.isEnabled {
+                DisableExtensionButton(extensionType: .menuBarManager)
+            } else {
+                Button {
+                    manager.isEnabled = true
+                    AnalyticsService.shared.trackExtensionActivation(extensionId: "menuBarManager")
+                } label: {
+                    Text("Enable")
+                }
+                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+            }
         }
-        .padding(16)
+        .padding(DroppySpacing.lg)
     }
 }
