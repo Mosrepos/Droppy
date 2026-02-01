@@ -702,8 +702,8 @@ final class MenuBarManager: ObservableObject {
             // Wait a moment for defaults to be written
             try? await Task.sleep(for: .milliseconds(100))
             
-            // Restart apps with menu bar items
-            await restartMenuBarApps()
+            // Restart the menu bar
+            await restartMenuBar()
             
         } catch {
             print("[MenuBarManager] Failed to apply spacing: \(error)")
@@ -712,68 +712,30 @@ final class MenuBarManager: ObservableObject {
         await MainActor.run { isApplyingSpacing = false }
     }
     
-    /// Restarts apps that have menu bar items to apply spacing changes
-    private func restartMenuBarApps() async {
-        let workspace = NSWorkspace.shared
-        let runningApps = workspace.runningApplications
+    /// Restarts the menu bar to apply spacing changes
+    private func restartMenuBar() async {
+        // Restart SystemUIServer which handles the menu bar
+        // This will refresh all menu bar items with new spacing
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/killall")
+        process.arguments = ["SystemUIServer"]
         
-        // Get list of apps with menu bar items by checking status items
-        // We'll restart apps that commonly have menu bar items
-        var appsToRestart: [NSRunningApplication] = []
+        try? await Task.detached {
+            try process.run()
+            process.waitUntilExit()
+        }.value
         
-        for app in runningApps {
-            // Skip system apps and ourselves
-            guard let bundleId = app.bundleIdentifier else { continue }
-            if bundleId == Bundle.main.bundleIdentifier { continue }
-            if bundleId == "com.apple.controlcenter" { continue } // ControlCenter handles its own restart
-            if bundleId.hasPrefix("com.apple.") { continue } // Skip Apple system apps
-            
-            // Check if app has an agent or regular app type that could have menu bar items
-            if app.activationPolicy == .accessory || app.activationPolicy == .regular {
-                appsToRestart.append(app)
-            }
-        }
+        // Also restart ControlCenter for Control Center items
+        let controlCenterProcess = Process()
+        controlCenterProcess.executableURL = URL(filePath: "/usr/bin/killall")
+        controlCenterProcess.arguments = ["ControlCenter"]
         
-        // Restart each app
-        for app in appsToRestart {
-            guard let bundleURL = app.bundleURL else { continue }
-            let bundleId = app.bundleIdentifier ?? ""
-            
-            // Terminate the app
-            app.terminate()
-            
-            // Wait for termination (with timeout)
-            for _ in 0..<20 { // 2 second timeout
-                if app.isTerminated { break }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            
-            // Force terminate if still running
-            if !app.isTerminated {
-                app.forceTerminate()
-                try? await Task.sleep(for: .milliseconds(200))
-            }
-            
-            // Relaunch if it was terminated
-            if app.isTerminated {
-                let config = NSWorkspace.OpenConfiguration()
-                config.activates = false
-                config.addsToRecentItems = false
-                config.createsNewApplicationInstance = false
-                
-                do {
-                    try await workspace.openApplication(at: bundleURL, configuration: config)
-                    print("[MenuBarManager] Relaunched \(bundleId)")
-                } catch {
-                    print("[MenuBarManager] Failed to relaunch \(bundleId): \(error)")
-                }
-            }
-        }
+        try? await Task.detached {
+            try controlCenterProcess.run()
+            controlCenterProcess.waitUntilExit()
+        }.value
         
-        // Also restart ControlCenter by terminating it (it auto-relaunches)
-        if let controlCenter = runningApps.first(where: { $0.bundleIdentifier == "com.apple.controlcenter" }) {
-            controlCenter.terminate()
-        }
+        print("[MenuBarManager] Restarted menu bar with new spacing")
     }
     
     /// Runs a defaults command
