@@ -686,9 +686,10 @@ final class MenuBarManager: ObservableObject {
         
         print("[MenuBarManager] Scheduling auto-hide in \(autoHideDelay)s")
         autoHideTimer = Timer.scheduledTimer(withTimeInterval: autoHideDelay, repeats: false) { [weak self] _ in
+            guard let strongSelf = self else { return }
             Task { @MainActor in
                 print("[MenuBarManager] Auto-hide timer fired")
-                self?.hideAllSections()
+                strongSelf.hideAllSections()
             }
         }
     }
