@@ -131,6 +131,14 @@ final class MusicManager: ObservableObject {
     /// when forcing a source switch from Spotify fallback
     @Published var isMediaSourceForced: Bool = false
     private var sourceForceResetTimer: Timer?
+    
+    // MARK: - FIX #128: Track Change Debouncing
+    /// Debounce timer for track metadata changes to prevent flicker during video seeking
+    private var metadataDebounceTimer: Timer?
+    /// Pending metadata update waiting for debounce stabilization
+    private var pendingMetadataUpdate: (title: String, artist: String, album: String, bundleId: String?)?
+    /// Last applied metadata signature to detect true track changes
+    private var lastAppliedMetadataSignature: String = ""
 
     // MARK: - Media Source Filter
 
@@ -959,28 +967,65 @@ final class MusicManager: ObservableObject {
             return
         }
 
-        // Update metadata
-        if let title = payload.title {
-            // Reset timing values when song changes to prevent stale timestamps
-            if title != songTitle {
-                songDuration = 0
-                elapsedTime = 0
-                // Notify Spotify controller of track change
-                if isSpotifySource {
-                    SpotifyController.shared.onTrackChange()
-                }
-                // Notify Apple Music controller of track change
-                if isAppleMusicSource {
-                    AppleMusicController.shared.onTrackChange()
-                }
+        // MARK: FIX #128 - Debounced Track Change Detection
+        // During video seeking, MediaRemote sends rapid updates that can cause UI flicker.
+        // We debounce track changes to wait for stable metadata before updating the display.
+        
+        let incomingTitle = payload.title ?? songTitle
+        let incomingArtist = payload.artist ?? artistName
+        let incomingAlbum = payload.album ?? albumName
+        let incomingBundleId = payload.launchableBundleIdentifier ?? bundleIdentifier
+        
+        // Create a signature for the incoming metadata
+        let incomingSignature = "\(incomingTitle)||\(incomingArtist)||\(incomingBundleId ?? "")"
+        
+        // Check if this is a track change (different from currently displayed)
+        let isTrackChange = incomingSignature != lastAppliedMetadataSignature && !lastAppliedMetadataSignature.isEmpty
+        
+        if isTrackChange {
+            // Cancel any existing debounce timer
+            metadataDebounceTimer?.invalidate()
+            
+            // Store pending metadata
+            pendingMetadataUpdate = (title: incomingTitle, artist: incomingArtist, album: incomingAlbum, bundleId: incomingBundleId)
+            
+            // Start debounce timer - wait 300ms for metadata to stabilize
+            metadataDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+                self?.applyPendingMetadataUpdate()
             }
-            songTitle = title
-        }
-        if let artist = payload.artist {
-            artistName = artist
-        }
-        if let album = payload.album {
-            albumName = album
+            
+            print("MusicManager: FIX #128 - Track change detected, debouncing for 300ms...")
+        } else {
+            // Same track or first load - apply immediately and update signature
+            if let title = payload.title {
+                if title != songTitle {
+                    // Reset timing values when song changes to prevent stale timestamps
+                    songDuration = 0
+                    elapsedTime = 0
+                    // Notify Spotify controller of track change
+                    if isSpotifySource {
+                        SpotifyController.shared.onTrackChange()
+                    }
+                    // Notify Apple Music controller of track change
+                    if isAppleMusicSource {
+                        AppleMusicController.shared.onTrackChange()
+                    }
+                }
+                songTitle = title
+            }
+            if let artist = payload.artist {
+                artistName = artist
+            }
+            if let album = payload.album {
+                albumName = album
+            }
+            
+            // Update the applied signature
+            lastAppliedMetadataSignature = "\(songTitle)||\(artistName)||\(bundleIdentifier ?? "")"
+            
+            // Clear any pending update since we just applied
+            metadataDebounceTimer?.invalidate()
+            pendingMetadataUpdate = nil
         }
         if let duration = payload.duration, duration > 0 {
             // Only accept duration if it makes sense (greater than current elapsed time)
@@ -1089,6 +1134,39 @@ final class MusicManager: ObservableObject {
         } else {
             visualizerColor = .white.opacity(0.7)
         }
+    }
+    
+    // MARK: - FIX #128: Apply Pending Metadata Update
+    
+    /// Applies pending metadata update after debounce period
+    /// Called by debounce timer to prevent flicker during video seeking
+    private func applyPendingMetadataUpdate() {
+        guard let pending = pendingMetadataUpdate else { return }
+        
+        print("MusicManager: FIX #128 - Applying debounced metadata update: '\(pending.title)' by '\(pending.artist)'")
+        
+        // Reset timing values for new track
+        songDuration = 0
+        elapsedTime = 0
+        
+        // Notify controllers of track change
+        if isSpotifySource {
+            SpotifyController.shared.onTrackChange()
+        }
+        if isAppleMusicSource {
+            AppleMusicController.shared.onTrackChange()
+        }
+        
+        // Apply the pending metadata
+        songTitle = pending.title
+        artistName = pending.artist
+        albumName = pending.album
+        
+        // Update signature
+        lastAppliedMetadataSignature = "\(songTitle)||\(artistName)||\(bundleIdentifier ?? "")"
+        
+        // Clear pending state
+        pendingMetadataUpdate = nil
     }
     
     // MARK: - Load MediaRemote for Commands
