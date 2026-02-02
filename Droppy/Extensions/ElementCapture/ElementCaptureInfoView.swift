@@ -167,6 +167,7 @@ struct ElementCaptureInfoView: View {
                 featureRow(icon: "pencil.tip", text: "Annotate with arrows, shapes & text")
                 featureRow(icon: "eye.slash.fill", text: "Blur sensitive content")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             
             // Screenshot
             CachedAsyncImage(url: URL(string: "https://getdroppy.app/assets/images/element-capture-screenshot.gif")) { image in
