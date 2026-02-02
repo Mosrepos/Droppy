@@ -150,7 +150,7 @@ struct SettingsSidebarItem: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(backgroundShape)
-            .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -182,7 +182,7 @@ struct SettingsSidebarItem: View {
             Image(systemName: tab.icon)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
-                .droppyTextShadow()
+                .shadow(color: .black.opacity(0.2), radius: 0.5, x: 0, y: 0.5)
         }
     }
     
@@ -190,10 +190,10 @@ struct SettingsSidebarItem: View {
     private var backgroundShape: some View {
         if isSelected {
             // Squircle selection (like Dynamic Island)
-            RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.15))
         } else if isHovering {
-            RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.08))
         } else {
             Color.clear
@@ -216,9 +216,6 @@ struct SettingsSidebar: View {
             switch tab {
             case .quickshare:
                 return showQuickshareInSidebar
-            case .lockScreen:
-                // DISABLED: Lock screen features causing issues, will debug later
-                return false
             default:
                 return true
             }
@@ -285,7 +282,7 @@ struct SettingsSidebar: View {
                     Image(systemName: "cup.and.saucer.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
-                        .droppyTextShadow()
+                        .shadow(color: .black.opacity(0.2), radius: 0.5, x: 0, y: 0.5)
                 }
                 
                 Text("Support")
@@ -296,7 +293,7 @@ struct SettingsSidebar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(SettingsSidebarLinkStyle())
     }
@@ -334,7 +331,7 @@ struct SettingsSidebar: View {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
-                        .droppyTextShadow()
+                        .shadow(color: .black.opacity(0.2), radius: 0.5, x: 0, y: 0.5)
                 }
                 
                 Text("Updates")
@@ -345,7 +342,7 @@ struct SettingsSidebar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(SettingsSidebarLinkStyle())
     }
@@ -372,7 +369,7 @@ struct SettingsSidebarLinkStyle: ButtonStyle {
     @ViewBuilder
     private var hoverBackground: some View {
         if isHovering {
-            RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.08))
         } else {
             Color.clear
