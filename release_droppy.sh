@@ -305,7 +305,15 @@ end"
 info "Updating Homebrew Casks"
 echo "$CASK_CONTENT" > "$MAIN_REPO/Casks/droppy.rb"
 echo "$CASK_CONTENT" > "$TAP_REPO/Casks/droppy.rb"
-step "Cask files written"
+
+# Verify both casks have correct version URL
+if ! grep -q "v$VERSION/$DMG_NAME" "$MAIN_REPO/Casks/droppy.rb"; then
+    error "Main repo cask verification failed"
+fi
+if ! grep -q "v$VERSION/$DMG_NAME" "$TAP_REPO/Casks/droppy.rb"; then
+    error "Tap repo cask verification failed"
+fi
+step "Cask files written and verified for v$VERSION"
 
 # Commit Changes
 info "Finalizing Git Repositories"
@@ -341,8 +349,15 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     git fetch origin --quiet
     git reset --hard origin/main --quiet
     echo "$CASK_CONTENT" > "Casks/droppy.rb" # Rewrite after reset
+    
+    # Verify cask contains correct version in URL (guard against variable corruption)
+    if ! grep -q "v$VERSION/$DMG_NAME" "Casks/droppy.rb"; then
+        error "Cask verification failed: URL does not contain v$VERSION/$DMG_NAME"
+    fi
+    step "Cask verified: URL points to v$VERSION"
+    
     git add .
-    git commit -m "Update Droppy to v$VERSION" --quiet
+    git commit -m "Update Droppy to v$VERSION" --quiet || warning "No changes to commit in tap repo"
     git push --force origin HEAD:main --quiet
 
     # GitHub Release
