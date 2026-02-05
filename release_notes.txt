@@ -29,3 +29,4 @@
 - Fixed Dock folder drags not triggering shelf actions
 - Fixed shortcut registration not persisting after restart
 - Added cask URL verification to prevent Homebrew version mismatch bugs
+- Fixed NotificationHUD crashes from concurrent database access (#152, #156)

@@ -79,6 +79,9 @@ final class NotificationHUDManager {
     private var walFileDescriptor: Int32 = -1
     private var fileChangeDebounceWorkItem: DispatchWorkItem?
     private let fileChangeDebounceInterval: TimeInterval = 0.02  // 20ms debounce (reduced for speed)
+    
+    // Serial queue to ensure thread-safe SQLite and state access (fixes crashes #152, #156)
+    private let databaseQueue = DispatchQueue(label: "app.getdroppy.NotificationHUD.database")
 
     // App bundle IDs to ignore (Droppy itself, system apps, etc.)
     private let ignoredBundleIDs: Set<String> = [
@@ -123,7 +126,7 @@ final class NotificationHUDManager {
 
         // BACKUP: Slow polling timer as fallback (in case file monitoring misses something)
         pollingTimer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { [weak self] _ in
-            DispatchQueue.global(qos: .utility).async {
+            self?.databaseQueue.async {
                 self?.pollForNewNotifications()
             }
         }
@@ -147,7 +150,7 @@ final class NotificationHUDManager {
                 self?.pollForNewNotifications()
             }
             self.fileChangeDebounceWorkItem = workItem
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            self.databaseQueue.asyncAfter(
                 deadline: .now() + self.fileChangeDebounceInterval,
                 execute: workItem
             )
@@ -402,9 +405,9 @@ final class NotificationHUDManager {
                 appIcon: appIcon
             )
             
-            // Track this app as having sent notifications
-            if seenApps[bundleID] == nil {
-                seenApps[bundleID] = (name: appName, icon: appIcon)
+            // Track this app as having sent notifications (safe: we're on databaseQueue)
+            if self.seenApps[bundleID] == nil {
+                self.seenApps[bundleID] = (name: appName, icon: appIcon)
             }
             
             newNotifications.append(notification)
