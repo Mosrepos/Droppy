@@ -25,8 +25,10 @@ class GlobalHotKey {
     public var isInputMonitoringActive: Bool = false
 
     // Trigger debounce to avoid double-calls (Carbon + IOHID)
+    // Thread-safe using os_unfair_lock to prevent race conditions
     private var lastTriggerTime: CFAbsoluteTime = 0
-    private let triggerCooldown: CFAbsoluteTime = 0.2
+    private let triggerCooldown: CFAbsoluteTime = 0.3  // Increased from 0.2 to 0.3 for reliability
+    private var triggerLock = os_unfair_lock()
     
     // Manual Modifier Tracking (Bypasses CGEventSource during Secure Input)
     private var pressedModifiers: Set<UInt32> = []
@@ -234,6 +236,10 @@ class GlobalHotKey {
     }
 
     fileprivate func fireCallback() {
+        // Thread-safe debounce using os_unfair_lock
+        os_unfair_lock_lock(&triggerLock)
+        defer { os_unfair_lock_unlock(&triggerLock) }
+        
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastTriggerTime > triggerCooldown else { return }
         lastTriggerTime = now

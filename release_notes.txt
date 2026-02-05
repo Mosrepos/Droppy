@@ -30,3 +30,4 @@
 - Fixed shortcut registration not persisting after restart
 - Added cask URL verification to prevent Homebrew version mismatch bugs
 - Fixed NotificationHUD crashes from concurrent database access (#152, #156)
+- Fixed shortcuts flashing and disappearing due to double-trigger race condition (#149, #153)
