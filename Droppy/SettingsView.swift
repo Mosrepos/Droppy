@@ -32,6 +32,8 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
     @AppStorage(AppPreferenceKey.externalDisplayUseDynamicIsland) private var externalDisplayUseDynamicIsland = PreferenceDefault.externalDisplayUseDynamicIsland
     @AppStorage(AppPreferenceKey.showIdleNotchOnExternalDisplays) private var showIdleNotchOnExternalDisplays = PreferenceDefault.showIdleNotchOnExternalDisplays
+    @AppStorage(AppPreferenceKey.externalDisplayAdvancedVisibilityEnabled) private var externalDisplayAdvancedVisibilityEnabled = PreferenceDefault.externalDisplayAdvancedVisibilityEnabled
+    @AppStorage(AppPreferenceKey.externalDisplayVisibilityRules) private var externalDisplayVisibilityRules = PreferenceDefault.externalDisplayVisibilityRules
     @AppStorage(AppPreferenceKey.dynamicIslandHeightOffset) private var dynamicIslandHeightOffset = PreferenceDefault.dynamicIslandHeightOffset
     
     // HUD and Media Player settings
@@ -110,6 +112,63 @@ struct SettingsView: View {
             }
         }
         return false
+    }
+
+    private var externalScreens: [NSScreen] {
+        NSScreen.screens.filter { !$0.isBuiltIn }
+    }
+
+    private func externalDisplayRuleMap() -> [String: Bool] {
+        guard let data = externalDisplayVisibilityRules.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func isExternalDisplayVisible(_ displayID: CGDirectDisplayID) -> Bool {
+        externalDisplayRuleMap()[String(displayID)] ?? true
+    }
+
+    private func setExternalDisplayVisible(_ displayID: CGDirectDisplayID, isVisible: Bool) {
+        var rules = externalDisplayRuleMap()
+        rules[String(displayID)] = isVisible
+        if let data = try? JSONEncoder().encode(rules),
+           let json = String(data: data, encoding: .utf8) {
+            externalDisplayVisibilityRules = json
+        }
+    }
+
+    @ViewBuilder
+    private var externalDisplayAdvancedOptions: some View {
+        if !externalScreens.isEmpty {
+            Divider()
+                .padding(.vertical, 4)
+
+            Toggle(isOn: $externalDisplayAdvancedVisibilityEnabled) {
+                VStack(alignment: .leading) {
+                    Text("Advanced (Per-Display)")
+                    Text("Choose exactly which external displays show Droppy")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if externalDisplayAdvancedVisibilityEnabled {
+                VStack(spacing: 8) {
+                    ForEach(externalScreens, id: \.displayID) { screen in
+                        ExternalDisplayVisibilityRow(
+                            screen: screen,
+                            isVisible: Binding(
+                                get: { isExternalDisplayVisible(screen.displayID) },
+                                set: { setExternalDisplayVisible(screen.displayID, isVisible: $0) }
+                            )
+                        )
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
     }
     
     private var scrollOffsetReader: some View {
@@ -567,6 +626,8 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    externalDisplayAdvancedOptions
                 }
             } header: {
                 Text("External Displays")
@@ -1123,6 +1184,8 @@ struct SettingsView: View {
                                     .frame(width: 44, height: 14)
                             }
                         }
+
+                        externalDisplayAdvancedOptions
                     }
                 }
             } header: {
@@ -2193,6 +2256,8 @@ struct SettingsView: View {
                                     .frame(width: 44, height: 14)
                             }
                         }
+
+                        externalDisplayAdvancedOptions
                     }
                 }
             } header: {
@@ -5034,6 +5099,43 @@ struct AutofadeDisplayRow: View {
             ))
             .toggleStyle(.switch)
             .labelsHidden()
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(Color.white.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.small, style: .continuous))
+    }
+}
+
+struct ExternalDisplayVisibilityRow: View {
+    let screen: NSScreen
+    @Binding var isVisible: Bool
+
+    private var displayName: String {
+        screen.localizedName
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "display")
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Text(isVisible ? "Visible" : "Hidden")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $isVisible)
+                .toggleStyle(.switch)
+                .labelsHidden()
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)

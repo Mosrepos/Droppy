@@ -28,6 +28,8 @@ enum AppPreferenceKey {
     static let isNotchHidden = "isNotchHidden"
     static let externalDisplayUseDynamicIsland = "externalDisplayUseDynamicIsland"
     static let showIdleNotchOnExternalDisplays = "showIdleNotchOnExternalDisplays"
+    static let externalDisplayAdvancedVisibilityEnabled = "externalDisplayAdvancedVisibilityEnabled"
+    static let externalDisplayVisibilityRules = "externalDisplayVisibilityRules"  // JSON dictionary [displayID: Bool]
     static let enableProgressiveBlur = "enableProgressiveBlur"
     static let autoHideOnFullscreen = "autoHideOnFullscreen"
     static let hideMediaOnlyOnFullscreen = "hideMediaOnlyOnFullscreen"  // Sub-option: only hide media, not HUDs
@@ -164,6 +166,8 @@ enum PreferenceDefault {
     static let isNotchHidden = false
     static let externalDisplayUseDynamicIsland = true
     static let showIdleNotchOnExternalDisplays = false  // Hide by default when idle (current behavior)
+    static let externalDisplayAdvancedVisibilityEnabled = false
+    static let externalDisplayVisibilityRules = "{}"
     static let enableProgressiveBlur = true  // iOS-style progressive blur around notch
     static let autoHideOnFullscreen = true   // Hide notch in fullscreen apps/games
     static let hideMediaOnlyOnFullscreen = false  // Sub-option: only hide media, keep volume/brightness HUDs

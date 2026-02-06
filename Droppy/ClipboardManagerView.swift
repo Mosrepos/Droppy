@@ -69,6 +69,17 @@ struct ClipboardManagerView: View {
     private var nonFlaggedItems: [ClipboardItem] {
         cachedSortedHistory.filter { !$0.isFlagged }
     }
+
+    /// Keep toolbar items structurally stable to avoid AppKit removal crashes.
+    private var selectedEditableImage: NSImage? {
+        guard selectedItemsArray.count == 1,
+              let item = selectedItemsArray.first,
+              item.type == .image,
+              let imageData = item.loadImageData() else {
+            return nil
+        }
+        return NSImage(data: imageData)
+    }
     
     /// Recompute sorted history (called only when history or search changes)
     private func updateSortedHistory() {
@@ -125,6 +136,12 @@ struct ClipboardManagerView: View {
             .onChange(of: selectedTagFilter) { _, _ in
                 updateSortedHistory()
             }
+            .onChange(of: tagsEnabled) { _, enabled in
+                if !enabled {
+                    isTagPopoverVisible = false
+                    selectedTagFilter = nil
+                }
+            }
             // ENFORCE PENDING SELECTION: After sortedHistory changes, apply pending selection
             .onChange(of: cachedSortedHistory) { _, _ in
                 if let pendingId = pendingSelectionId {
@@ -152,31 +169,33 @@ struct ClipboardManagerView: View {
                     .background(Color.clear)
                     .toolbar {
                         // Tags filter button (only if tags enabled)
-                        if tagsEnabled {
-                            ToolbarItem(placement: .automatic) {
-                                Button {
-                                    isTagPopoverVisible.toggle()
-                                } label: {
-                                    ZStack(alignment: .topTrailing) {
-                                        Image(systemName: "tag")
-                                        // Show dot when filter active
-                                        if selectedTagFilter != nil {
-                                            Circle()
-                                                .fill(manager.getTag(by: selectedTagFilter)?.color ?? .blue)
-                                                .frame(width: 6, height: 6)
-                                                .offset(x: 2, y: -2)
-                                        }
+                        ToolbarItem(placement: .automatic) {
+                            Button {
+                                guard tagsEnabled else { return }
+                                isTagPopoverVisible.toggle()
+                            } label: {
+                                ZStack(alignment: .topTrailing) {
+                                    Image(systemName: "tag")
+                                    // Show dot when filter active
+                                    if selectedTagFilter != nil {
+                                        Circle()
+                                            .fill(manager.getTag(by: selectedTagFilter)?.color ?? .blue)
+                                            .frame(width: 6, height: 6)
+                                            .offset(x: 2, y: -2)
                                     }
                                 }
-                                .popover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
-                                    TagFilterPopover(
-                                        selectedTagFilter: $selectedTagFilter,
-                                        showTagManagement: $showTagManagement,
-                                        manager: manager
-                                    )
-                                }
-                                .help("Filter by Tag")
                             }
+                            .popover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
+                                TagFilterPopover(
+                                    selectedTagFilter: $selectedTagFilter,
+                                    showTagManagement: $showTagManagement,
+                                    manager: manager
+                                )
+                            }
+                            .disabled(!tagsEnabled)
+                            .opacity(tagsEnabled ? 1 : 0)
+                            .allowsHitTesting(tagsEnabled)
+                            .help("Filter by Tag")
                         }
                         
                         // Search button in sidebar
@@ -207,13 +226,9 @@ struct ClipboardManagerView: View {
                     .toolbar {
                         // Edit button (opens image in Screenshot Editor) - Far right of title bar
                         ToolbarItem(placement: .primaryAction) {
-                            if selectedItemsArray.count == 1,
-                               let item = selectedItemsArray.first,
-                               item.type == .image,
-                               let imageData = item.loadImageData(),
-                               let nsImage = NSImage(data: imageData) {
+                            if let image = selectedEditableImage {
                                 Button {
-                                    ScreenshotEditorWindowController.shared.show(with: nsImage)
+                                    ScreenshotEditorWindowController.shared.show(with: image)
                                 } label: {
                                     Image(systemName: "pencil")
                                 }

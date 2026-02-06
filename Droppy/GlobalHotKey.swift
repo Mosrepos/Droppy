@@ -62,8 +62,12 @@ class GlobalHotKey {
         
         print("⌨️ GlobalHotKey: Init (Code: \(keyCode), Mods: \(modifiers))")
         
-        // 1. Register Carbon
-        registerCarbon(keyCode: keyCode, modifiers: modifiers)
+        // 1. Register Carbon when supported by the shortcut shape.
+        if shouldRegisterCarbon(keyCode: keyCode, modifiers: modifiers) {
+            registerCarbon(keyCode: keyCode, modifiers: modifiers)
+        } else {
+            print("ℹ️ GlobalHotKey: Skipping Carbon for modifier-only or side-specific shortcut")
+        }
         
         // 2. Setup IOHIDManager as backup
         setupIOHIDManager()
@@ -173,6 +177,11 @@ class GlobalHotKey {
             } else {
                 pressedModifiers.remove(usage)
             }
+
+            // Modifier-only shortcuts trigger from modifier state changes.
+            if isDown, let targetUsage = modifierUsage(for: targetKeyCode), targetUsage == usage, checkModifiers() {
+                fireCallback()
+            }
             return
         }
         
@@ -197,7 +206,7 @@ class GlobalHotKey {
         var cOpt = false
         var cCtrl = false
         var cShift = false
-        
+
         for usage in pressedModifiers {
             switch usage {
             case 0xE0, 0xE4: cCtrl = true
@@ -207,22 +216,33 @@ class GlobalHotKey {
             default: break
             }
         }
-        
+
         let target = NSEvent.ModifierFlags(rawValue: targetModifiers)
         let tCmd = target.contains(.command)
         let tOpt = target.contains(.option)
         let tCtrl = target.contains(.control)
         let tShift = target.contains(.shift)
-        
-        let match = cCmd == tCmd && cOpt == tOpt && cCtrl == tCtrl && cShift == tShift
-        
-        // DEBUG: Uncomment below to debug modifier matching
-        // if !match {
-        //     print("   -> Mods Current: [Cmd:\(cCmd) Opt:\(cOpt) Ctrl:\(cCtrl) Shift:\(cShift)]")
-        //     print("   -> Mods Target:  [Cmd:\(tCmd) Opt:\(tOpt) Ctrl:\(tCtrl) Shift:\(tShift)]")
-        // }
-        
-        return match
+
+        return cCmd == tCmd && cOpt == tOpt && cCtrl == tCtrl && cShift == tShift
+    }
+
+    private func shouldRegisterCarbon(keyCode: Int, modifiers: UInt) -> Bool {
+        _ = modifiers
+        return modifierUsage(for: keyCode) == nil
+    }
+
+    private func modifierUsage(for keyCode: Int) -> UInt32? {
+        switch keyCode {
+        case 59: return 0xE0 // left control
+        case 62: return 0xE4 // right control
+        case 56: return 0xE1 // left shift
+        case 60: return 0xE5 // right shift
+        case 58: return 0xE2 // left option
+        case 61: return 0xE6 // right option
+        case 55: return 0xE3 // left command
+        case 54: return 0xE7 // right command
+        default: return nil
+        }
     }
 
     private func unregister() {

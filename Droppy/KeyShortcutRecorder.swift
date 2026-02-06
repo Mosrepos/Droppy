@@ -7,18 +7,19 @@ struct SavedShortcut: Codable, Equatable {
     
     var description: String {
         var str = ""
-        if NSEvent.ModifierFlags(rawValue: modifiers).contains(.command) { str += "⌘" }
-        if NSEvent.ModifierFlags(rawValue: modifiers).contains(.shift) { str += "⇧" }
-        if NSEvent.ModifierFlags(rawValue: modifiers).contains(.option) { str += "⌥" }
-        if NSEvent.ModifierFlags(rawValue: modifiers).contains(.control) { str += "⌃" }
+        let flags = NSEvent.ModifierFlags(rawValue: modifiers)
+        if flags.contains(.command) { str += "⌘" }
+        if flags.contains(.shift) { str += "⇧" }
+        if flags.contains(.option) { str += "⌥" }
+        if flags.contains(.control) { str += "⌃" }
         
-        // Simple mapping for common keys, otherwise use keyCode
-        if keyCode == 49 { str += "Space" }
-        else {
-             // Attempt to get string from key code
-             // This is simplified. 
-             str += KeyCodeHelper.string(for: UInt16(keyCode))
+        // For modifier-only shortcuts, the flags already describe the combo.
+        if KeyCodeHelper.isModifierKey(code: UInt16(keyCode)) {
+            return str.isEmpty ? KeyCodeHelper.string(for: UInt16(keyCode)) : str
         }
+
+        if keyCode == 49 { str += "Space" }
+        else { str += KeyCodeHelper.string(for: UInt16(keyCode)) }
         return str
     }
     
@@ -117,6 +118,10 @@ struct KeyShortcutRecorder: View {
 }
 
 struct KeyCodeHelper {
+    static func isModifierKey(code: UInt16) -> Bool {
+        [54, 55, 56, 58, 59, 60, 61, 62].contains(code)
+    }
+
     static func string(for code: UInt16) -> String {
         switch code {
         case 0: return "A"
@@ -172,6 +177,14 @@ struct KeyCodeHelper {
         case 51: return "Delete"
         case 53: return "Esc"
         case 57: return "⇪" // Caps Lock
+        case 54: return "R⌘"
+        case 55: return "L⌘"
+        case 56: return "L⇧"
+        case 58: return "L⌥"
+        case 59: return "L⌃"
+        case 60: return "R⇧"
+        case 61: return "R⌥"
+        case 62: return "R⌃"
         // Arrow keys
         case 123: return "←"
         case 124: return "→"

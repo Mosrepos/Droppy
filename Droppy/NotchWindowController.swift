@@ -158,8 +158,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             // Skip if window already exists for this screen
             guard notchWindows[displayID] == nil else { continue }
             
-            // Skip external displays if user has hidden notch on external
-            if hideOnExternal && !screen.isBuiltIn {
+            if !shouldShowOnScreen(screen, hideOnExternal: hideOnExternal) {
                 continue
             }
             
@@ -434,7 +433,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         // Add/remove/recreate windows for connected screens
         for screen in NSScreen.screens {
             let displayID = screen.displayID
-            let shouldHaveWindow = !hideOnExternal || screen.isBuiltIn
+            let shouldHaveWindow = shouldShowOnScreen(screen, hideOnExternal: hideOnExternal)
             
             if shouldHaveWindow {
                 if let existingWindow = notchWindows[displayID] {
@@ -474,6 +473,28 @@ final class NotchWindowController: NSObject, ObservableObject {
                 }
             }
         }
+    }
+
+    private func shouldShowOnScreen(_ screen: NSScreen, hideOnExternal: Bool) -> Bool {
+        if screen.isBuiltIn {
+            return true
+        }
+        if hideOnExternal {
+            return false
+        }
+        return isExternalDisplayEnabled(screen.displayID)
+    }
+
+    private func isExternalDisplayEnabled(_ displayID: CGDirectDisplayID) -> Bool {
+        let advancedEnabled = UserDefaults.standard.bool(forKey: AppPreferenceKey.externalDisplayAdvancedVisibilityEnabled)
+        guard advancedEnabled else { return true }
+
+        let raw = UserDefaults.standard.string(forKey: AppPreferenceKey.externalDisplayVisibilityRules) ?? PreferenceDefault.externalDisplayVisibilityRules
+        guard let data = raw.data(using: .utf8),
+              let rules = try? JSONDecoder().decode([String: Bool].self, from: data) else {
+            return true
+        }
+        return rules[String(displayID)] ?? true
     }
     
     /// Starts monitoring mouse events to handle expands/collapses

@@ -534,18 +534,31 @@ struct VoiceTranscribeInfoView: View {
     private func startRecording(for mode: VoiceRecordingMode) {
         stopRecording()
         recordingMode = mode
-        recordMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Ignore just modifier keys pressed alone
-            if event.keyCode == 54 || event.keyCode == 55 || event.keyCode == 56 ||
-               event.keyCode == 58 || event.keyCode == 59 || event.keyCode == 60 ||
-               event.keyCode == 61 || event.keyCode == 62 {
+        recordMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            let supportedFlags = ShortcutFlags.supported
+            let normalizedFlags = event.modifierFlags.intersection(supportedFlags)
+
+            // Modifier-only shortcuts are emitted as .flagsChanged.
+            if event.type == .flagsChanged {
+                guard ShortcutFlags.modifierKeyCodes.contains(event.keyCode) else { return nil }
+                // Wait until at least 2 modifier families are down to avoid capturing the first key press.
+                guard ShortcutFlags.activeModifierFamilyCount(in: normalizedFlags) >= 2 else { return nil }
+
+                DispatchQueue.main.async {
+                    let shortcut = SavedShortcut(keyCode: Int(event.keyCode), modifiers: normalizedFlags.rawValue)
+                    self.manager.setShortcut(shortcut, for: mode)
+                    self.stopRecording()
+                }
                 return nil
             }
-            
-            // Capture the shortcut
+
+            // For keyDown capture regular key + modifier shortcuts.
+            if ShortcutFlags.modifierKeyCodes.contains(event.keyCode) {
+                return nil
+            }
+
             DispatchQueue.main.async {
-                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                let shortcut = SavedShortcut(keyCode: Int(event.keyCode), modifiers: flags.rawValue)
+                let shortcut = SavedShortcut(keyCode: Int(event.keyCode), modifiers: normalizedFlags.rawValue)
                 self.manager.setShortcut(shortcut, for: mode)
                 self.stopRecording()
             }
@@ -559,6 +572,22 @@ struct VoiceTranscribeInfoView: View {
             NSEvent.removeMonitor(m)
             recordMonitor = nil
         }
+    }
+}
+
+private enum ShortcutFlags {
+    static let modifierKeyCodes: Set<UInt16> = [54, 55, 56, 58, 59, 60, 61, 62]
+    static let supported: NSEvent.ModifierFlags = [
+        .command, .shift, .option, .control
+    ]
+
+    static func activeModifierFamilyCount(in flags: NSEvent.ModifierFlags) -> Int {
+        var count = 0
+        if flags.contains(.command) { count += 1 }
+        if flags.contains(.option) { count += 1 }
+        if flags.contains(.control) { count += 1 }
+        if flags.contains(.shift) { count += 1 }
+        return count
     }
 }
 
