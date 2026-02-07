@@ -1,6 +1,56 @@
 import SwiftUI
 
-// MARK: - Live Preview Card (Activation Window — pre-activation)
+// MARK: - License Certificate Icon
+
+private struct LicenseCertificateIcon: View {
+    let isActivated: Bool
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            // Certificate body
+            RoundedRectangle(cornerRadius: size * 0.14, style: .continuous)
+                .fill(Color(white: 0.18))
+                .frame(width: size, height: size * 0.78)
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.14, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                )
+
+            // Top accent stripe
+            VStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(isActivated ? Color.green : Color.orange)
+                    .frame(height: 2.5)
+                    .padding(.horizontal, size * 0.18)
+                    .padding(.top, size * 0.14)
+
+                Spacer()
+            }
+            .frame(width: size, height: size * 0.78)
+
+            // Lines representing text
+            VStack(spacing: 3.5) {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: size * 0.52, height: 2)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: size * 0.38, height: 2)
+            }
+            .offset(y: 2)
+
+            // Seal / badge
+            Image(systemName: isActivated ? "checkmark.seal.fill" : "seal.fill")
+                .font(.system(size: size * 0.28, weight: .semibold))
+                .foregroundStyle(isActivated ? .green.opacity(0.7) : .orange.opacity(0.5))
+                .offset(x: size * 0.16, y: size * 0.18)
+        }
+        .frame(width: size, height: size * 0.78)
+    }
+}
+
+// MARK: - Live Preview Card (pre-activation)
 
 struct LicenseLivePreviewCard: View {
     let email: String
@@ -12,67 +62,43 @@ struct LicenseLivePreviewCard: View {
     @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Top: brand + status
-            HStack {
-                HStack(spacing: 7) {
-                    Image(systemName: "d.square.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+        HStack(spacing: 14) {
+            LicenseCertificateIcon(isActivated: isActivated, size: 52)
 
-                    Text("DROPPY")
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
-                        .tracking(1.8)
-                        .foregroundStyle(.white.opacity(0.92))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("License key:")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                Text(keyDisplay)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                if let email = nonEmpty(email) {
+                    Text(email)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-
-                Spacer()
-
-                Text(isActivated ? "ACTIVE" : "PENDING")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .tracking(0.8)
-                    .foregroundStyle(isActivated ? .white : .white.opacity(0.6))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(.white.opacity(isActivated ? 0.2 : 0.1))
-                    )
             }
 
-            Spacer()
-                .frame(height: 2)
+            Spacer(minLength: 0)
 
-            // License key — large, monospaced
-            Text(keyDisplay)
-                .font(.system(size: 16, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white)
-                .tracking(1.2)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            // Email
-            Text(nonEmpty(email) ?? "you@yourmail.com")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.white.opacity(0.55))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Text(isActivated ? "Active" : "Pending")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isActivated ? .green : .orange)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.11))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color(white: 0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
-        .scaleEffect(enableInteractiveEffects && isHovering ? 1.01 : 1.0)
-        .onHover { hovering in
-            guard enableInteractiveEffects else { return }
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
-        }
     }
 
     private func nonEmpty(_ value: String?) -> String? {
@@ -82,7 +108,7 @@ struct LicenseLivePreviewCard: View {
     }
 }
 
-// MARK: - Identity Card (Activated state — settings & activation window)
+// MARK: - Identity Card (activated — settings & activation window)
 
 struct LicenseIdentityCard: View {
     let title: String
@@ -117,119 +143,43 @@ struct LicenseIdentityCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header bar
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.green)
+        HStack(spacing: 14) {
+            LicenseCertificateIcon(isActivated: true, size: 52)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Licensed to:")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
 
-                Spacer()
-
-                Text("PRO")
-                    .font(.system(size: 9, weight: .heavy, design: .rounded))
-                    .tracking(1.0)
-                    .foregroundStyle(.green)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(Color.green.opacity(0.12))
-                    )
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-
-            // Divider
-            Rectangle()
-                .fill(Color.white.opacity(0.06))
-                .frame(height: 1)
-
-            // Meta rows
-            VStack(alignment: .leading, spacing: 0) {
-                metaRow(
-                    label: "Email",
-                    value: nonEmpty(email) ?? "Not provided"
-                )
+                Text(nonEmpty(email) ?? "Not provided")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
                 if let keyHint = nonEmpty(keyHint) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.04))
-                        .frame(height: 1)
-                    metaRow(
-                        label: "License",
-                        value: keyHint
-                    )
-                }
-
-                if let verifiedAt {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.04))
-                        .frame(height: 1)
-                    HStack {
-                        metaRow(
-                            label: "Verified",
-                            value: verifiedAt.formatted(date: .abbreviated, time: .shortened)
-                        )
-                        if let footer {
-                            footer
-                                .padding(.trailing, 16)
-                        }
-                    }
-                } else if let footer {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.04))
-                        .frame(height: 1)
-                    HStack {
-                        Spacer(minLength: 0)
-                        footer
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    Text("Key: \(keyHint)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
             }
+
+            Spacer(minLength: 0)
+
+            if let footer {
+                footer
+            }
         }
-        .background(Color(white: 0.11))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color(white: 0.12))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
-        .scaleEffect(enableInteractiveEffects && isHovering ? 1.01 : 1.0)
-        .onHover { hovering in
-            guard enableInteractiveEffects else { return }
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
-        }
-    }
-
-    private func metaRow(label: String, value: String) -> some View {
-        HStack(spacing: 0) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 60, alignment: .leading)
-
-            Text(value)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.88))
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     private func nonEmpty(_ value: String?) -> String? {
