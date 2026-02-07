@@ -781,174 +781,6 @@
             color: var(--gray-800);
         }
 
-        .cta-bar .btn-donate {
-            background: #FFDD00;
-            color: #000;
-        }
-
-        .cta-bar .btn-donate:hover {
-            background: #e6c700;
-            color: #000;
-        }
-
-        /* Donation Modal */
-        .donate-modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-        }
-
-        .donate-modal-overlay.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .donate-modal {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 40px;
-            max-width: 480px;
-            width: 90%;
-            text-align: center;
-            transform: scale(0.95);
-            transition: transform 0.3s ease;
-        }
-
-        .donate-modal-overlay.active .donate-modal {
-            transform: scale(1);
-        }
-
-        .donate-modal-icon {
-            font-size: 48px;
-            margin-bottom: 8px;
-            display: block;
-        }
-
-        .donate-modal h2 {
-            font-size: 24px;
-            font-weight: 600;
-            color: var(--primary);
-            margin-bottom: 16px;
-        }
-
-        .donate-modal p {
-            font-size: 15px;
-            color: var(--secondary);
-            line-height: 1.6;
-            margin-bottom: 12px;
-        }
-
-        .donate-modal .highlight {
-            color: #ffd700;
-            font-weight: 600;
-        }
-
-        .donate-modal-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            margin-top: 28px;
-        }
-
-        .donate-modal-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            padding: 18px 28px;
-            border-radius: 999px;
-            font-family: var(--font-sans);
-            font-size: 16px;
-            font-weight: 600;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: none;
-        }
-
-        .donate-modal-btn.primary {
-            background: linear-gradient(135deg, #ffd700 0%, #ffb800 100%);
-            color: #000;
-        }
-
-        .donate-modal-btn.primary:hover {
-            transform: translateY(-2px);
-        }
-
-        .donate-perks-list {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 12px;
-            margin-bottom: 8px;
-        }
-
-        .donate-perk {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            background: rgba(255, 215, 0, 0.1);
-            color: #ffd700;
-            padding: 6px 12px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .donate-modal-btn.secondary {
-            position: relative;
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--muted);
-            border: 1px solid var(--border);
-            overflow: hidden;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-
-        .donate-modal-btn.secondary.ready {
-            cursor: pointer;
-            opacity: 1;
-        }
-
-        .donate-modal-btn.secondary.ready:hover {
-            color: var(--secondary);
-            background: rgba(255, 255, 255, 0.08);
-        }
-
-        .donate-modal-btn.secondary .fill-bar {
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 0%;
-            background: rgba(255, 255, 255, 0.08);
-            transition: width 5s linear;
-            pointer-events: none;
-        }
-
-        .donate-modal-btn.secondary.filling .fill-bar {
-            width: 100%;
-        }
-
-        .donate-modal-btn.secondary span {
-            position: relative;
-            z-index: 1;
-        }
-
         @media (max-width: 768px) {
             .extensions-grid {
                 grid-template-columns: 1fr;
@@ -1350,7 +1182,8 @@
                     </svg><span class="stat-value" data-rating="camera">—</span><span
                         data-rating-count="camera">(0)</span></div>
             </div>
-            <p class="extension-description">Adds a live camera preview to the right side of your expanded shelf with automatic spacing and smooth alignment.</p>
+            <p class="extension-description">Adds a live camera preview to the right side of your expanded shelf with
+                automatic spacing and smooth alignment.</p>
             <div class="extension-tags"><span class="extension-tag">Camera</span><span
                     class="extension-tag">Productivity</span></div>
         </div>
@@ -1446,7 +1279,7 @@
             <div class="extension-tags"><span class="extension-tag">Notifications</span><span
                     class="extension-tag">Community</span></div>
         </div>
-        
+
         <div class="extension-card" data-extension="todo" data-category="productivity">
             <div class="extension-header">
                 <img src="assets/icons/reminders.png" alt="Reminders" class="extension-icon">
@@ -1461,8 +1294,8 @@
                 <div class="stat-item"><svg fill="currentColor" viewBox="0 0 24 24">
                         <path
                             d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                    </svg><span class="stat-value" data-rating="todo">—</span><span
-                        data-rating-count="todo">(0)</span></div>
+                    </svg><span class="stat-value" data-rating="todo">—</span><span data-rating-count="todo">(0)</span>
+                </div>
             </div>
             <p class="extension-description">Capture tasks in natural language with list and date mentions, plus
                 multilingual input and smart cleanup.</p>
@@ -1781,92 +1614,24 @@
             }
         });
 
-        // Donation modal logic (wait for DOM)
-        document.addEventListener('DOMContentLoaded', () => {
-            let downloadUrl = 'https://github.com/iordv/Droppy/releases/latest';
-            const donateModal = document.getElementById('donate-modal');
-            const downloadBtn = document.getElementById('download-btn');
-            const freeDownloadBtn = document.getElementById('free-download-btn');
-            let freeButtonReady = false;
-
-            if (!donateModal || !downloadBtn || !freeDownloadBtn) return;
-
-            // Fetch the actual download URL
-            fetch('https://api.github.com/repos/iordv/Droppy/releases/latest').then(r => r.json()).then(rel => {
-                const dmg = rel.assets?.find(a => a.name.endsWith('.dmg'));
-                if (dmg) downloadUrl = dmg.browser_download_url;
-            }).catch(() => { });
-
-            downloadBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                donateModal.classList.add('active');
-                freeButtonReady = false;
-                freeDownloadBtn.classList.remove('ready');
-
-                // Start fill animation after a brief delay
-                setTimeout(() => {
-                    freeDownloadBtn.classList.add('filling');
-                }, 100);
-
-                // Enable button after 5 seconds
-                setTimeout(() => {
-                    freeButtonReady = true;
-                    freeDownloadBtn.classList.add('ready');
-                }, 5100);
-            });
-
-            freeDownloadBtn.addEventListener('click', () => {
-                if (!freeButtonReady) return;
-                donateModal.classList.remove('active');
-                window.location.href = downloadUrl;
-            });
-
-            donateModal.addEventListener('click', (e) => {
-                if (e.target === donateModal) {
-                    donateModal.classList.remove('active');
-                    freeDownloadBtn.classList.remove('filling');
-                }
-            });
-        });
+        // Download button — direct link to latest release
+        const downloadBtn = document.getElementById('download-btn');
+        fetch('https://api.github.com/repos/iordv/Droppy/releases/latest').then(r => r.json()).then(rel => {
+            const dmg = rel.assets?.find(a => a.name.endsWith('.dmg'));
+            if (dmg) downloadBtn.href = dmg.browser_download_url;
+        }).catch(() => { });
     </script>
 
-    <!-- Donation Modal -->
-    <div class="donate-modal-overlay" id="donate-modal">
-        <div class="donate-modal">
-            <span class="donate-modal-icon">☕</span>
-            <h2>A Quick Note</h2>
-            <p>Droppy is <span class="highlight">completely free</span> and <span class="highlight">open source</span>,
-                built with love by a single developer.</p>
-            <p>If you can afford it, a small donation would mean the world. It helps keep this project alive and makes
-                future improvements possible.</p>
-            <p>Droppy costs money to develop and maintain — and right now, I'm covering those costs myself to bring you
-                great software for free.</p>
-            <div class="donate-modal-buttons">
-                <a href="https://buymeacoffee.com/droppy" class="donate-modal-btn primary" target="_blank">
-                    ☕ Donate a Cup of Coffee
-                </a>
-                <div class="donate-perks-list">
-                    <span class="donate-perk">🎖️ Discord Role</span>
-                    <span class="donate-perk">💬 Exclusive Channel</span>
-                    <span class="donate-perk">⭐ Website Credit</span>
-                </div>
-                <button class="donate-modal-btn secondary" id="free-download-btn">
-                    <span class="fill-bar"></span>
-                    <span>I understand, but I want it for free</span>
-                </button>
-            </div>
-        </div>
-    </div>
+
 
     <!-- CTA Bar -->
     <div class="cta-bar">
-        <button id="download-btn" class="btn btn-main">
+        <a id="download-btn" href="https://github.com/iordv/Droppy/releases/latest" class="btn btn-main">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Download Droppy
-        </button>
-        <a href="https://buymeacoffee.com/droppy" class="btn btn-donate" target="_blank">☕ Donate</a>
+        </a>
         <a href="index.html" class="btn">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path
