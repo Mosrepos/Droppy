@@ -6,6 +6,8 @@ private struct LicenseCardChrome<Content: View>: View {
     let isActivated: Bool
     @ViewBuilder let content: () -> Content
 
+    @State private var sealRotation: Double = 0
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             // Card surface
@@ -21,11 +23,17 @@ private struct LicenseCardChrome<Content: View>: View {
                 .strokeBorder(Color.white.opacity(0.04), lineWidth: 0.5)
                 .padding(5)
 
-            // Watermark seal (subtle, bottom-right)
+            // Watermark seal (subtle, bottom-right) — slowly spins
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 80, weight: .thin))
                 .foregroundStyle(Color.white.opacity(0.025))
+                .rotationEffect(.degrees(sealRotation))
                 .offset(x: -12, y: -6)
+                .onAppear {
+                    withAnimation(.linear(duration: 60).repeatForever(autoreverses: false)) {
+                        sealRotation = 360
+                    }
+                }
 
             // Content
             VStack(alignment: .leading, spacing: 0) {
