@@ -781,6 +781,136 @@
             color: var(--gray-800);
         }
 
+        /* Download Modal */
+        .download-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .download-modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .download-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 32px;
+            max-width: 420px;
+            width: 90%;
+            max-height: 70vh;
+            overflow-y: auto;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+
+        .download-modal-overlay.active .download-modal {
+            transform: scale(1);
+        }
+
+        .download-modal h2 {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .download-modal .modal-price {
+            text-align: center;
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 20px;
+        }
+
+        .download-modal .modal-desc {
+            font-size: 14px;
+            color: var(--secondary);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .download-modal .modal-perks {
+            list-style: none;
+            margin-bottom: 24px;
+        }
+
+        .download-modal .modal-perks li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 0;
+            font-size: 13px;
+            color: var(--secondary);
+        }
+
+        .download-modal .modal-perks li svg {
+            width: 15px;
+            height: 15px;
+            stroke: #22c55e;
+            flex-shrink: 0;
+        }
+
+        .download-modal .modal-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .download-modal .modal-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 13px 20px;
+            border-radius: 12px;
+            font-family: var(--font-sans);
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s ease, transform 0.15s ease;
+        }
+
+        .download-modal .modal-btn:active {
+            transform: scale(0.98);
+        }
+
+        .download-modal .modal-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .download-modal .modal-btn-primary {
+            background: var(--gray-100);
+            color: var(--gray-800);
+        }
+
+        .download-modal .modal-btn-primary:hover {
+            background: var(--gray-200);
+        }
+
+        .download-modal .modal-btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--secondary);
+            border: 1px solid var(--border);
+        }
+
+        .download-modal .modal-btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--primary);
+        }
+
         @media (max-width: 768px) {
             .extensions-grid {
                 grid-template-columns: 1fr;
@@ -1613,25 +1743,63 @@
                 document.querySelector('.category-btn[data-category="all"]').classList.add('active');
             }
         });
-
-        // Download button — direct link to latest release
-        const downloadBtn = document.getElementById('download-btn');
-        fetch('https://api.github.com/repos/iordv/Droppy/releases/latest').then(r => r.json()).then(rel => {
-            const dmg = rel.assets?.find(a => a.name.endsWith('.dmg'));
-            if (dmg) downloadBtn.href = dmg.browser_download_url;
-        }).catch(() => { });
     </script>
 
 
 
+    <!-- Download Modal -->
+    <div class="download-modal-overlay" id="download-modal">
+        <div class="download-modal">
+            <h2>Get Droppy</h2>
+            <p class="modal-price">€6.99 · One-time payment · Lifetime</p>
+            <p class="modal-desc">
+                Droppy is a one-time purchase that unlocks every feature, every extension, and every future update —
+                forever. No subscriptions, no recurring fees.
+            </p>
+            <p class="modal-desc">
+                Your purchase directly supports an indie developer and ensures Droppy keeps getting better with new
+                features, performance improvements, and macOS compatibility updates.
+            </p>
+            <ul class="modal-perks">
+                <li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg> All core features & 15+ extensions</li>
+                <li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg> Lifetime updates, no extra cost</li>
+                <li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg> Supports continued development</li>
+                <li><svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg> 100% local & private — no telemetry</li>
+            </ul>
+            <div class="modal-actions">
+                <a href="https://iordv.gumroad.com/l/Droppy" target="_blank" class="modal-btn modal-btn-primary">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Buy License — €6.99
+                </a>
+                <a id="modal-direct-download" href="https://github.com/iordv/Droppy/releases/latest"
+                    class="modal-btn modal-btn-secondary">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Droppy
+                </a>
+            </div>
+        </div>
+    </div>
+
     <!-- CTA Bar -->
     <div class="cta-bar">
-        <a id="download-btn" href="https://github.com/iordv/Droppy/releases/latest" class="btn btn-main">
+        <button id="download-btn" class="btn btn-main">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Download Droppy
-        </a>
+        </button>
         <a href="index.html" class="btn">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path
@@ -1708,6 +1876,31 @@
                 requestAnimationFrame(animate);
             };
             if (Math.abs(vx) > minV || Math.abs(vy) > minV) requestAnimationFrame(animate);
+        });
+
+        // Resolve direct download URL
+        fetch('https://api.github.com/repos/iordv/Droppy/releases/latest').then(r => r.json()).then(rel => {
+            const dmg = rel.assets?.find(a => a.name.endsWith('.dmg'));
+            if (dmg) {
+                const directBtn = document.getElementById('modal-direct-download');
+                if (directBtn) directBtn.href = dmg.browser_download_url;
+            }
+        }).catch(() => { });
+
+        // Download modal logic
+        const downloadModal = document.getElementById('download-modal');
+        const downloadBtn = document.getElementById('download-btn');
+
+        downloadBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            downloadModal.classList.add('active');
+        });
+
+        downloadModal.addEventListener('click', (e) => {
+            if (e.target === downloadModal) {
+                downloadModal.classList.remove('active');
+            }
         });
     </script>
 </body>
