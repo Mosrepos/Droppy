@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Droppy — Features</title>
+    <meta name="description"
+        content="Discover everything Droppy can do. File shelf, floating basket, clipboard manager, beautiful HUDs, media player, and 15+ modular extensions.">
+    <link rel="icon" type="image/png" href="assets/app-icon.png">
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        :root {
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --bg: #0a0a0a;
+            --bg-card: rgba(38, 38, 38, 0.92);
+            --border: rgba(255, 255, 255, 0.08);
+            --primary: #fafafa;
+            --secondary: #a1a1aa;
+            --muted: #71717a;
+            --gray-100: #f4f4f5;
+            --gray-200: #e4e4e7;
+            --gray-800: #27272a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--primary);
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ============================================
+           SCROLL ANIMATION SYSTEM
+           ============================================ */
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-left {
+            opacity: 0;
+            transform: translateX(-60px);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-left.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .reveal-right {
+            opacity: 0;
+            transform: translateX(60px);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-right.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .reveal-scale {
+            opacity: 0;
+            transform: scale(0.9);
+            transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-scale.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Stagger children */
+        .stagger>* {
+            transition-delay: calc(var(--i, 0) * 0.1s);
+        }
+
+        /* ============================================
+           HERO SECTION
+           ============================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 120px 24px 80px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -30%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-logo {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 24px;
+            filter: drop-shadow(0 0 60px rgba(59, 130, 246, 0.3));
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 16px;
+        }
+
+        .hero h1 span {
+            background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 20px;
+            color: var(--secondary);
+            max-width: 560px;
+            line-height: 1.5;
+            margin-bottom: 40px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 32px;
+        }
+
+        .hero-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .scroll-indicator {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            100% {
+                transform: translateX(-50%) translateY(0);
+            }
+
+            50% {
+                transform: translateX(-50%) translateY(8px);
+            }
+        }
+
+        .scroll-indicator svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--muted);
+        }
+
+        /* ============================================
+           FEATURE SECTIONS
+           ============================================ */
+        .feature-section {
+            padding: 120px 24px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .section-label {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 42px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1.15;
+            margin-bottom: 16px;
+        }
+
+        .section-desc {
+            font-size: 18px;
+            color: var(--secondary);
+            line-height: 1.6;
+            max-width: 600px;
+            margin-bottom: 48px;
+        }
+
+        /* Split layout: text + media */
+        .feature-split {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 64px;
+            align-items: center;
+        }
+
+        .feature-split.reverse {
+            direction: rtl;
+        }
+
+        .feature-split.reverse>* {
+            direction: ltr;
+        }
+
+        .feature-media {
+            position: relative;
+            border-radius: 20px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.4);
+        }
+
+        .feature-media img,
+        .feature-media video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .feature-media .glow {
+            position: absolute;
+            inset: -1px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), transparent 50%);
+            pointer-events: none;
+        }
+
+        /* Feature bullets */
+        .feature-bullets {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 32px;
+        }
+
+        .feature-bullet {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+
+        .feature-bullet .icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 18px;
+        }
+
+        .feature-bullet h4 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .feature-bullet p {
+            font-size: 14px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        /* ============================================
+           FULL-WIDTH SHOWCASE
+           ============================================ */
+        .showcase {
+            padding: 120px 24px;
+            text-align: center;
+        }
+
+        .showcase-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .showcase-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px 24px;
+            text-align: left;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.4s ease;
+        }
+
+        .showcase-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .showcase-card .card-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin-bottom: 16px;
+        }
+
+        .showcase-card h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .showcase-card p {
+            font-size: 14px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        /* ============================================
+           EXTENSION HIGHLIGHTS
+           ============================================ */
+        .ext-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .ext-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                background 0.3s ease;
+        }
+
+        .ext-card:hover {
+            transform: translateY(-2px);
+            background: rgba(50, 50, 50, 0.95);
+        }
+
+        .ext-card img {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+        }
+
+        .ext-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .ext-card p {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        /* ============================================
+           DIVIDER
+           ============================================ */
+        .divider {
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* ============================================
+           PRICING CTA
+           ============================================ */
+        .pricing-cta {
+            padding: 120px 24px;
+            text-align: center;
+        }
+
+        .pricing-card {
+            max-width: 440px;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 48px 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pricing-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        }
+
+        .pricing-card .price {
+            font-size: 56px;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 4px;
+        }
+
+        .pricing-card .price-label {
+            font-size: 15px;
+            color: var(--muted);
+            margin-bottom: 24px;
+        }
+
+        .pricing-card .price-features {
+            text-align: left;
+            margin-bottom: 32px;
+        }
+
+        .pricing-card .price-feature {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--secondary);
+        }
+
+        .pricing-card .price-feature svg {
+            width: 16px;
+            height: 16px;
+            stroke: #22c55e;
+            flex-shrink: 0;
+        }
+
+        .pricing-card .download-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 14px 24px;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            border: none;
+            border-radius: 12px;
+            font-family: var(--font-sans);
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .pricing-card .download-btn:hover {
+            background: var(--gray-200);
+        }
+
+        .pricing-card .download-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* ============================================
+           CTA BAR (matches homepage)
+           ============================================ */
+        .cta-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            gap: 8px;
+            padding: 6px;
+            background: rgba(23, 23, 23, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .cta-bar.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .cta-bar.fade-out {
+            opacity: 0;
+        }
+
+        .cta-bar .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            border-radius: 999px;
+            color: var(--secondary);
+            font-family: var(--font-sans);
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .cta-bar .btn:hover {
+            color: var(--primary);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .cta-bar .btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .cta-bar .btn-main {
+            background: var(--gray-100);
+            color: var(--gray-800);
+        }
+
+        .cta-bar .btn-main:hover {
+            background: var(--gray-200);
+            color: var(--gray-800);
+        }
+
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
+        @media (max-width: 1024px) {
+            .hero h1 {
+                font-size: 42px;
+            }
+
+            .section-title {
+                font-size: 34px;
+            }
+
+            .feature-split {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .feature-split.reverse {
+                direction: ltr;
+            }
+
+            .showcase-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .ext-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 32px;
+            }
+
+            .hero p {
+                font-size: 16px;
+            }
+
+            .section-title {
+                font-size: 28px;
+            }
+
+            .section-desc {
+                font-size: 16px;
+            }
+
+            .feature-section {
+                padding: 80px 20px;
+            }
+
+            .showcase {
+                padding: 80px 20px;
+            }
+
+            .showcase-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .ext-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .pricing-cta {
+                padding: 80px 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .hero {
+                padding: 100px 16px 60px;
+            }
+
+            .hero h1 {
+                font-size: 26px;
+            }
+
+            .section-title {
+                font-size: 24px;
+            }
+
+            .feature-section {
+                padding: 60px 16px;
+            }
+
+            .ext-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .cta-bar {
+                padding: 4px;
+                gap: 4px;
+                left: 12px;
+                right: 12px;
+                transform: none;
+            }
+
+            .cta-bar.visible {
+                transform: translateY(0);
+            }
+
+            .cta-bar .btn {
+                padding: 8px 10px;
+                font-size: 11px;
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ==========================================
+         HERO
+         ========================================== -->
+    <section class="hero">
+        <img src="assets/images/droppy-icon-dark.png" alt="Droppy" class="hero-logo reveal">
+        <div class="hero-badge reveal" style="transition-delay: 0.1s">
+            <span class="dot"></span>
+            100% Swift · Signed & Notarized · Open Source
+        </div>
+        <h1 class="reveal" style="transition-delay: 0.2s"><span>Everything your Mac<br>should already do.</span></h1>
+        <p class="reveal" style="transition-delay: 0.3s">Droppy transforms your notch into a powerful productivity hub.
+            Drag, drop, manage, and control — all from one place.</p>
+        <div class="scroll-indicator">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
+            Scroll to explore
+        </div>
+    </section>
+
+    <!-- ==========================================
+         FEATURE 1: FILE SHELF
+         ========================================== -->
+    <section class="feature-section">
+        <div class="feature-split">
+            <div>
+                <p class="section-label reveal">Core Feature</p>
+                <h2 class="section-title reveal">File Shelf</h2>
+                <p class="section-desc reveal">Drop any file into your notch and it stays there until you need it. Drag
+                    files between apps without switching windows. Your notch becomes a staging area.</p>
+                <div class="feature-bullets stagger">
+                    <div class="feature-bullet reveal" style="--i:0">
+                        <div class="icon">📂</div>
+                        <div>
+                            <h4>Drag & Drop Anywhere</h4>
+                            <p>Drop files, folders, images, or links onto the notch. Pick them up later.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:1">
+                        <div class="icon">📌</div>
+                        <div>
+                            <h4>Favorites & Folders</h4>
+                            <p>Pin frequently used files. Create folders right on the shelf.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:2">
+                        <div class="icon">🔍</div>
+                        <div>
+                            <h4>Quick Look Preview</h4>
+                            <p>Hover to peek at any file. Rich thumbnails for images, PDFs, videos, and more.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="feature-media reveal-right">
+                <img src="assets/images/feature-shelf.png" alt="File Shelf">
+                <div class="glow"></div>
+            </div>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ==========================================
+         FEATURE 2: FLOATING BASKET
+         ========================================== -->
+    <section class="feature-section">
+        <div class="feature-split reverse">
+            <div>
+                <p class="section-label reveal">Core Feature</p>
+                <h2 class="section-title reveal">Floating Basket</h2>
+                <p class="section-desc reveal">Jiggle your mouse and a floating basket appears — ready to catch files
+                    from anywhere. Drag items in, then drop them wherever you need.</p>
+                <div class="feature-bullets stagger">
+                    <div class="feature-bullet reveal" style="--i:0">
+                        <div class="icon">🫧</div>
+                        <div>
+                            <h4>Spawn with a Jiggle</h4>
+                            <p>Shake your mouse while dragging and the basket appears instantly.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:1">
+                        <div class="icon">🎨</div>
+                        <div>
+                            <h4>Multiple Baskets</h4>
+                            <p>Spawn multiple color-coded baskets to organize different workflows.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:2">
+                        <div class="icon">⚡</div>
+                        <div>
+                            <h4>Batch Operations</h4>
+                            <p>Select multiple items and drag them all at once into any app.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="feature-media reveal-left">
+                <img src="assets/images/feature-basket.png" alt="Floating Basket">
+                <div class="glow"></div>
+            </div>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ==========================================
+         FEATURE 3: CLIPBOARD MANAGER
+         ========================================== -->
+    <section class="feature-section">
+        <div class="feature-split">
+            <div>
+                <p class="section-label reveal">Core Feature</p>
+                <h2 class="section-title reveal">Clipboard Manager</h2>
+                <p class="section-desc reveal">Every text, image, link, and file you copy — saved and searchable. Access
+                    your entire clipboard history with a single shortcut.</p>
+                <div class="feature-bullets stagger">
+                    <div class="feature-bullet reveal" style="--i:0">
+                        <div class="icon">📋</div>
+                        <div>
+                            <h4>Persistent History</h4>
+                            <p>Your clipboard history persists across app restarts. Never lose a copy again.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:1">
+                        <div class="icon">🏷️</div>
+                        <div>
+                            <h4>Tags & Search</h4>
+                            <p>Tag clipboard items for quick retrieval. Full-text search across everything.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:2">
+                        <div class="icon">📎</div>
+                        <div>
+                            <h4>Rich Content</h4>
+                            <p>Supports text, images, files, links, and colors with rich previews.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="feature-media reveal-right">
+                <img src="assets/images/feature-clipboard.png" alt="Clipboard Manager">
+                <div class="glow"></div>
+            </div>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ==========================================
+         FEATURE 4: BEAUTIFUL HUDs
+         ========================================== -->
+    <section class="feature-section">
+        <div class="feature-split reverse">
+            <div>
+                <p class="section-label reveal">Core Feature</p>
+                <h2 class="section-title reveal">Beautiful HUDs</h2>
+                <p class="section-desc reveal">Replace macOS's boring system overlays with gorgeous HUDs that appear
+                    right in your notch. Volume, brightness, media, AirPods — all premium.</p>
+                <div class="feature-bullets stagger">
+                    <div class="feature-bullet reveal" style="--i:0">
+                        <div class="icon">🔊</div>
+                        <div>
+                            <h4>Volume & Brightness</h4>
+                            <p>Sleek animated HUDs with smooth transitions and haptic-like feel.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:1">
+                        <div class="icon">🎵</div>
+                        <div>
+                            <h4>Now Playing</h4>
+                            <p>Media controls with album art, progress bar, and playback controls in the notch.</p>
+                        </div>
+                    </div>
+                    <div class="feature-bullet reveal" style="--i:2">
+                        <div class="icon">🎧</div>
+                        <div>
+                            <h4>AirPods & Battery</h4>
+                            <p>See AirPods connection status, battery level, and charging state — beautifully.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="feature-media reveal-left">
+                <img src="assets/images/feature-huds.png" alt="Beautiful HUDs">
+                <div class="glow"></div>
+            </div>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ==========================================
+         MORE FEATURES GRID
+         ========================================== -->
+    <section class="showcase">
+        <p class="section-label reveal">And so much more</p>
+        <h2 class="section-title reveal" style="margin-bottom: 48px;">Built-in power features.</h2>
+        <div class="showcase-grid stagger">
+            <div class="showcase-card reveal" style="--i:0">
+                <div class="card-icon">🎯</div>
+                <h3>Dynamic Island Mode</h3>
+                <p>No notch? No problem. Droppy creates a Dynamic Island-style notch on any Mac, including external
+                    displays.</p>
+            </div>
+            <div class="showcase-card reveal" style="--i:1">
+                <div class="card-icon">🌙</div>
+                <h3>Advanced Autofade</h3>
+                <p>The shelf auto-hides and auto-reveals based on what you're doing. Per-app rules for complete control.
+                </p>
+            </div>
+            <div class="showcase-card reveal" style="--i:2">
+                <div class="card-icon">🖼️</div>
+                <h3>Folder Interactions</h3>
+                <p>Create folders on the shelf, preview contents, drag between them. Full Finder-like file management in
+                    the notch.</p>
+            </div>
+            <div class="showcase-card reveal" style="--i:3">
+                <div class="card-icon">🔄</div>
+                <h3>AirDrop Integration</h3>
+                <p>Drop files onto the AirDrop zone to instantly share with nearby devices. Seamless wireless sharing.
+                </p>
+            </div>
+            <div class="showcase-card reveal" style="--i:4">
+                <div class="card-icon">⌨️</div>
+                <h3>Keyboard Shortcuts</h3>
+                <p>Global shortcuts for clipboard, shelf, basket, and every extension. Fully customizable.</p>
+            </div>
+            <div class="showcase-card reveal" style="--i:5">
+                <div class="card-icon">🔒</div>
+                <h3>Privacy First</h3>
+                <p>Everything runs locally. No telemetry, no analytics, no cloud. Your data stays on your Mac.</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ==========================================
+         EXTENSIONS SHOWCASE
+         ========================================== -->
+    <section class="showcase">
+        <p class="section-label reveal">Modular Extensions</p>
+        <h2 class="section-title reveal">Install only what you need.</h2>
+        <p class="section-desc reveal" style="margin: 0 auto 48px; text-align: center;">15+ extensions that add powerful
+            capabilities — from music control to AI background removal. All included with your license.</p>
+
+        <div class="ext-grid stagger">
+            <a href="extensions.html" class="ext-card reveal" style="--i:0; text-decoration: none; color: inherit;">
+                <img src="assets/icons/apple-music.png" alt="Apple Music">
+                <div>
+                    <h4>Apple Music</h4>
+                    <p>Full playback controls & lyrics</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:1; text-decoration: none; color: inherit;">
+                <img src="assets/icons/spotify.png" alt="Spotify">
+                <div>
+                    <h4>Spotify</h4>
+                    <p>Album art & visualizer</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:2; text-decoration: none; color: inherit;">
+                <img src="assets/icons/notification-hud.png" alt="Notify Me!">
+                <div>
+                    <h4>Notify Me!</h4>
+                    <p>Notification banners in notch</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:3; text-decoration: none; color: inherit;">
+                <img src="assets/icons/window-snap.jpg" alt="Window Snap">
+                <div>
+                    <h4>Window Snap</h4>
+                    <p>Snap windows with shortcuts</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:4; text-decoration: none; color: inherit;">
+                <img src="assets/icons/element-capture.jpg" alt="Element Capture">
+                <div>
+                    <h4>Element Capture</h4>
+                    <p>Screenshot & annotation editor</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:5; text-decoration: none; color: inherit;">
+                <img src="assets/icons/terminotch.jpg" alt="Termi-Notch">
+                <div>
+                    <h4>Termi-Notch</h4>
+                    <p>Quick terminal in your notch</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:6; text-decoration: none; color: inherit;">
+                <img src="assets/icons/ai-bg.jpg" alt="AI Background Removal">
+                <div>
+                    <h4>AI Background Removal</h4>
+                    <p>One-click background removal</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:7; text-decoration: none; color: inherit;">
+                <img src="assets/icons/voice-transcribe.jpg" alt="Voice Transcribe">
+                <div>
+                    <h4>Voice Transcribe</h4>
+                    <p>On-device AI transcription</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:8; text-decoration: none; color: inherit;">
+                <img src="assets/icons/high-alert.jpg" alt="High Alert">
+                <div>
+                    <h4>High Alert</h4>
+                    <p>Keep your Mac awake</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:9; text-decoration: none; color: inherit;">
+                <img src="assets/icons/snap-camera-v2.png" alt="Notchface">
+                <div>
+                    <h4>Notchface</h4>
+                    <p>Live camera in your notch</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:10; text-decoration: none; color: inherit;">
+                <img src="assets/icons/reminders.png" alt="Reminders">
+                <div>
+                    <h4>Reminders</h4>
+                    <p>Natural language tasks</p>
+                </div>
+            </a>
+            <a href="extensions.html" class="ext-card reveal" style="--i:11; text-decoration: none; color: inherit;">
+                <img src="assets/icons/alfred.png" alt="Alfred">
+                <div>
+                    <h4>Alfred</h4>
+                    <p>Trigger workflows from notch</p>
+                </div>
+            </a>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ==========================================
+         PRICING CTA
+         ========================================== -->
+    <section class="pricing-cta">
+        <p class="section-label reveal">Simple Pricing</p>
+        <h2 class="section-title reveal" style="margin-bottom: 48px;">One price. Everything included.</h2>
+
+        <div class="pricing-card reveal-scale">
+            <div class="price">€6.99</div>
+            <div class="price-label">One-time payment · Lifetime</div>
+            <div class="price-features">
+                <div class="price-feature">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg>
+                    All core features included
+                </div>
+                <div class="price-feature">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg>
+                    All 15+ extensions included
+                </div>
+                <div class="price-feature">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg>
+                    All future updates included
+                </div>
+                <div class="price-feature">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                    </svg>
+                    No subscriptions, no recurring fees
+                </div>
+            </div>
+            <a id="pricing-download-btn" href="https://github.com/iordv/Droppy/releases/latest" class="download-btn">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Droppy
+            </a>
+        </div>
+    </section>
+
+    <!-- ==========================================
+         FOOTER
+         ========================================== -->
+    <footer style="text-align: center; padding: 40px 24px 100px; color: var(--muted); font-size: 13px;">
+        <p>Made with ❤️ for the Mac community</p>
+        <p style="margin-top: 6px;">
+            <a href="https://github.com/iordv/Droppy" style="color: var(--secondary); text-decoration: none;">GitHub</a>
+            &nbsp;·&nbsp;
+            <a href="https://discord.gg/uvA6PUj4" style="color: var(--secondary); text-decoration: none;">Discord</a>
+            &nbsp;·&nbsp;
+            <a href="extensions.html" style="color: var(--secondary); text-decoration: none;">Extensions</a>
+        </p>
+    </footer>
+
+    <!-- ==========================================
+         CTA BAR
+         ========================================== -->
+    <div class="cta-bar" id="cta-bar">
+        <a id="download-btn" href="https://github.com/iordv/Droppy/releases/latest" class="btn btn-main">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download
+        </a>
+        <a href="index.html" class="btn">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1" />
+            </svg>
+            Home
+        </a>
+        <a href="extensions.html" class="btn">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path
+                    d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+            </svg>
+            Extensions
+        </a>
+    </div>
+
+    <!-- ==========================================
+         SCRIPTS
+         ========================================== -->
+    <script>
+        document.oncontextmenu = () => false;
+
+        // Scroll-triggered reveal animations
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, {
+            threshold: 0.1,
+            rootMargin: '0px 0px -60px 0px'
+        });
+
+        document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale').forEach(el => {
+            observer.observe(el);
+        });
+
+        // Show CTA bar after scrolling past hero
+        const ctaBar = document.getElementById('cta-bar');
+        const heroObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) {
+                    ctaBar.classList.add('visible');
+                } else {
+                    ctaBar.classList.remove('visible');
+                }
+            });
+        }, { threshold: 0.3 });
+
+        heroObserver.observe(document.querySelector('.hero'));
+
+        // Smooth page transitions
+        document.querySelectorAll('a[href]:not([target="_blank"])').forEach(link => {
+            link.addEventListener('click', e => {
+                const href = link.getAttribute('href');
+                if (href && !href.startsWith('#') && !href.startsWith('javascript')) {
+                    e.preventDefault();
+                    document.body.style.opacity = '0';
+                    document.body.style.transition = 'opacity 0.3s ease';
+                    ctaBar.classList.add('fade-out');
+                    setTimeout(() => window.location.href = href, 300);
+                }
+            });
+        });
+
+        // Direct download link to latest DMG
+        fetch('https://api.github.com/repos/iordv/Droppy/releases/latest').then(r => r.json()).then(rel => {
+            const dmg = rel.assets?.find(a => a.name.endsWith('.dmg'));
+            if (dmg) {
+                document.getElementById('download-btn').href = dmg.browser_download_url;
+                document.getElementById('pricing-download-btn').href = dmg.browser_download_url;
+            }
+        }).catch(() => { });
+    </script>
+</body>
+
+</html>

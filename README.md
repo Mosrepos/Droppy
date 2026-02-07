@@ -71,7 +71,7 @@ Modular extensions add even more power. **Install only what you need.**
 <details>
 <summary><b>How much does Droppy cost?</b></summary>
 <br>
-Droppy is a one-time payment of €5.99 — lifetime. All features, all extensions, and all future updates included. No subscriptions, no recurring fees.
+Droppy is a one-time payment of €6.99 — lifetime. All features, all extensions, and all future updates included. No subscriptions, no recurring fees.
 </details>
 
 <details>
