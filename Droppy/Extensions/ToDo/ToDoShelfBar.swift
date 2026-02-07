@@ -552,6 +552,12 @@ private final class ToDoRoundedBadgeLayoutManager: NSLayoutManager {
                 ) { rect, _ in
                     var badgeRect = rect.offsetBy(dx: origin.x, dy: origin.y)
                     badgeRect = badgeRect.insetBy(dx: -4, dy: -1)
+                    // Clamp left edge so the badge is never cut off at the field boundary
+                    if badgeRect.origin.x < origin.x {
+                        let overflow = origin.x - badgeRect.origin.x
+                        badgeRect.origin.x = origin.x
+                        badgeRect.size.width -= overflow
+                    }
                     let radius = min(badgeRect.height / 2.0, 8)
                     let path = NSBezierPath(roundedRect: badgeRect, xRadius: radius, yRadius: radius)
                     color.setFill()
@@ -661,14 +667,30 @@ struct ToDoStableTextField: NSViewRepresentable {
                         attributed.addAttributes([
                             .foregroundColor: NSColor.white.withAlphaComponent(0.95),
                             .toDoBadgeColor: NSColor.white.withAlphaComponent(0.18),
-                            .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+                            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                            .kern: 0.3
                         ], range: nsRange)
+                        // Add spacing around badge so it doesn't touch adjacent text
+                        if nsRange.location > 0 {
+                            attributed.addAttribute(.kern, value: 4.0, range: NSRange(location: nsRange.location - 1, length: 1))
+                        }
+                        if NSMaxRange(nsRange) < fullRange.length {
+                            attributed.addAttribute(.kern, value: 4.0, range: NSRange(location: NSMaxRange(nsRange) - 1, length: 1))
+                        }
                     case .listMentionToken:
                         attributed.addAttributes([
                             .foregroundColor: NSColor.white.withAlphaComponent(0.95),
                             .toDoBadgeColor: NSColor.white.withAlphaComponent(0.14),
-                            .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+                            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                            .kern: 0.3
                         ], range: nsRange)
+                        // Add spacing around badge so it doesn't touch adjacent text
+                        if nsRange.location > 0 {
+                            attributed.addAttribute(.kern, value: 4.0, range: NSRange(location: nsRange.location - 1, length: 1))
+                        }
+                        if NSMaxRange(nsRange) < fullRange.length {
+                            attributed.addAttribute(.kern, value: 4.0, range: NSRange(location: NSMaxRange(nsRange) - 1, length: 1))
+                        }
                     }
                 }
             }
