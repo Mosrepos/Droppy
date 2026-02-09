@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Droppy — The free native productivity layer macOS is missing</title>
     <meta name="description"
-        content="Droppy: The ultimate drag-and-drop productivity companion for macOS. Free, open-source, and built entirely in Swift.">
+        content="Droppy: The ultimate drag-and-drop productivity companion for macOS. Source-available and built entirely in Swift.">
     <link rel="icon" type="image/png" href="assets/app-icon.png">
     <link rel="preconnect" href="https://rsms.me/">
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
@@ -1394,7 +1394,7 @@
         <div class="donate-modal">
             <span class="donate-modal-icon">☕</span>
             <h2>A Quick Note</h2>
-            <p>Droppy is <span class="highlight">completely free</span> and <span class="highlight">open source</span>,
+            <p>Droppy is <span class="highlight">source-available</span>,
                 built with love by a single developer.</p>
             <p>If you can afford it, a small donation would mean the world. It helps keep this project alive and makes
                 future improvements possible.</p>

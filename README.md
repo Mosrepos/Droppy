@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>The native productivity layer macOS is missing.</b><br>
-  <sub>100% Swift • Signed & Notarized • Open Source</sub>
+  <sub>100% Swift • Signed & Notarized • Source-Available</sub>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 <p align="center">
   <a href="https://github.com/iordv/Droppy/releases/latest"><img src="https://img.shields.io/github/v/release/iordv/Droppy?style=flat-square&label=Version" /></a>
   <a href="https://github.com/iordv/Droppy/stargazers"><img src="https://img.shields.io/github/stars/iordv/Droppy?style=flat-square" /></a>
-  <a href="https://github.com/iordv/Droppy/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" /></a>
+  <a href="https://github.com/iordv/Droppy/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Source--Available-blue?style=flat-square" /></a>
   <a href="https://discord.gg/uvA6PUj4"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
 </p>
 
@@ -145,7 +145,8 @@ Absolutely! PRs welcome. Check out the issues for ideas or propose your own.
 
 ## License
 
-Droppy is released under the [GPL-3.0 License with Commons Clause](LICENSE).
+Droppy is source-available under [GPL-3.0 with Commons Clause](LICENSE).
+This license is not OSI open source and restricts selling the software.
 
 <p align="center">
   <sub>Made with ❤️ in The Netherlands</sub>
