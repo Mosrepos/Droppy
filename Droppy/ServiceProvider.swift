@@ -16,7 +16,7 @@ class ServiceProvider: NSObject {
     
     private func handleFiles(from pboard: NSPasteboard, target: String) {
         let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.isActivated {
+        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
                 LicenseWindowController.shared.show()

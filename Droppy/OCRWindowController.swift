@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import CoreGraphics
 
 final class OCRWindowController: NSObject {
     static let shared = OCRWindowController()
@@ -17,7 +18,7 @@ final class OCRWindowController: NSObject {
         super.init()
     }
     
-    func show(with text: String) {
+    func show(with text: String, targetDisplayID: CGDirectDisplayID? = nil) {
         // If window already exists, close and recreate to ensure clean state
         close()
         
@@ -34,7 +35,17 @@ final class OCRWindowController: NSObject {
             defer: false
         )
         
-        newWindow.center()
+        if let screen = resolveScreen(for: targetDisplayID) {
+            let visibleFrame = screen.visibleFrame
+            let size = newWindow.frame.size
+            let origin = NSPoint(
+                x: visibleFrame.midX - (size.width / 2),
+                y: visibleFrame.midY - (size.height / 2)
+            )
+            newWindow.setFrameOrigin(origin)
+        } else {
+            newWindow.center()
+        }
         newWindow.title = "Extracted Text"
         newWindow.titlebarAppearsTransparent = true
         newWindow.titleVisibility = .visible
@@ -46,6 +57,7 @@ final class OCRWindowController: NSObject {
         newWindow.isReleasedWhenClosed = false
         newWindow.level = .screenSaver
         newWindow.hidesOnDeactivate = false
+        newWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
         newWindow.contentView = hostingView
         
@@ -62,7 +74,7 @@ final class OCRWindowController: NSObject {
         self.window = newWindow
     }
 
-    func presentExtractedText(_ text: String) {
+    func presentExtractedText(_ text: String, targetDisplayID: CGDirectDisplayID? = nil) {
         let shouldAutoCopy = UserDefaults.standard.preference(
             AppPreferenceKey.ocrAutoCopyExtractedText,
             default: PreferenceDefault.ocrAutoCopyExtractedText
@@ -73,7 +85,7 @@ final class OCRWindowController: NSObject {
             close()
             TextCopyFeedback.copyOCRText(text)
         } else {
-            show(with: text)
+            show(with: text, targetDisplayID: targetDisplayID)
         }
     }
     
@@ -84,6 +96,19 @@ final class OCRWindowController: NSObject {
             panel.close()
             AppKitMotion.resetPresentationState(panel)
             self?.window = nil
+        }
+    }
+
+    private func resolveScreen(for displayID: CGDirectDisplayID?) -> NSScreen? {
+        guard let displayID else {
+            return nil
+        }
+
+        return NSScreen.screens.first { screen in
+            guard let screenID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+                return false
+            }
+            return screenID == displayID
         }
     }
 }

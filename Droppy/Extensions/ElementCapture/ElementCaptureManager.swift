@@ -219,6 +219,8 @@ final class ElementCaptureManager: ObservableObject {
     private var lastDetectedFrame: CGRect = .zero
     private var globalHotKeys: [ElementCaptureMode: GlobalHotKey] = [:]  // Multiple hot keys
     private var escapeMonitor: Any?  // Local monitor for ESC key
+    private var globalEscapeMonitor: Any?  // Global monitor for ESC key when focus changes
+    private var captureCursorPushed = false
     private var activeMode: ElementCaptureMode = .element  // Current capture mode
     private var isOCRCapture = false  // Flag for OCR mode capture
     
@@ -281,6 +283,9 @@ final class ElementCaptureManager: ObservableObject {
         }
         
         guard !isActive else { return }
+
+        // Defensive cleanup for cases where a previous run left transient UI state behind.
+        stopCaptureMode()
         
         // Check permissions first
         guard checkPermissions() else {
@@ -298,13 +303,16 @@ final class ElementCaptureManager: ObservableObject {
             startMouseTracking()
             installEventTap()
             installEscapeMonitor()
-            NSCursor.crosshair.push()
+            activateCaptureCursor()
             
         case .area:
             // Area mode: click-drag to select region
-            setupAreaSelectionOverlay()
+            guard setupAreaSelectionOverlay() else {
+                stopCaptureMode()
+                return
+            }
             installEscapeMonitor()
-            NSCursor.crosshair.push()
+            activateCaptureCursor()
             print("[ElementCapture] Area selection mode started")
             return
             
@@ -324,20 +332,31 @@ final class ElementCaptureManager: ObservableObject {
             
         case .ocr:
             // OCR mode: area selection then perform OCR on result
-            setupAreaSelectionOverlay(forOCR: true)
+            guard setupAreaSelectionOverlay(forOCR: true) else {
+                stopCaptureMode()
+                return
+            }
             installEscapeMonitor()
-            NSCursor.crosshair.push()
+            activateCaptureCursor()
             print("[ElementCapture] OCR capture mode started")
             return
         }
         
-        print("[ElementCapture] Capture mode started: \\(mode.displayName)")
+        print("[ElementCapture] Capture mode started: \(mode.displayName)")
     }
     
     /// Stop element capture mode
     func stopCaptureMode() {
-        guard isActive else { return }
-        
+        let hadState = isActive ||
+            mouseTrackingTimer != nil ||
+            eventTap != nil ||
+            runLoopSource != nil ||
+            escapeMonitor != nil ||
+            globalEscapeMonitor != nil ||
+            highlightWindow != nil ||
+            areaSelectionWindow != nil ||
+            captureCursorPushed
+
         isActive = false
         hasElement = false
         currentElementFrame = .zero
@@ -364,9 +383,11 @@ final class ElementCaptureManager: ObservableObject {
         currentScreenDisplayID = 0
         
         // Restore cursor
-        NSCursor.pop()
-        
-        print("[ElementCapture] Capture mode stopped")
+        deactivateCaptureCursor()
+
+        if hadState {
+            print("[ElementCapture] Capture mode stopped")
+        }
     }
     
     // MARK: - Shortcut Persistence
@@ -430,7 +451,7 @@ final class ElementCaptureManager: ObservableObject {
             guard let self = self else { return }
             guard !ExtensionType.elementCapture.isRemoved else { return }
             
-            print("🔑 [ElementCapture] ✅ Shortcut triggered for mode: \\(mode.displayName)")
+            print("🔑 [ElementCapture] ✅ Shortcut triggered for mode: \(mode.displayName)")
             
             if self.isActive {
                 self.stopCaptureMode()
@@ -440,14 +461,14 @@ final class ElementCaptureManager: ObservableObject {
         }
         
         isShortcutEnabled = !globalHotKeys.isEmpty
-        print("[ElementCapture] Shortcut monitoring started for \\(mode.displayName): \\(savedShortcut.description)")
+        print("[ElementCapture] Shortcut monitoring started for \(mode.displayName): \(savedShortcut.description)")
     }
     
     /// Stop monitoring shortcut for a specific mode
     func stopMonitoringShortcut(for mode: ElementCaptureMode) {
         globalHotKeys[mode] = nil  // GlobalHotKey deinit handles unregistration
         isShortcutEnabled = !globalHotKeys.isEmpty
-        print("[ElementCapture] Shortcut monitoring stopped for \\(mode.displayName)")
+        print("[ElementCapture] Shortcut monitoring stopped for \(mode.displayName)")
     }
     
     /// Stop monitoring all shortcuts
@@ -579,7 +600,8 @@ final class ElementCaptureManager: ObservableObject {
     
     private var areaSelectionWindow: AreaSelectionWindow?
     
-    private func setupAreaSelectionOverlay(forOCR: Bool = false) {
+    @discardableResult
+    private func setupAreaSelectionOverlay(forOCR: Bool = false) -> Bool {
         // Store OCR mode flag
         isOCRCapture = forOCR
         
@@ -587,7 +609,7 @@ final class ElementCaptureManager: ObservableObject {
         
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main else {
             print("[ElementCapture] ERROR: No screen found for area selection!")
-            return
+            return false
         }
         
         // Set display ID for capture (critical!)
@@ -617,8 +639,10 @@ final class ElementCaptureManager: ObservableObject {
             self?.stopCaptureMode()
         }
         
-        areaSelectionWindow?.orderFrontRegardless()
+        areaSelectionWindow?.presentForCapture()
+        NSCursor.crosshair.set()
         print("[ElementCapture] Created area selection window, frame: \(screen.frame)\(forOCR ? " (OCR mode)" : "")")
+        return areaSelectionWindow != nil
     }
     
     private func captureArea(_ rect: CGRect, on screen: NSScreen) async {
@@ -630,49 +654,68 @@ final class ElementCaptureManager: ObservableObject {
         
         // Hide the selection window before capturing
         await MainActor.run {
-            self.areaSelectionWindow?.orderOut(nil)
+            if let overlay = self.areaSelectionWindow {
+                overlay.alphaValue = 0
+                overlay.orderOut(nil)
+                overlay.close()
+            }
+            self.areaSelectionWindow = nil
         }
         
         // Small delay to let window hide
         try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-        
-        // The rect from AreaSelectionView is in view coordinates (Cocoa, bottom-left origin).
-        // Need to convert to Quartz coordinates (top-left origin) for capture.
-        // The view's origin is at the window's origin which matches the screen frame.
-        
-        // First, convert the rect from view coordinates to screen coordinates
-        // The view frame matches the screen frame, so:
+
+        // The rect from AreaSelectionView is NSView-local Cocoa coordinates (origin bottom-left).
+        // Convert to global Cocoa coordinates and capture directly on the selected screen.
         let screenRect = CGRect(
             x: screen.frame.origin.x + rect.origin.x,
             y: screen.frame.origin.y + rect.origin.y,
             width: rect.width,
             height: rect.height
         )
-        
-        // Now convert from Cocoa screen coordinates to Quartz coordinates
-        // Quartz Y=0 is at the TOP of the primary screen
-        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
-        let quartzRect = CGRect(
-            x: screenRect.origin.x,
-            y: primaryScreenHeight - screenRect.origin.y - screenRect.height,
-            width: screenRect.width,
-            height: screenRect.height
-        )
-        
-        print("[ElementCapture] Area capture rect: view=\(rect), screen=\(screenRect), quartz=\(quartzRect)")
-        
-        // Use the same capture path as element capture
-        await MainActor.run {
-            self.currentElementFrame = quartzRect
-            self.hasElement = true
+
+        print("[ElementCapture] Area capture rect: view=\(rect), screen=\(screenRect)")
+
+        let performOCR = isOCRCapture
+        do {
+            let image = try await captureRect(screenRect, on: screen)
+            let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+
+            if performOCR {
+                do {
+                    let text = try await OCRService.shared.performOCR(on: nsImage)
+                    let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let targetDisplayID = self.currentScreenDisplayID
+                    await MainActor.run {
+                        if normalizedText.isEmpty {
+                            OCRWindowController.shared.show(
+                                with: "No text detected in the selected area.",
+                                targetDisplayID: targetDisplayID
+                            )
+                        } else {
+                            OCRWindowController.shared.presentExtractedText(
+                                normalizedText,
+                                targetDisplayID: targetDisplayID
+                            )
+                        }
+                    }
+                    playScreenshotSound()
+                } catch {
+                    print("[ElementCapture] OCR failed: \(error)")
+                }
+            } else {
+                copyToClipboard(image)
+                playScreenshotSound()
+                await MainActor.run {
+                    CapturePreviewWindowController.shared.show(with: nsImage)
+                }
+            }
+        } catch {
+            print("[ElementCapture] Area capture failed: \(error)")
         }
-        
-        // Trigger the capture
-        await captureCurrentElement()
-        
-        // Cleanup
+
         await MainActor.run {
-            self.areaSelectionWindow = nil
+            self.isOCRCapture = false
             self.stopCaptureMode()
         }
     }
@@ -720,42 +763,32 @@ final class ElementCaptureManager: ObservableObject {
         // Move window to this screen if needed
         ensureHighlightWindowOnScreen(screen)
         
-        let quartzPoint = convertToQuartzCoordinates(mouseLocation, screen: screen)
+        let queryPoints = candidateQueryPoints(for: mouseLocation, on: screen)
         
-        // Try Accessibility API first, fall back to window detection
-        var elementFrame: CGRect
-        if let axFrame = getElementFrameAtPosition(quartzPoint) {
-            elementFrame = axFrame
-        } else if let windowFrame = getWindowFrameAtPosition(quartzPoint) {
-            // Fallback: Use window frame for apps that don't expose Accessibility elements
-            // (Electron apps like Spotify, Discord, Zen browser, etc.)
-            elementFrame = windowFrame
-        } else {
-            hideHighlight()
-            return
+        // Try Accessibility API first, then fall back to window bounds.
+        var elementFrame: CGRect?
+        
+        for point in queryPoints {
+            guard let axFrame = getElementFrameAtPosition(point) else { continue }
+            if let sanitized = sanitizeDetectedFrame(axFrame, queryPoint: point, on: screen) {
+                elementFrame = sanitized
+                break
+            }
         }
         
-        // SAFETY: Clamp element frame to reasonable bounds (prevent scroll container overflow)
-        // AX API can return heights like 129,000+ pixels for scroll view content areas
-        // which would crash WindowServer when attempting screen capture
-        let maxDimension: CGFloat = 10000  // No UI element should exceed this
-        if elementFrame.width > maxDimension || elementFrame.height > maxDimension {
-            print("[ElementCapture] SAFETY: Clamping oversized frame \(elementFrame.size) to screen bounds")
-            // Clamp to visible screen bounds in Quartz coordinates
-            let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
-            let screenFrameQuartz = CGRect(
-                x: screen.frame.origin.x,
-                y: primaryScreenHeight - screen.frame.origin.y - screen.frame.height,
-                width: screen.frame.width,
-                height: screen.frame.height
-            )
-            elementFrame = elementFrame.intersection(screenFrameQuartz)
-            
-            // If intersection is empty or invalid, skip
-            if elementFrame.isEmpty || elementFrame.width < 1 || elementFrame.height < 1 {
-                hideHighlight()
-                return
+        if elementFrame == nil {
+            for point in queryPoints {
+                guard let windowFrame = getWindowFrameAtPosition(point) else { continue }
+                if let sanitized = sanitizeDetectedFrame(windowFrame, queryPoint: point, on: screen) {
+                    elementFrame = sanitized
+                    break
+                }
             }
+        }
+        
+        guard let elementFrame else {
+            hideHighlight()
+            return
         }
         
         // Apply padding
@@ -764,11 +797,11 @@ final class ElementCaptureManager: ObservableObject {
         // Only update if frame changed significantly (avoid micro-jitters)
         if !framesAreNearlyEqual(paddedFrame, lastDetectedFrame) {
             lastDetectedFrame = paddedFrame
-            currentElementFrame = paddedFrame
-            hasElement = true
             
             // Convert back to Cocoa coordinates for the overlay
             let cocoaFrame = convertToCocoaCoordinates(paddedFrame, screen: screen)
+            currentElementFrame = cocoaFrame
+            hasElement = true
             
             // DEBUG: Log coordinates for external monitor debugging
             let screenDisplayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
@@ -794,25 +827,88 @@ final class ElementCaptureManager: ObservableObject {
     
     // MARK: - Coordinate Conversion
     
+    /// Global Quartz reference maxY across all connected screens.
+    /// Quartz top-left conversions should use the top edge of the full virtual desktop,
+    /// not just the first screen's height.
+    private func globalQuartzReferenceMaxY() -> CGFloat {
+        NSScreen.screens.map { $0.frame.maxY }.max() ?? (NSScreen.main?.frame.maxY ?? 0)
+    }
+    
+    private func quartzScreenFrame(for screen: NSScreen) -> CGRect {
+        let topY = globalQuartzReferenceMaxY()
+        return CGRect(
+            x: screen.frame.origin.x,
+            y: topY - screen.frame.origin.y - screen.frame.height,
+            width: screen.frame.width,
+            height: screen.frame.height
+        )
+    }
+
+    private func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
+        NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+        }
+    }
+
     /// Convert Cocoa coordinates (bottom-left origin) to Quartz coordinates (top-left origin)
     private func convertToQuartzCoordinates(_ point: NSPoint, screen: NSScreen) -> CGPoint {
-        // In multi-monitor setups, Quartz Y=0 is at the top of the PRIMARY screen.
-        // We need the primary screen's height for coordinate conversion.
-        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
-        return CGPoint(x: point.x, y: primaryScreenHeight - point.y)
+        let topY = globalQuartzReferenceMaxY()
+        return CGPoint(x: point.x, y: topY - point.y)
     }
     
     /// Convert Quartz coordinates (top-left origin) to Cocoa coordinates (bottom-left origin)
     private func convertToCocoaCoordinates(_ rect: CGRect, screen: NSScreen) -> CGRect {
-        // Quartz Y=0 is at top of primary screen, Cocoa Y=0 is at bottom of primary screen.
-        // For ALL screens, the conversion uses the primary screen height as the reference.
-        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let topY = globalQuartzReferenceMaxY()
         return CGRect(
             x: rect.origin.x,
-            y: primaryScreenHeight - rect.origin.y - rect.height,
+            y: topY - rect.origin.y - rect.height,
             width: rect.width,
             height: rect.height
         )
+    }
+
+    /// Some apps/APIs disagree on whether global coordinates are top-left or bottom-left based.
+    /// Query both conventions to keep hit-testing stable across displays and scaled modes.
+    private func candidateQueryPoints(for mouseLocation: NSPoint, on screen: NSScreen) -> [CGPoint] {
+        let quartzPoint = convertToQuartzCoordinates(mouseLocation, screen: screen)
+        let cocoaPoint = CGPoint(x: mouseLocation.x, y: mouseLocation.y)
+        
+        if abs(quartzPoint.x - cocoaPoint.x) < 0.5 && abs(quartzPoint.y - cocoaPoint.y) < 0.5 {
+            return [quartzPoint]
+        }
+        
+        return [quartzPoint, cocoaPoint]
+    }
+    
+    private func sanitizeDetectedFrame(_ frame: CGRect, queryPoint: CGPoint, on screen: NSScreen) -> CGRect? {
+        guard frame.origin.x.isFinite,
+              frame.origin.y.isFinite,
+              frame.width.isFinite,
+              frame.height.isFinite,
+              frame.width >= 1,
+              frame.height >= 1 else {
+            return nil
+        }
+        
+        let screenQuartz = quartzScreenFrame(for: screen)
+        guard frame.intersects(screenQuartz) else { return nil }
+        
+        // Reject absurd AX values (can be tens of thousands of points for scroll content).
+        let maxAllowedDimension = max(screenQuartz.width, screenQuartz.height) * 4.0
+        guard frame.width <= maxAllowedDimension, frame.height <= maxAllowedDimension else {
+            return nil
+        }
+        
+        guard frame.insetBy(dx: -2, dy: -2).contains(queryPoint) else {
+            return nil
+        }
+        
+        let clamped = frame.intersection(screenQuartz)
+        guard clamped.width >= 1, clamped.height >= 1 else {
+            return nil
+        }
+        
+        return clamped
     }
     
     // MARK: - Accessibility Element Detection
@@ -980,15 +1076,24 @@ final class ElementCaptureManager: ObservableObject {
     // MARK: - ESC Key Monitor
     
     private func installEscapeMonitor() {
+        removeEscapeMonitor()
+
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             // Check for ESC key (keyCode 53)
             if event.keyCode == 53 {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self?.stopCaptureMode()
                 }
                 return nil  // Swallow the event
             }
             return event
+        }
+
+        globalEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            Task { @MainActor in
+                self?.stopCaptureMode()
+            }
         }
     }
     
@@ -997,6 +1102,26 @@ final class ElementCaptureManager: ObservableObject {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
         }
+        if let monitor = globalEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalEscapeMonitor = nil
+        }
+    }
+
+    private func activateCaptureCursor() {
+        if !captureCursorPushed {
+            NSCursor.crosshair.push()
+            captureCursorPushed = true
+        }
+        NSCursor.crosshair.set()
+    }
+
+    private func deactivateCaptureCursor() {
+        if captureCursorPushed {
+            NSCursor.pop()
+            captureCursorPushed = false
+        }
+        NSCursor.arrow.set()
     }
     
     // MARK: - Screen Capture
@@ -1010,6 +1135,11 @@ final class ElementCaptureManager: ObservableObject {
             stopCaptureMode()
             return
         }
+        guard let targetScreen = screen(for: currentScreenDisplayID) else {
+            isOCRCapture = false
+            stopCaptureMode()
+            return
+        }
         
         // 1. Flash animation on the highlight
         highlightWindow?.flashCapture()
@@ -1018,27 +1148,42 @@ final class ElementCaptureManager: ObservableObject {
         try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
         
         // 3. Hide overlay
-        highlightWindow?.orderOut(nil)
+        await MainActor.run {
+            self.highlightWindow?.alphaValue = 0
+            self.highlightWindow?.orderOut(nil)
+        }
         
         // 4. Brief delay to ensure overlay is hidden
         try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
         
         // 5. Capture the element
         do {
-            let image = try await captureRect(frameToCapture)
+            let image = try await captureRect(frameToCapture, on: targetScreen)
             let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
             
             if performOCR {
                 // OCR mode: extract text from image
                 do {
                     let text = try await OCRService.shared.performOCR(on: nsImage)
-                    if !text.isEmpty {
+                    let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !normalizedText.isEmpty {
+                        let targetDisplayID = self.currentScreenDisplayID
                         await MainActor.run {
-                            OCRWindowController.shared.presentExtractedText(text)
+                            OCRWindowController.shared.presentExtractedText(
+                                normalizedText,
+                                targetDisplayID: targetDisplayID
+                            )
                         }
                         playScreenshotSound()
                         print("[ElementCapture] OCR completed successfully")
                     } else {
+                        let targetDisplayID = self.currentScreenDisplayID
+                        await MainActor.run {
+                            OCRWindowController.shared.show(
+                                with: "No text detected in the selected area.",
+                                targetDisplayID: targetDisplayID
+                            )
+                        }
                         print("[ElementCapture] OCR returned empty text")
                     }
                 } catch {
@@ -1073,74 +1218,72 @@ final class ElementCaptureManager: ObservableObject {
         // Get the screen under the mouse cursor
         let mouseLocation = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main else {
-            isActive = false
+            stopCaptureMode()
             return
         }
-        
-        // Convert screen frame (AppKit coords) to Quartz coordinates
-        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
-        let quartzRect = CGRect(
-            x: screen.frame.origin.x,
-            y: primaryScreenHeight - screen.frame.origin.y - screen.frame.height,
-            width: screen.frame.width,
-            height: screen.frame.height
-        )
-        
+
         // Track which display we're capturing
         if let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
             currentScreenDisplayID = displayID
         }
-        
+
         do {
-            let image = try await captureRect(quartzRect)
+            // Capture the exact selected display surface in that screen's local coordinate space.
+            let image = try await captureRect(screen.frame, on: screen)
             let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-            
+
             copyToClipboard(image)
             playScreenshotSound()
             print("[ElementCapture] Fullscreen captured successfully")
-            
+
             await MainActor.run {
                 CapturePreviewWindowController.shared.show(with: nsImage)
             }
-            
+
         } catch {
             print("[ElementCapture] Fullscreen capture failed: \(error)")
         }
-        
-        isActive = false
+
+        stopCaptureMode()
     }
     
     // MARK: - Window Capture
     
     private func captureWindowUnderCursor() async {
-        // Get window under cursor using existing method
         let mouseLocation = NSEvent.mouseLocation
-        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
-        let quartzMousePoint = CGPoint(x: mouseLocation.x, y: primaryScreenHeight - mouseLocation.y)
-        
-        guard let windowFrame = getWindowFrameAtPosition(quartzMousePoint) else {
-            print("[ElementCapture] No window found under cursor")
-            isActive = false
+        guard let mouseScreen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main else {
+            print("[ElementCapture] Could not resolve target screen for window capture")
+            stopCaptureMode()
             return
         }
         
-        // Find which screen this window is on
-        if let screen = NSScreen.screens.first(where: { screen in
-            let quartzScreenRect = CGRect(
-                x: screen.frame.origin.x,
-                y: primaryScreenHeight - screen.frame.origin.y - screen.frame.height,
-                width: screen.frame.width,
-                height: screen.frame.height
-            )
-            return quartzScreenRect.intersects(windowFrame)
-        }) {
-            if let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
-                currentScreenDisplayID = displayID
-            }
+        let queryPoints = candidateQueryPoints(for: mouseLocation, on: mouseScreen)
+        
+        var windowFrame: CGRect?
+        var targetScreen: NSScreen?
+        
+        for point in queryPoints {
+            guard let frame = getWindowFrameAtPosition(point) else { continue }
+            guard let screen = NSScreen.screens.first(where: { quartzScreenFrame(for: $0).intersects(frame) }) else { continue }
+            guard let sanitized = sanitizeDetectedFrame(frame, queryPoint: point, on: screen) else { continue }
+            windowFrame = sanitized
+            targetScreen = screen
+            break
+        }
+        
+        guard let windowFrame, let targetScreen else {
+            print("[ElementCapture] No window found under cursor")
+            stopCaptureMode()
+            return
+        }
+        
+        if let displayID = targetScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            currentScreenDisplayID = displayID
         }
         
         do {
-            let image = try await captureRect(windowFrame)
+            let cocoaWindowFrame = convertToCocoaCoordinates(windowFrame, screen: targetScreen)
+            let image = try await captureRect(cocoaWindowFrame, on: targetScreen)
             let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
             
             copyToClipboard(image)
@@ -1155,141 +1298,83 @@ final class ElementCaptureManager: ObservableObject {
             print("[ElementCapture] Window capture failed: \(error)")
         }
         
-        isActive = false
+        stopCaptureMode()
     }
     
-    private func captureRect(_ rect: CGRect) async throws -> CGImage {
-        // PERMISSION CHECK: Verify screen recording permission BEFORE calling ScreenCaptureKit
-        // SCShareableContent triggers macOS prompts even when CGPreflight passes in some cases
+    /// Capture a rect expressed in global Cocoa coordinates, constrained to one target NSScreen.
+    /// This avoids cross-display/global-origin assumptions that can crop or offset captures.
+    private func captureRect(_ cocoaRect: CGRect, on screen: NSScreen) async throws -> CGImage {
         guard CGPreflightScreenCaptureAccess() else {
             print("[ElementCapture] Screen recording permission not granted - aborting capture")
-            // Request permission via system dialog
             CGRequestScreenCaptureAccess()
             throw CaptureError.permissionDenied
         }
         
-        // SAFETY CHECK 1: Validate input rect has reasonable dimensions
-        guard rect.width > 0 && rect.height > 0 && rect.width < 50000 && rect.height < 50000 else {
-            print("[ElementCapture] SAFETY: Invalid input rect dimensions: \(rect)")
-            throw CaptureError.noElement
+        guard let targetDisplayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            throw CaptureError.noDisplay
         }
         
-        // Get available content
+        // Keep capture requests strictly on the intended screen in global Cocoa coordinates.
+        let requestedRect = cocoaRect.standardized
+        let clampedCocoaRect = requestedRect.intersection(screen.frame)
+        guard clampedCocoaRect.width >= 1, clampedCocoaRect.height >= 1 else {
+            throw CaptureError.noElement
+        }
+
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        
-        // Use the tracked display ID from mouse position - this is more reliable than
-        // rect intersection which can fail when elements span display boundaries
-        let targetDisplayID = currentScreenDisplayID
-        
-        // Find the SCDisplay matching our tracked display ID
         guard let display = content.displays.first(where: { $0.displayID == targetDisplayID }) else {
             print("[ElementCapture] No display found for ID: \(targetDisplayID)")
             throw CaptureError.noDisplay
         }
         
-        // Find the NSScreen for this display to get proper coordinates and scale
-        guard let targetScreen = NSScreen.screens.first(where: { screen in
-            guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
-            return displayID == display.displayID
-        }) else {
-            print("[ElementCapture] SAFETY: Could not find NSScreen for display \(display.displayID)")
-            throw CaptureError.noDisplay
-        }
-        
-        // Get the display's origin in Quartz coordinates
-        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
-        let displayOriginQuartz = CGPoint(
-            x: targetScreen.frame.origin.x,
-            y: primaryScreenHeight - targetScreen.frame.origin.y - targetScreen.frame.height
-        )
-        
-        // Convert global Quartz rect to display-relative coordinates
-        var relativeRect = CGRect(
-            x: rect.origin.x - displayOriginQuartz.x,
-            y: rect.origin.y - displayOriginQuartz.y,
-            width: rect.width,
-            height: rect.height
-        )
-        
-        // SAFETY CHECK 2: Clamp relativeRect to valid display bounds (0 to displaySize)
-        // This prevents negative coordinates and oversized rects that crash WindowServer
-        let displayWidth = CGFloat(display.width)
-        let displayHeight = CGFloat(display.height)
-        
-        // Clamp origin to be >= 0
-        if relativeRect.origin.x < 0 {
-            relativeRect.size.width += relativeRect.origin.x  // Reduce width by overflow
-            relativeRect.origin.x = 0
-        }
-        if relativeRect.origin.y < 0 {
-            relativeRect.size.height += relativeRect.origin.y  // Reduce height by overflow
-            relativeRect.origin.y = 0
-        }
-        
-        // Clamp to not exceed display bounds
-        if relativeRect.maxX > displayWidth {
-            relativeRect.size.width = displayWidth - relativeRect.origin.x
-        }
-        if relativeRect.maxY > displayHeight {
-            relativeRect.size.height = displayHeight - relativeRect.origin.y
-        }
-        
-        // SAFETY CHECK 3: Final validation - dimensions must be positive and reasonable
-        guard relativeRect.width >= 1 && relativeRect.height >= 1 else {
-            print("[ElementCapture] SAFETY: After clamping, rect has invalid dimensions: \(relativeRect)")
+        let displayBounds = CGRect(x: 0, y: 0, width: CGFloat(display.width), height: CGFloat(display.height))
+        guard displayBounds.width >= 1, displayBounds.height >= 1 else {
             throw CaptureError.noElement
         }
         
-        // Derive scale from CGDisplay mode (logical points -> physical pixels).
-        // This is more reliable than SCDisplay dimension assumptions on scaled displays.
-        let fallbackScale = max(targetScreen.backingScaleFactor, 1.0)
-        var scaleX = fallbackScale
-        var scaleY = fallbackScale
-        
-        if let mode = CGDisplayCopyDisplayMode(targetDisplayID) {
-            let modeWidth = max(CGFloat(mode.width), 1)
-            let modeHeight = max(CGFloat(mode.height), 1)
-            let modeScaleX = CGFloat(mode.pixelWidth) / modeWidth
-            let modeScaleY = CGFloat(mode.pixelHeight) / modeHeight
-            if modeScaleX.isFinite && modeScaleX > 0 { scaleX = modeScaleX }
-            if modeScaleY.isFinite && modeScaleY > 0 { scaleY = modeScaleY }
+        // Map Cocoa point-space (screen-local) to ScreenCaptureKit display-space.
+        let screenWidth = max(screen.frame.width, 1)
+        let screenHeight = max(screen.frame.height, 1)
+        let xScale = displayBounds.width / screenWidth
+        let yScale = displayBounds.height / screenHeight
+        guard xScale.isFinite, yScale.isFinite, xScale > 0, yScale > 0 else {
+            throw CaptureError.captureFailed
         }
         
-        // Align to integral pixel boundaries before capture to avoid soft sampling blur.
-        var pixelRect = CGRect(
-            x: relativeRect.origin.x * scaleX,
-            y: relativeRect.origin.y * scaleY,
-            width: relativeRect.width * scaleX,
-            height: relativeRect.height * scaleY
-        ).integral
+        let localX = clampedCocoaRect.origin.x - screen.frame.origin.x
+        let localYFromBottom = clampedCocoaRect.origin.y - screen.frame.origin.y
+        let localYFromTop = screen.frame.height - localYFromBottom - clampedCocoaRect.height
         
-        let displayPixelBounds = CGRect(x: 0, y: 0, width: displayWidth, height: displayHeight)
-        pixelRect = pixelRect.intersection(displayPixelBounds)
-        
-        guard pixelRect.width >= 1 && pixelRect.height >= 1 else {
-            print("[ElementCapture] SAFETY: Pixel-aligned rect is invalid: \(pixelRect)")
-            throw CaptureError.noElement
-        }
-        
-        let sourceRect = CGRect(
-            x: pixelRect.origin.x / scaleX,
-            y: pixelRect.origin.y / scaleY,
-            width: pixelRect.width / scaleX,
-            height: pixelRect.height / scaleY
+        var sourceRect = CGRect(
+            x: localX * xScale,
+            y: localYFromTop * yScale,
+            width: clampedCocoaRect.width * xScale,
+            height: clampedCocoaRect.height * yScale
         )
         
-        let pixelWidth = max(1, Int(pixelRect.width))
-        let pixelHeight = max(1, Int(pixelRect.height))
+        // Expand to integral bounds so we never lose edge pixels due fractional coordinates.
+        sourceRect = CGRect(
+            x: floor(sourceRect.minX),
+            y: floor(sourceRect.minY),
+            width: ceil(sourceRect.maxX) - floor(sourceRect.minX),
+            height: ceil(sourceRect.maxY) - floor(sourceRect.minY)
+        )
         
-        print("[ElementCapture] Capture: global=\(rect), relative=\(relativeRect), source=\(sourceRect), pixels=\(pixelWidth)x\(pixelHeight), scale=\(String(format: "%.3f", scaleX))x\(String(format: "%.3f", scaleY))")
-        
-        // Configure capture
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        
+        sourceRect = sourceRect.intersection(displayBounds)
+        guard sourceRect.width >= 1, sourceRect.height >= 1 else {
+            throw CaptureError.noElement
+        }
+
+        // Exclude Droppy's own windows (selection/highlight/preview/editor) from capture.
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let windowsToExclude = content.windows.filter { window in
+            window.owningApplication?.processID == ownPID
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: windowsToExclude)
         let config = SCStreamConfiguration()
         config.sourceRect = sourceRect
-        config.width = pixelWidth
-        config.height = pixelHeight
+        config.width = max(1, Int(sourceRect.width.rounded(.up)))
+        config.height = max(1, Int(sourceRect.height.rounded(.up)))
         config.scalesToFit = false
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.showsCursor = false
@@ -1297,9 +1382,8 @@ final class ElementCaptureManager: ObservableObject {
             config.captureResolution = .best
         }
         
-        // Capture
-        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-        return image
+        print("[ElementCapture] Capture(local): displayID=\(targetDisplayID), screen=\(screen.frame), displayBounds=\(displayBounds), requested=\(requestedRect), clamped=\(clampedCocoaRect), source=\(sourceRect), output=\(config.width)x\(config.height)")
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
     
     private func copyToClipboard(_ image: CGImage) {

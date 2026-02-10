@@ -40,22 +40,6 @@ final class VoiceTranscribeMenuBar {
         // If recording stopped and it was invisi-record, show result
         if !recording && isInvisiRecording {
             isInvisiRecording = false
-            // Wait for transcription to complete, then show result
-            Task { @MainActor in
-                // Poll for completion
-                for _ in 0..<120 {
-                    try? await Task.sleep(for: .milliseconds(500))
-                    let state = VoiceTranscribeManager.shared.state
-                    if case .complete = state {
-                        VoiceTranscriptionResultController.shared.showResult()
-                        return
-                    } else if case .error = state {
-                        return
-                    } else if case .idle = state {
-                        return
-                    }
-                }
-            }
         }
     }
     

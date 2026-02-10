@@ -937,7 +937,8 @@ struct ScreenshotEditorView: View {
     }
     
     private func renderAnnotatedBitmap() -> NSBitmapImageRep? {
-        let renderSize = sourcePixelSize()
+        let source = resolvedSourceImage()
+        let renderSize = source.size
         let renderWidth = max(1, Int(renderSize.width.rounded(.toNearestOrAwayFromZero)))
         let renderHeight = max(1, Int(renderSize.height.rounded(.toNearestOrAwayFromZero)))
         
@@ -968,8 +969,13 @@ struct ScreenshotEditorView: View {
         
         let renderRect = NSRect(origin: .zero, size: renderSize)
         
-        // Draw original image at full pixel resolution.
-        originalImage.draw(in: renderRect, from: .zero, operation: .copy, fraction: 1.0)
+        // Draw from a single resolved source image representation so saved output
+        // matches the editor preview and does not switch NSImage reps unexpectedly.
+        if let cgImage = source.cgImage {
+            context.cgContext.draw(cgImage, in: renderRect)
+        } else {
+            originalImage.draw(in: renderRect, from: .zero, operation: .copy, fraction: 1.0)
+        }
         
         // Draw annotations on top in the same pixel coordinate space.
         for annotation in annotations {
@@ -980,18 +986,18 @@ struct ScreenshotEditorView: View {
         return bitmap
     }
     
-    private func sourcePixelSize() -> NSSize {
+    private func resolvedSourceImage() -> (cgImage: CGImage?, size: NSSize) {
+        if let cgImage = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return (cgImage, NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        
         if let bitmapRep = originalImage.representations
             .compactMap({ $0 as? NSBitmapImageRep })
             .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) }) {
-            return NSSize(width: bitmapRep.pixelsWide, height: bitmapRep.pixelsHigh)
+            return (nil, NSSize(width: bitmapRep.pixelsWide, height: bitmapRep.pixelsHigh))
         }
         
-        if let cgImage = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            return NSSize(width: cgImage.width, height: cgImage.height)
-        }
-        
-        return originalImage.size
+        return (nil, originalImage.size)
     }
     
     private func drawAnnotation(_ annotation: Annotation, in size: NSSize) {

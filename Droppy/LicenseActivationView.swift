@@ -48,7 +48,7 @@ struct LicenseActivationView: View {
                 .padding(.horizontal, horizontalInset)
                 .padding(.vertical, sectionInset)
         }
-        .frame(width: 430)
+        .frame(width: 540)
         .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(
@@ -122,7 +122,10 @@ struct LicenseActivationView: View {
                     icon: "envelope.fill",
                     focused: focusedField == .email
                 ) {
-                    TextField("Purchase email (optional)", text: $emailInput)
+                    TextField(
+                        "Purchase email (required)",
+                        text: $emailInput
+                    )
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .email)
                 }
@@ -240,6 +243,26 @@ struct LicenseActivationView: View {
                 }
                 .buttonStyle(DroppyAccentButtonStyle(color: .green, size: .small))
             } else {
+                if licenseManager.canStartTrial {
+                    Button {
+                        Task {
+                            if await licenseManager.startTrial(accountEmail: emailInput) {
+                                HapticFeedback.expand()
+                                onActivationCompleted()
+                            } else {
+                                HapticFeedback.error()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock.badge.checkmark")
+                            Text("Start Trial")
+                        }
+                    }
+                    .buttonStyle(DroppyPillButtonStyle(size: .small))
+                    .disabled(licenseManager.isChecking || !licenseManager.canSubmitTrialStart(accountEmail: emailInput))
+                }
+
                 Button {
                     activateLicense()
                 } label: {

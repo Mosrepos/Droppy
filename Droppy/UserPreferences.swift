@@ -39,6 +39,7 @@ enum AppPreferenceKey {
     static let hidePhysicalNotch = "hidePhysicalNotch"  // Draw black bar to hide the notch cutout
     static let hidePhysicalNotchOnExternals = "hidePhysicalNotchOnExternals"  // Sub-option: also apply to external displays
     static let dynamicIslandHeightOffset = "dynamicIslandHeightOffset"  // Height adjustment for Dynamic Island (-10 to +10)
+    static let notchWidthOffset = "notchWidthOffset"  // Width adjustment for physical notch rendering (-40 to +80)
     
     // MARK: - Media Player
     static let showMediaPlayer = "showMediaPlayer"
@@ -74,6 +75,8 @@ enum AppPreferenceKey {
     static let autoCollapseShelf = "autoCollapseShelf"
     static let autoCollapseDelay = "autoCollapseDelay"
     static let autoExpandShelf = "autoExpandShelf"
+    static let autoExpandOnExternalDisplays = "autoExpandOnExternalDisplays"  // Allow hover auto-expand on external displays
+    static let preventAutoExpandInMenuBar = "preventAutoExpandInMenuBar"  // Block hover auto-expand while pointer is in menu bar strip
     static let autoExpandDelay = "autoExpandDelay"
     static let autoOpenMediaHUDOnShelfExpand = "autoOpenMediaHUDOnShelfExpand"  // Auto-show media HUD when shelf expands
     static let autoShrinkShelf = "autoShrinkShelf"  // Legacy
@@ -123,6 +126,11 @@ enum AppPreferenceKey {
     static let gumroadLicenseKeyHint = "gumroadLicenseKeyHint"
     static let gumroadLicenseDeviceName = "gumroadLicenseDeviceName"
     static let gumroadLicenseLastValidatedAt = "gumroadLicenseLastValidatedAt"
+    static let licenseTrialConsumed = "licenseTrialConsumed"
+    static let licenseTrialStartedAt = "licenseTrialStartedAt"
+    static let licenseTrialExpiresAt = "licenseTrialExpiresAt"
+    static let licenseTrialLastRemoteSyncAt = "licenseTrialLastRemoteSyncAt"
+    static let licenseTrialAccountHash = "licenseTrialAccountHash"
     static let disableAnalytics = "disableAnalytics"
     
     // MARK: - Extension: Element Capture
@@ -144,6 +152,7 @@ enum AppPreferenceKey {
     // MARK: - Extension: Camera
     static let cameraInstalled = "camera_installed"
     static let cameraEnabled = "camera_enabled"  // Whether to show camera preview in expanded shelf
+    static let cameraPreferredDeviceID = "camera_preferredDeviceID"  // Empty = auto-pick best available camera
     
     // MARK: - Extension: Notification HUD
     static let notificationHUDInstalled = "notificationHUD_installed"
@@ -214,6 +223,7 @@ enum PreferenceDefault {
     static let hidePhysicalNotch = false     // Draw black bar to hide the notch cutout
     static let hidePhysicalNotchOnExternals = false  // Sub-option: also apply to external displays
     static let dynamicIslandHeightOffset: Double = 0  // No height adjustment by default
+    static let notchWidthOffset: Double = 0  // No width adjustment by default
     
     // MARK: - Media Player
     static let showMediaPlayer = true
@@ -250,6 +260,8 @@ enum PreferenceDefault {
     // PREMIUM PARITY: 0.25s expand, 0.10s collapse (v1.3.109)
     static let autoCollapseDelay: Double = 0.10
     static let autoExpandShelf = true
+    static let autoExpandOnExternalDisplays = true  // Keep legacy behavior by default; users can disable if it conflicts with menu bar usage
+    static let preventAutoExpandInMenuBar = true  // Avoid accidental shelf opening while targeting menu bar icons
     static let autoExpandDelay: Double = 0.25
     static let autoOpenMediaHUDOnShelfExpand = false  // Auto-open media HUD when shelf expands (opt-in)
     static let autoShrinkShelf = true  // Legacy
@@ -295,6 +307,11 @@ enum PreferenceDefault {
     static let gumroadLicenseKeyHint = ""
     static let gumroadLicenseDeviceName = ""
     static let gumroadLicenseLastValidatedAt: Double = 0
+    static let licenseTrialConsumed = false
+    static let licenseTrialStartedAt: Double = 0
+    static let licenseTrialExpiresAt: Double = 0
+    static let licenseTrialLastRemoteSyncAt: Double = 0
+    static let licenseTrialAccountHash = ""
     static let disableAnalytics = false
     
     // MARK: - Extension: Element Capture
@@ -316,6 +333,7 @@ enum PreferenceDefault {
     // MARK: - Extension: Camera
     static let cameraInstalled = false
     static let cameraEnabled = true  // Enabled by default when installed
+    static let cameraPreferredDeviceID = ""
     
     // MARK: - Extension: Notification HUD
     static let notificationHUDInstalled = false

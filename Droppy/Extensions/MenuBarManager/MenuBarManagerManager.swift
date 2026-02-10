@@ -402,6 +402,15 @@ final class ControlItem {
             print("[MenuBarManager] Updated main item appearance: \(iconName)")
             
         case .hidden:
+            guard manager?.showChevronSeparator == true else {
+                isVisible = false
+                button.cell?.isEnabled = false
+                button.isHighlighted = false
+                button.alphaValue = 0
+                button.image = nil
+                return
+            }
+
             switch state {
             case .hideItems:
                 isVisible = true
@@ -413,29 +422,26 @@ final class ControlItem {
             case .showItems:
                 isVisible = true
                 button.cell?.isEnabled = true
-                
-                // Check if chevron separator should be shown
-                if manager?.showChevronSeparator == true {
-                    // Set the divider chevron image
-                    button.alphaValue = 0.7
-                    let image = NSImage(size: CGSize(width: 12, height: 12), flipped: false) { bounds in
-                        let insetBounds = bounds.insetBy(dx: 1, dy: 1)
+
+                // Render a neutral separator line between visible and hidden items.
+                button.alphaValue = 0.7
+                if let image = NSImage(systemSymbolName: "line.vertical", accessibilityDescription: nil) {
+                    image.isTemplate = true
+                    button.image = image
+                } else {
+                    let image = NSImage(size: CGSize(width: 10, height: 12), flipped: false) { bounds in
+                        let x = bounds.midX
                         let path = NSBezierPath()
-                        path.move(to: CGPoint(x: (insetBounds.midX + insetBounds.maxX) / 2, y: insetBounds.maxY))
-                        path.line(to: CGPoint(x: (insetBounds.minX + insetBounds.midX) / 2, y: insetBounds.midY))
-                        path.line(to: CGPoint(x: (insetBounds.midX + insetBounds.maxX) / 2, y: insetBounds.minY))
-                        path.lineWidth = 2
-                        path.lineCapStyle = .butt
-                        NSColor.black.setStroke()
+                        path.move(to: CGPoint(x: x, y: bounds.minY + 1))
+                        path.line(to: CGPoint(x: x, y: bounds.maxY - 1))
+                        path.lineWidth = 1.5
+                        path.lineCapStyle = .round
+                        NSColor.labelColor.setStroke()
                         path.stroke()
                         return true
                     }
                     image.isTemplate = true
                     button.image = image
-                } else {
-                    // No chevron - just hide it
-                    button.alphaValue = 0
-                    button.image = nil
                 }
             }
         }
@@ -674,7 +680,7 @@ final class MenuBarManager: ObservableObject {
         didSet { UserDefaults.standard.set(autoHideDelay, forKey: "MenuBarManager_AutoHideDelay") }
     }
     
-    /// Whether to show chevron separator when icons are hidden
+    /// Whether to show a separator between visible and hidden icons.
     @Published var showChevronSeparator: Bool {
         didSet {
             UserDefaults.standard.set(showChevronSeparator, forKey: "MenuBarManager_ShowChevronSeparator")
@@ -777,11 +783,16 @@ final class MenuBarManager: ObservableObject {
     
     /// Auto-hide timer
     private var autoHideTimer: Timer?
+
+    /// Debounced hide task used when auto-hide is disabled and hover delay is active.
+    /// Keeping only one pending task prevents unbounded closure buildup on mouse move events.
+    private var pendingHoverHideWorkItem: DispatchWorkItem?
     
     /// Schedules auto-hide after showing items
     func scheduleAutoHide() {
         // Cancel any existing timer
         cancelAutoHide()
+        cancelPendingHoverHide()
         
         // Only schedule if auto-hide is enabled (delay > 0)
         guard autoHideDelay > 0 else {
@@ -803,6 +814,12 @@ final class MenuBarManager: ObservableObject {
     func cancelAutoHide() {
         autoHideTimer?.invalidate()
         autoHideTimer = nil
+    }
+
+    /// Cancels any pending delayed hide task scheduled from mouse move events.
+    private func cancelPendingHoverHide() {
+        pendingHoverHideWorkItem?.cancel()
+        pendingHoverHideWorkItem = nil
     }
     
     /// Hides all sections
@@ -843,7 +860,7 @@ final class MenuBarManager: ObservableObject {
         self.useGradientIcon = UserDefaults.standard.bool(forKey: "MenuBarManager_UseGradientIcon")
         let storedAutoHide = UserDefaults.standard.double(forKey: "MenuBarManager_AutoHideDelay")
         self.autoHideDelay = storedAutoHide  // 0 means don't auto-hide
-        // Default to true for chevron separator
+        // Default to true for separator display
         if UserDefaults.standard.object(forKey: "MenuBarManager_ShowChevronSeparator") == nil {
             self.showChevronSeparator = true
         } else {
@@ -867,6 +884,10 @@ final class MenuBarManager: ObservableObject {
     }
     
     deinit {
+        autoHideTimer?.invalidate()
+        autoHideTimer = nil
+        pendingHoverHideWorkItem?.cancel()
+        pendingHoverHideWorkItem = nil
         if let mouseMonitor {
             NSEvent.removeMonitor(mouseMonitor)
         }
@@ -939,8 +960,17 @@ final class MenuBarManager: ObservableObject {
     
     /// Sets up mouse monitoring for show on hover.
     private func setupMouseMonitoring() {
-        guard showOnHover else { return }
-        
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+            self.mouseMonitor = nil
+        }
+
+        guard showOnHover else {
+            cancelAutoHide()
+            cancelPendingHoverHide()
+            return
+        }
+
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             self?.handleMouseMoved()
         }
@@ -974,27 +1004,46 @@ final class MenuBarManager: ObservableObject {
             if isInMenuBar && hiddenSection.isHidden {
                 // Cursor entered menu bar - cancel any auto-hide timer and show
                 cancelAutoHide()
+                cancelPendingHoverHide()
                 hiddenSection.show()
             } else if isInMenuBar && !hiddenSection.isHidden {
                 // Cursor still in menu bar while items are shown - cancel any pending hide
                 cancelAutoHide()
+                cancelPendingHoverHide()
             } else if !isInMenuBar && !hiddenSection.isHidden {
                 // Cursor left menu bar - schedule auto-hide if enabled, otherwise use hover delay
                 if autoHideDelay > 0 {
+                    cancelPendingHoverHide()
                     // Start auto-hide timer when cursor leaves (not already running)
                     if autoHideTimer == nil {
                         scheduleAutoHide()
                     }
                 } else {
-                    // Auto-hide disabled - use hover delay to hide
-                    DispatchQueue.main.asyncAfter(deadline: .now() + showOnHoverDelay) { [weak self] in
-                        guard self != nil else { return }
+                    // Auto-hide disabled - debounce delayed hide to a single pending task.
+                    guard pendingHoverHideWorkItem == nil else { return }
+
+                    let screenFrame = screen.frame
+                    let delay = showOnHoverDelay
+                    let workItem = DispatchWorkItem { [weak self, weak hiddenSection] in
+                        guard let self else { return }
+                        self.pendingHoverHideWorkItem = nil
+                        guard let hiddenSection else { return }
+                        guard !self.isLockedVisible else { return }
+
                         let currentLocation = NSEvent.mouseLocation
-                        let stillInMenuBar = currentLocation.y >= screen.frame.maxY - menuBarHeight
+                        let stillAtTop = currentLocation.y >= screenFrame.maxY - menuBarHeight
+                        let screenCenterX = screenFrame.midX
+                        let notchExclusionWidth: CGFloat = 200
+                        let stillOnRightSideOfNotch = currentLocation.x > screenCenterX + (notchExclusionWidth / 2)
+                        let stillInMenuBar = stillAtTop && stillOnRightSideOfNotch
+
                         if !stillInMenuBar {
                             hiddenSection.hide()
                         }
                     }
+
+                    pendingHoverHideWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
                 }
             }
         }
@@ -1025,12 +1074,21 @@ final class MenuBarManager: ObservableObject {
         for section in sections {
             section.controlItem.addToMenuBar()
         }
+
+        setupMouseMonitoring()
         
         print("[MenuBarManager] Enabled")
     }
     
     /// Disables the menu bar manager.
     func disable() {
+        cancelAutoHide()
+        cancelPendingHoverHide()
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+            self.mouseMonitor = nil
+        }
+
         for section in sections {
             section.controlItem.removeFromMenuBar()
         }
@@ -1050,6 +1108,12 @@ final class MenuBarManager: ObservableObject {
     /// Cleanup when extension is removed
     func cleanup() {
         disable()
+        cancelAutoHide()
+        cancelPendingHoverHide()
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+            self.mouseMonitor = nil
+        }
         sections.removeAll()
     }
 }

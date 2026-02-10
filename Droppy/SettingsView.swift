@@ -35,6 +35,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.externalDisplayAdvancedVisibilityEnabled) private var externalDisplayAdvancedVisibilityEnabled = PreferenceDefault.externalDisplayAdvancedVisibilityEnabled
     @AppStorage(AppPreferenceKey.externalDisplayVisibilityRules) private var externalDisplayVisibilityRules = PreferenceDefault.externalDisplayVisibilityRules
     @AppStorage(AppPreferenceKey.dynamicIslandHeightOffset) private var dynamicIslandHeightOffset = PreferenceDefault.dynamicIslandHeightOffset
+    @AppStorage(AppPreferenceKey.notchWidthOffset) private var notchWidthOffset = PreferenceDefault.notchWidthOffset
     
     // HUD and Media Player settings
     @AppStorage(AppPreferenceKey.enableHUDReplacement) private var enableHUDReplacement = PreferenceDefault.enableHUDReplacement
@@ -72,6 +73,8 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.autoCollapseDelay) private var autoCollapseDelay = PreferenceDefault.autoCollapseDelay
     @AppStorage(AppPreferenceKey.autoCollapseShelf) private var autoCollapseShelf = PreferenceDefault.autoCollapseShelf
     @AppStorage(AppPreferenceKey.autoExpandShelf) private var autoExpandShelf = PreferenceDefault.autoExpandShelf
+    @AppStorage(AppPreferenceKey.autoExpandOnExternalDisplays) private var autoExpandOnExternalDisplays = PreferenceDefault.autoExpandOnExternalDisplays
+    @AppStorage(AppPreferenceKey.preventAutoExpandInMenuBar) private var preventAutoExpandInMenuBar = PreferenceDefault.preventAutoExpandInMenuBar
     @AppStorage(AppPreferenceKey.autoExpandDelay) private var autoExpandDelay = PreferenceDefault.autoExpandDelay
     @AppStorage(AppPreferenceKey.autoOpenMediaHUDOnShelfExpand) private var autoOpenMediaHUDOnShelfExpand = PreferenceDefault.autoOpenMediaHUDOnShelfExpand
     @AppStorage(AppPreferenceKey.autoHideOnFullscreen) private var autoHideOnFullscreen = PreferenceDefault.autoHideOnFullscreen
@@ -977,6 +980,34 @@ struct SettingsView: View {
                 Text("Notch Shelf")
             }
             
+            if enableNotchShelf && hasPhysicalNotch {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Notch Width")
+                            Spacer()
+                            Text(
+                                notchWidthOffset == 0
+                                ? "Standard"
+                                : String(format: "%+.0f pt", notchWidthOffset)
+                            )
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        }
+                        
+                        Slider(value: $notchWidthOffset, in: -40...80, step: 2)
+                            .sliderHaptics(value: notchWidthOffset, range: -40...80)
+                            .onChange(of: notchWidthOffset) { _, _ in
+                                NotchWindowController.shared.forceRecalculateAllWindowSizes()
+                            }
+                    }
+                } header: {
+                    Text("Notch Fit")
+                } footer: {
+                    Text("Adjust only if the built-in notch appears too narrow or too wide on your MacBook display.")
+                }
+            }
+            
             // MARK: Shelf Behavior
             if enableNotchShelf {
                 Section {
@@ -1035,6 +1066,40 @@ struct SettingsView: View {
                     }
                     
                     if autoExpandShelf {
+                        nativePickerRow(
+                            title: "Auto-Expand Rules",
+                            subtitle: "Fine-tune hover behavior for menu bar and external displays"
+                        ) {
+                            SettingsSegmentButtonWithContent(
+                                label: "Menu Bar Guard",
+                                isSelected: preventAutoExpandInMenuBar,
+                                tileWidth: 128,
+                                action: { preventAutoExpandInMenuBar.toggle() }
+                            ) {
+                                Image(systemName: "menubar.rectangle")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(preventAutoExpandInMenuBar ? Color.blue : AdaptiveColors.overlayAuto(0.5))
+                            }
+                            
+                            SettingsSegmentButtonWithContent(
+                                label: "External Hover",
+                                isSelected: autoExpandOnExternalDisplays,
+                                tileWidth: 128,
+                                action: { autoExpandOnExternalDisplays.toggle() }
+                            ) {
+                                Image(systemName: "display")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundStyle(autoExpandOnExternalDisplays ? Color.blue : AdaptiveColors.overlayAuto(0.5))
+                            }
+                            .disabled(externalScreens.isEmpty)
+                        }
+                        
+                        if externalScreens.isEmpty {
+                            Text("Connect an external display to enable External Hover.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
                         VStack(spacing: 4) {
                             HStack {
                                 Text("Expand Delay")

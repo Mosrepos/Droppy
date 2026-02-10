@@ -16,6 +16,7 @@ final class VoiceRecordingWindowController {
     
     private var window: NSPanel?
     var isVisible = false
+    private var completionWatchTask: Task<Void, Never>?
     
     private init() {}
     
@@ -28,7 +29,7 @@ final class VoiceRecordingWindowController {
             // Already idle, good
         } else {
             print("VoiceRecordingWindow: Resetting state from \(manager.state) to idle")
-            manager.state = .idle
+            manager.reset()
         }
         
         // Show window first
@@ -46,7 +47,7 @@ final class VoiceRecordingWindowController {
         
         // Position in bottom-right corner (matching CapturePreviewView)
         guard let screen = NSScreen.main else { return }
-        let windowSize = NSSize(width: 280, height: 220)
+        let windowSize = NSSize(width: 300, height: 260)
         let origin = NSPoint(
             x: screen.visibleFrame.maxX - windowSize.width - 20,
             y: screen.visibleFrame.minY + 20
@@ -80,6 +81,9 @@ final class VoiceRecordingWindowController {
     }
     
     func hideWindow() {
+        completionWatchTask?.cancel()
+        completionWatchTask = nil
+
         guard let panel = window else { return }
         window = nil
         isVisible = false
@@ -113,25 +117,22 @@ final class VoiceRecordingWindowController {
     }
     
     private func watchForTranscriptionCompletion() {
-        Task { @MainActor in
-            // Poll for completion (max 60 seconds)
-            for _ in 0..<120 {
-                try? await Task.sleep(for: .milliseconds(500))
-                
+        completionWatchTask?.cancel()
+        completionWatchTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self else { return }
+
                 let state = VoiceTranscribeManager.shared.state
-                if case .idle = state {
-                    // Transcription done or cancelled - result window is shown from manager
-                    hideWindow()
-                    return
-                } else if case .error = state {
-                    // Error occurred - hide window
-                    hideWindow()
+                switch state {
+                case .processing, .recording:
+                    continue
+                case .idle, .complete, .error:
+                    // Transcription finished/cancelled/failed - manager handles result presentation.
+                    self.hideWindow()
                     return
                 }
             }
-            
-            // Timeout - hide window anyway
-            hideWindow()
         }
     }
 }
@@ -267,7 +268,7 @@ struct VoiceRecordingOverlayView: View {
             }
             
             // Progress bar (matching download UI)
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 // Icon
                 Image(systemName: "waveform.and.mic")
                     .font(.system(size: 28, weight: .medium))
@@ -293,9 +294,32 @@ struct VoiceRecordingOverlayView: View {
                 .frame(maxWidth: .infinity)
                 
                 // Status text
-                Text(manager.transcriptionProgress < 0.2 ? "Loading model..." : "Processing audio...")
+                Text(manager.transcriptionStatus.isEmpty ? (manager.transcriptionProgress < 0.2 ? "Loading model..." : "Processing audio...") : manager.transcriptionStatus)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+
+                HStack(spacing: 8) {
+                    Label("Elapsed \(formatDuration(manager.processingElapsed))", systemImage: "clock")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    if manager.currentTranscriptionInputDuration > 0 {
+                        Text("Audio \(formatDuration(manager.currentTranscriptionInputDuration))")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if manager.currentTranscriptionInputDuration >= (20 * 60) {
+                    Text("Long recording detected. Processing can take several minutes depending on model size.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
             }
             .padding(DroppySpacing.lg)
             .frame(maxWidth: .infinity)
@@ -314,6 +338,17 @@ struct VoiceRecordingOverlayView: View {
                     .font(.system(size: 10))
             }
             .foregroundStyle(.tertiary)
+
+            Button {
+                manager.cancelTranscription()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark")
+                    Text("Cancel")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(DroppyPillButtonStyle(size: .small))
         }
     }
     

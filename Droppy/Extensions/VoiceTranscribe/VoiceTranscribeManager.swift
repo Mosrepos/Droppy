@@ -89,6 +89,9 @@ final class VoiceTranscribeManager: ObservableObject {
     }
     @Published var isDownloading: Bool = false
     @Published var transcriptionProgress: Double = 0
+    @Published var transcriptionStatus: String = ""
+    @Published var processingElapsed: TimeInterval = 0
+    @Published var currentTranscriptionInputDuration: TimeInterval = 0
     @Published private(set) var lastRecordingURL: URL? // Available after transcription for save
     
     // Keyboard shortcuts for recording modes
@@ -107,8 +110,12 @@ final class VoiceTranscribeManager: ObservableObject {
     private var recordingURL: URL?
     private var whisperKit: WhisperKit?
     private var downloadTask: Task<Void, Never>?
+    private var transcriptionTask: Task<Void, Never>?
     private var quickRecordHotkey: GlobalHotKey?   // Carbon-based for reliability
     private var invisiRecordHotkey: GlobalHotKey?  // Carbon-based for reliability
+    private var processingTimer: Timer?
+    private var processingStartedAt: Date?
+    private var lastObservedProgressAt: Date?
     
     // Model storage directory
     private var modelsDirectory: URL {
@@ -301,15 +308,23 @@ final class VoiceTranscribeManager: ObservableObject {
         audioRecorder?.stop()
         recordingTimer?.invalidate()
         levelTimer?.invalidate()
+        recordingTimer = nil
+        levelTimer = nil
         
         // Revert menu bar icon to normal
         VoiceTranscribeMenuBar.shared.setRecordingState(false)
         
-        state = .processing
+        beginProcessingSession(
+            inputDuration: recordingDuration,
+            initialStatus: "Preparing recording..."
+        )
         
         // Start transcription
-        Task {
-            await transcribeRecording()
+        transcriptionTask?.cancel()
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
+            await self.transcribeRecording()
+            self.clearTranscriptionTaskReference()
         }
     }
     
@@ -329,8 +344,12 @@ final class VoiceTranscribeManager: ObservableObject {
     
     /// Reset to idle state
     func reset() {
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        finishProcessingSession()
         state = .idle
         transcriptionResult = ""
+        transcriptionProgress = 0
         recordingDuration = 0
         audioLevel = 0
     }
@@ -386,11 +405,17 @@ final class VoiceTranscribeManager: ObservableObject {
             return
         }
         
-        state = .processing
+        beginProcessingSession(
+            inputDuration: audioDuration(at: url),
+            initialStatus: "Retrying transcription..."
+        )
         recordingURL = url
         
-        Task {
-            await transcribeRecording()
+        transcriptionTask?.cancel()
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
+            await self.transcribeRecording()
+            self.clearTranscriptionTaskReference()
         }
     }
 
@@ -402,11 +427,28 @@ final class VoiceTranscribeManager: ObservableObject {
             return
         }
         
-        state = .processing
+        beginProcessingSession(
+            inputDuration: 0,
+            initialStatus: "Preparing audio file..."
+        )
         
-        Task {
-            await transcribeAudioFile(at: url)
+        transcriptionTask?.cancel()
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
+            await self.transcribeAudioFile(at: url)
+            self.clearTranscriptionTaskReference()
         }
+    }
+
+    func cancelTranscription() {
+        guard case .processing = state else { return }
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        if let recordingURL {
+            lastRecordingURL = recordingURL
+        }
+        finishProcessingSession()
+        state = .idle
     }
     
     /// Download and initialize the selected model
@@ -598,16 +640,24 @@ final class VoiceTranscribeManager: ObservableObject {
     
     private func transcribeRecording() async {
         guard let url = recordingURL else {
+            finishProcessingSession()
             state = .error("No recording found")
             return
         }
         
-        // Reset progress
-        transcriptionProgress = 0
+        if case .processing = state {
+            // already in processing state
+        } else {
+            beginProcessingSession(
+                inputDuration: audioDuration(at: url),
+                initialStatus: "Preparing recording..."
+            )
+        }
+        setTranscriptionProgress(0.05, status: "Preparing recording...")
         
         // Ensure we have a loaded model
         if whisperKit == nil {
-            transcriptionProgress = 0.1 // Loading model phase
+            setTranscriptionProgress(0.1, status: "Loading AI model...")
             do {
                 let kit = try await WhisperKit(
                     model: selectedModel.rawValue,
@@ -619,14 +669,22 @@ final class VoiceTranscribeManager: ObservableObject {
                 )
                 try await kit.loadModels()
                 try await kit.prewarmModels()
+                try Task.checkCancellation()
                 whisperKit = kit
+                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio...")
+            } catch is CancellationError {
+                finishProcessingSession()
+                state = .idle
+                return
             } catch {
+                finishProcessingSession()
                 state = .error("Failed to load model: \(error.localizedDescription)")
                 return
             }
         }
         
         guard let whisper = whisperKit else {
+            finishProcessingSession()
             state = .error("Model not initialized")
             return
         }
@@ -636,11 +694,14 @@ final class VoiceTranscribeManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 // Map progress: 0.2 to 0.95 (leave room for loading and completion)
-                self.transcriptionProgress = 0.2 + (progress.fractionCompleted * 0.75)
+                self.setTranscriptionProgress(
+                    0.2 + (progress.fractionCompleted * 0.75),
+                    status: "Transcribing audio..."
+                )
             }
         }
-        
-        transcriptionProgress = 0.2 // Starting transcription
+        defer { progressObservation.invalidate() }
+        setTranscriptionProgress(0.2, status: "Transcribing audio...")
         
         do {
             // Configure transcription options
@@ -653,11 +714,8 @@ final class VoiceTranscribeManager: ObservableObject {
             
             // Transcribe the audio file
             let results = try await whisper.transcribe(audioPath: url.path, decodeOptions: options)
-            
-            // Cancel observation
-            progressObservation.invalidate()
-            
-            transcriptionProgress = 1.0
+            try Task.checkCancellation()
+            setTranscriptionProgress(0.98, status: "Finalizing transcript...")
             
             // Extract text from results
             if let result = results.first {
@@ -671,28 +729,32 @@ final class VoiceTranscribeManager: ObservableObject {
                 presentTranscriptionResult()
                 
                 // Reset to idle so new recordings can start
+                finishProcessingSession()
                 state = .idle
             } else {
                 transcriptionResult = ""
                 // No successful result, clean up recording
                 lastRecordingURL = nil
                 try? FileManager.default.removeItem(at: url)
+                finishProcessingSession()
                 state = .idle  // Reset even if no result
             }
             
+        } catch is CancellationError {
+            finishProcessingSession()
+            state = .idle
         } catch {
-            progressObservation.invalidate()
             print("VoiceTranscribe: Transcription error: \(error)")
             // Keep recording for retry
             lastRecordingURL = url
+            finishProcessingSession()
             state = .error("Transcription failed: \(error.localizedDescription)")
         }
     }
     
     /// Transcribe an external audio file (does NOT delete the source file)
     private func transcribeAudioFile(at url: URL) async {
-        // Reset progress
-        transcriptionProgress = 0
+        setTranscriptionProgress(0.05, status: "Preparing audio file...")
         
         // Start security-scoped access (required for files from NSOpenPanel)
         let accessGranted = url.startAccessingSecurityScopedResource()
@@ -701,12 +763,17 @@ final class VoiceTranscribeManager: ObservableObject {
                 url.stopAccessingSecurityScopedResource()
             }
         }
+
+        if currentTranscriptionInputDuration <= 0 {
+            currentTranscriptionInputDuration = audioDuration(at: url)
+        }
         
         // Copy and convert file to WAV format for WhisperKit compatibility
         let tempWavURL = recordingsDirectory.appendingPathComponent("upload_\(Date().timeIntervalSince1970).wav")
         
         do {
             // Convert audio to WAV format (16kHz, mono, 16-bit) - required by WhisperKit
+            setTranscriptionProgress(0.08, status: "Converting audio...")
             if let convertedURL = try await convertToWav(source: url, destination: tempWavURL) {
                 print("VoiceTranscribe: Converted audio to WAV: \(convertedURL.path)")
             } else {
@@ -716,13 +783,14 @@ final class VoiceTranscribeManager: ObservableObject {
             }
         } catch {
             print("VoiceTranscribe: Failed to prepare audio file: \(error)")
+            finishProcessingSession()
             state = .error("Failed to process audio file: \(error.localizedDescription)")
             return
         }
         
         // Ensure we have a loaded model
         if whisperKit == nil {
-            transcriptionProgress = 0.1 // Loading model phase
+            setTranscriptionProgress(0.1, status: "Loading AI model...")
             do {
                 print("VoiceTranscribe: Loading WhisperKit model...")
                 let kit = try await WhisperKit(
@@ -735,10 +803,18 @@ final class VoiceTranscribeManager: ObservableObject {
                 )
                 try await kit.loadModels()
                 try await kit.prewarmModels()
+                try Task.checkCancellation()
                 whisperKit = kit
                 print("VoiceTranscribe: Model loaded successfully")
+                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio...")
+            } catch is CancellationError {
+                try? FileManager.default.removeItem(at: tempWavURL)
+                finishProcessingSession()
+                state = .idle
+                return
             } catch {
                 try? FileManager.default.removeItem(at: tempWavURL)
+                finishProcessingSession()
                 state = .error("Failed to load model: \(error.localizedDescription)")
                 return
             }
@@ -746,6 +822,7 @@ final class VoiceTranscribeManager: ObservableObject {
         
         guard let whisper = whisperKit else {
             try? FileManager.default.removeItem(at: tempWavURL)
+            finishProcessingSession()
             state = .error("Model not initialized")
             return
         }
@@ -754,11 +831,14 @@ final class VoiceTranscribeManager: ObservableObject {
         let progressObservation = whisper.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.transcriptionProgress = 0.2 + (progress.fractionCompleted * 0.75)
+                self.setTranscriptionProgress(
+                    0.2 + (progress.fractionCompleted * 0.75),
+                    status: "Transcribing audio..."
+                )
             }
         }
-        
-        transcriptionProgress = 0.2
+        defer { progressObservation.invalidate() }
+        setTranscriptionProgress(0.2, status: "Transcribing audio...")
         
         do {
             var options = DecodingOptions()
@@ -768,26 +848,31 @@ final class VoiceTranscribeManager: ObservableObject {
             
             print("VoiceTranscribe: Starting transcription of \(tempWavURL.path)")
             let results = try await whisper.transcribe(audioPath: tempWavURL.path, decodeOptions: options)
+            try Task.checkCancellation()
             print("VoiceTranscribe: Transcription returned \(results.count) results")
             
-            progressObservation.invalidate()
-            transcriptionProgress = 1.0
+            setTranscriptionProgress(0.98, status: "Finalizing transcript...")
             
             if let result = results.first {
                 transcriptionResult = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 print("VoiceTranscribe: File transcription complete - \(transcriptionResult.count) chars: '\(transcriptionResult.prefix(100))...'")
                 
                 presentTranscriptionResult()
+                finishProcessingSession()
                 state = .idle
             } else {
                 print("VoiceTranscribe: No transcription results returned")
                 transcriptionResult = ""
+                finishProcessingSession()
                 state = .idle
             }
             
+        } catch is CancellationError {
+            finishProcessingSession()
+            state = .idle
         } catch {
-            progressObservation.invalidate()
             print("VoiceTranscribe: File transcription error: \(error)")
+            finishProcessingSession()
             state = .error("Transcription failed: \(error.localizedDescription)")
         }
         
@@ -868,6 +953,70 @@ final class VoiceTranscribeManager: ObservableObject {
         
         return destination
     }
+
+    private func beginProcessingSession(inputDuration: TimeInterval, initialStatus: String) {
+        state = .processing
+        processingStartedAt = Date()
+        processingElapsed = 0
+        currentTranscriptionInputDuration = max(0, inputDuration)
+        transcriptionStatus = initialStatus
+        transcriptionProgress = 0.01
+        lastObservedProgressAt = Date()
+
+        processingTimer?.invalidate()
+        processingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard case .processing = self.state else { return }
+
+                if let startedAt = self.processingStartedAt {
+                    self.processingElapsed = Date().timeIntervalSince(startedAt)
+                }
+
+                if let lastProgress = self.lastObservedProgressAt,
+                   Date().timeIntervalSince(lastProgress) > 8,
+                   self.transcriptionProgress < 0.92 {
+                    self.transcriptionProgress = min(0.92, self.transcriptionProgress + 0.003)
+                    if self.processingElapsed > 12 {
+                        self.transcriptionStatus = "Still transcribing. Large recordings can take several minutes."
+                    }
+                }
+            }
+        }
+        if let processingTimer {
+            RunLoop.main.add(processingTimer, forMode: .common)
+        }
+    }
+
+    private func finishProcessingSession() {
+        processingTimer?.invalidate()
+        processingTimer = nil
+        processingStartedAt = nil
+        lastObservedProgressAt = nil
+        transcriptionProgress = 0
+        processingElapsed = 0
+        currentTranscriptionInputDuration = 0
+        transcriptionStatus = ""
+    }
+
+    private func setTranscriptionProgress(_ value: Double, status: String? = nil) {
+        transcriptionProgress = min(max(value, 0), 1)
+        if let status {
+            transcriptionStatus = status
+        }
+        lastObservedProgressAt = Date()
+    }
+
+    private func clearTranscriptionTaskReference() {
+        transcriptionTask = nil
+    }
+
+    private func audioDuration(at url: URL) -> TimeInterval {
+        guard let file = try? AVAudioFile(forReading: url) else { return 0 }
+        let sampleRate = file.processingFormat.sampleRate
+        guard sampleRate > 0 else { return 0 }
+        return Double(file.length) / sampleRate
+    }
     
     private func checkModelStatus() {
         // Use UserDefaults to track if model was previously downloaded
@@ -927,6 +1076,10 @@ extension VoiceTranscribeManager {
         if state == .recording {
             stopRecording()
         }
+
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        finishProcessingSession()
         
         // Cancel any ongoing download
         downloadTask?.cancel()

@@ -38,8 +38,17 @@ enum NotchLayoutConstants {
     
     // MARK: - Physical Notch Dimensions
     
-    /// Physical notch width (Apple's standard design)
+    /// Baseline fallback notch width used when geometry metadata is unavailable.
     static let physicalNotchWidth: CGFloat = 180
+    
+    /// Hard bounds for user notch-width calibration.
+    static let minimumCalibratedNotchWidth: CGFloat = 140
+    static let maximumCalibratedNotchWidth: CGFloat = 320
+    
+    /// User-controlled notch width offset (built-in physical-notch displays only).
+    static var notchWidthOffset: CGFloat {
+        CGFloat(UserDefaults.standard.double(forKey: AppPreferenceKey.notchWidthOffset))
+    }
     
     // MARK: - Floating Button Spacing
     
@@ -73,6 +82,36 @@ enum NotchLayoutConstants {
         // Return actual safeAreaInsets if available, otherwise use fixed constant
         let topInset = screen.safeAreaInsets.top
         return topInset > 0 ? topInset : physicalNotchHeight
+    }
+    
+    /// Get the physical notch width for a given screen.
+    /// Uses auxiliary safe areas when available and applies user calibration on built-in displays.
+    /// Falls back to baseline notch-style width when physical metadata is unavailable.
+    static func notchWidth(for screen: NSScreen?) -> CGFloat {
+        guard let screen = screen else {
+            let fallback = physicalNotchWidth + notchWidthOffset
+            return min(max(fallback, minimumCalibratedNotchWidth), maximumCalibratedNotchWidth)
+        }
+        
+        let measuredWidth: CGFloat
+        if let leftArea = screen.auxiliaryTopLeftArea,
+           let rightArea = screen.auxiliaryTopRightArea {
+            let gap = rightArea.minX - leftArea.maxX
+            if gap.isFinite && gap > 0 {
+                measuredWidth = max(gap, physicalNotchWidth)
+            } else {
+                measuredWidth = physicalNotchWidth
+            }
+        } else if screen.isBuiltIn {
+            // Keep built-in geometry stable if auxiliary areas are briefly unavailable.
+            measuredWidth = physicalNotchWidth
+        } else {
+            // External displays can still render notch visual style using fallback width.
+            measuredWidth = physicalNotchWidth
+        }
+        
+        let adjustedWidth = measuredWidth + (screen.isBuiltIn ? notchWidthOffset : 0)
+        return min(max(adjustedWidth, minimumCalibratedNotchWidth), maximumCalibratedNotchWidth)
     }
     
     /// Whether a screen is in Dynamic Island mode (no physical notch)

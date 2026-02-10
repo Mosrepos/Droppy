@@ -36,16 +36,16 @@ struct HUDLayoutCalculator {
         return NotchLayoutConstants.dynamicIslandHeight
     }
     
-    /// Physical notch width (hardcoded based on Apple's design)
-    /// Returns physicalNotchWidth when screen is unavailable
+    /// Physical notch width derived from screen geometry with calibration fallback.
+    /// Returns fallback notch width when screen is unavailable.
     var notchWidth: CGFloat {
         // CRITICAL: Return physical notch width when screen is unavailable
-        guard let screen = screen else { return NotchLayoutConstants.physicalNotchWidth }
+        guard let screen = screen else { return NotchLayoutConstants.notchWidth(for: nil) }
         
-        // MacBook Pro notch is 180pt wide
         // Use auxiliary areas to detect notch (stable on lock screen)
         let hasNotch = screen.auxiliaryTopLeftArea != nil && screen.auxiliaryTopRightArea != nil
-        return hasNotch ? NotchLayoutConstants.physicalNotchWidth : 0
+        guard hasNotch || screen.isBuiltIn else { return 0 }
+        return NotchLayoutConstants.notchWidth(for: screen)
     }
     
     /// Whether to use Dynamic Island (compact) layout vs Notch (wing) layout

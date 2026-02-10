@@ -41,8 +41,14 @@ struct LicenseSettingsSection: View {
                 } else {
                     Section {
                         VStack(alignment: .leading, spacing: 12) {
-                            headerRow
+                            if !licenseManager.isTrialActive {
+                                headerRow
+                            }
                             activationCard
+                            Rectangle()
+                                .fill(AdaptiveColors.overlayAuto(0.14))
+                                .frame(height: 1)
+                            trialCard
                         }
                         .padding(.vertical, 6)
                         .listRowBackground(Color.clear)
@@ -69,19 +75,25 @@ struct LicenseSettingsSection: View {
     }
 
     private var headerRow: some View {
-        HStack(spacing: 10) {
+        let isLicensed = licenseManager.isActivated
+        let isTrial = licenseManager.isTrialActive && !isLicensed
+        let iconName = isLicensed ? "checkmark.seal.fill" : (isTrial ? "clock.badge.checkmark" : "key.fill")
+        let iconColor: Color = isLicensed ? .green : (isTrial ? .green : .orange)
+        let title = isLicensed ? "Licensed" : (isTrial ? "Trial Active" : "Activation Required")
+
+        return HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill((licenseManager.isActivated ? Color.green : Color.orange).opacity(0.2))
+                    .fill(iconColor.opacity(0.2))
                     .frame(width: 26, height: 26)
 
-                Image(systemName: licenseManager.isActivated ? "checkmark.seal.fill" : "key.fill")
+                Image(systemName: iconName)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(licenseManager.isActivated ? .green : .orange)
+                    .foregroundStyle(iconColor)
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(licenseManager.isActivated ? "Licensed" : "Activation Required")
+                Text(title)
                     .font(.system(size: 13, weight: .semibold))
                 Text(licenseManager.statusMessage)
                     .font(.caption)
@@ -163,21 +175,40 @@ struct LicenseSettingsSection: View {
                 .foregroundStyle(.primary)
 
             inputField(icon: "envelope.fill", isFocused: focusedField == .email) {
-                TextField("Purchase email (optional)", text: $emailInput)
-                    .textFieldStyle(.plain)
-                    .focused($focusedField, equals: .email)
+                LeftAlignedTextField(
+                    placeholder: "Purchase email (required)",
+                    text: $emailInput,
+                    onFocusChanged: { isFocused in
+                        focusedField = isFocused ? .email : nil
+                    }
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                focusedField = .email
             }
 
             inputField(icon: "key.fill", isFocused: focusedField == .key) {
                 HStack(spacing: 8) {
                     if isLicenseKeyVisible {
-                        TextField("Gumroad license key", text: $licenseKeyInput)
-                            .textFieldStyle(.plain)
-                            .focused($focusedField, equals: .key)
+                        LeftAlignedTextField(
+                            placeholder: "Gumroad license key",
+                            text: $licenseKeyInput,
+                            onFocusChanged: { isFocused in
+                                focusedField = isFocused ? .key : nil
+                            }
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        SecureField("Gumroad license key", text: $licenseKeyInput)
-                            .textFieldStyle(.plain)
-                            .focused($focusedField, equals: .key)
+                        LeftAlignedSecureField(
+                            placeholder: "Gumroad license key",
+                            text: $licenseKeyInput,
+                            onFocusChanged: { isFocused in
+                                focusedField = isFocused ? .key : nil
+                            }
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     Button {
@@ -190,6 +221,11 @@ struct LicenseSettingsSection: View {
                     .buttonStyle(.plain)
                     .help(isLicenseKeyVisible ? "Hide license key" : "Show license key")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                focusedField = .key
             }
 
             HStack(spacing: 8) {
@@ -216,6 +252,10 @@ struct LicenseSettingsSection: View {
                 .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
                 .disabled(licenseManager.isChecking)
             }
+
+            if shouldShowActivationStatusRow {
+                activationStatusRow
+            }
         }
         .padding(14)
         .background(AdaptiveColors.overlayAuto(0.03))
@@ -224,6 +264,97 @@ struct LicenseSettingsSection: View {
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
                 .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
         )
+        .allowsHitTesting(true)
+    }
+
+    private var trialCard: some View {
+        Group {
+            if licenseManager.isTrialActive {
+                activeTrialCard
+            } else {
+                inactiveTrialCard
+            }
+        }
+    }
+
+    private var inactiveTrialCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.badge.checkmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.orange)
+
+                Text("3-Day Trial")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+
+            Text(licenseManager.trialStatusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if licenseManager.canStartTrial {
+                HStack {
+                    Spacer()
+
+                    Button {
+                        Task {
+                            if await licenseManager.startTrial(accountEmail: emailInput) {
+                                HapticFeedback.expand()
+                            } else {
+                                HapticFeedback.error()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.fill")
+                            Text("Start 3-Day Trial")
+                        }
+                    }
+                    .buttonStyle(DroppyAccentButtonStyle(color: .orange, size: .small))
+                }
+            }
+        }
+        .padding(14)
+        .background(AdaptiveColors.overlayAuto(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
+        )
+    }
+
+    private var activeTrialCard: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("3-Day Trial")
+                Text(licenseManager.trialStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .top, spacing: 8) {
+                SettingsSegmentButtonWithContent(
+                    label: "Active",
+                    isSelected: true,
+                    showsLabel: false,
+                    tileWidth: 106,
+                    tileHeight: 46,
+                    action: {}
+                ) {
+                    Image(systemName: "clock.badge.checkmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.green)
+                }
+                .allowsHitTesting(false)
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.top, 2)
     }
 
     private var activatedDeviceCard: some View {
@@ -304,7 +435,10 @@ struct LicenseSettingsSection: View {
 
         Task {
             let success = await licenseManager.activate(licenseKey: key, email: emailInput)
-            guard success else { return }
+            guard success else {
+                HapticFeedback.error()
+                return
+            }
 
             withAnimation(DroppyAnimation.state) {
                 showConfetti = true
@@ -323,6 +457,47 @@ struct LicenseSettingsSection: View {
     private func normalized(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Not available" : trimmed
+    }
+
+    private var activationStatusRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: licenseManager.isChecking ? "hourglass" : "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(licenseManager.isChecking ? .orange : .secondary)
+
+            Text(licenseManager.statusMessage)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            Spacer(minLength: 0)
+
+            if licenseManager.isChecking {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private var shouldShowActivationStatusRow: Bool {
+        if licenseManager.isChecking {
+            return true
+        }
+
+        let raw = licenseManager.statusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = raw.lowercased()
+        let trialStatus = licenseManager.trialStatusText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if raw.isEmpty || normalized == trialStatus || normalized.hasPrefix("trial active:") {
+            return false
+        }
+
+        let hiddenMessages: Set<String> = [
+            "license not activated.",
+            "start your 3-day trial."
+        ]
+        return !hiddenMessages.contains(normalized)
     }
 
     private var displayDeviceName: String {
@@ -411,7 +586,7 @@ struct LicenseSettingsSection: View {
         HStack(spacing: 9) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.blue.opacity(0.92))
+                .foregroundStyle(.blue.opacity(0.9))
                 .frame(width: 16)
 
             content()
@@ -424,5 +599,131 @@ struct LicenseSettingsSection: View {
             RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                 .stroke(isFocused ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 1.2)
         )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
+private struct LeftAlignedTextField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    var onFocusChanged: ((Bool) -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onFocusChanged: onFocusChanged)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.placeholderString = placeholder
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.alignment = .left
+        field.baseWritingDirection = .leftToRight
+        field.lineBreakMode = .byTruncatingTail
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.placeholderString = placeholder
+        nsView.alignment = .left
+        nsView.baseWritingDirection = .leftToRight
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+        let onFocusChanged: ((Bool) -> Void)?
+
+        init(text: Binding<String>, onFocusChanged: ((Bool) -> Void)?) {
+            _text = text
+            self.onFocusChanged = onFocusChanged
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            text = field.stringValue
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            if let field = obj.object as? NSTextField,
+               let editor = field.currentEditor() as? NSTextView {
+                editor.alignment = .left
+                editor.baseWritingDirection = .leftToRight
+            }
+            onFocusChanged?(true)
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            onFocusChanged?(false)
+        }
+    }
+}
+
+private struct LeftAlignedSecureField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    var onFocusChanged: ((Bool) -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onFocusChanged: onFocusChanged)
+    }
+
+    func makeNSView(context: Context) -> NSSecureTextField {
+        let field = NSSecureTextField(string: text)
+        field.placeholderString = placeholder
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.alignment = .left
+        field.baseWritingDirection = .leftToRight
+        field.lineBreakMode = .byTruncatingTail
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ nsView: NSSecureTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.placeholderString = placeholder
+        nsView.alignment = .left
+        nsView.baseWritingDirection = .leftToRight
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+        let onFocusChanged: ((Bool) -> Void)?
+
+        init(text: Binding<String>, onFocusChanged: ((Bool) -> Void)?) {
+            _text = text
+            self.onFocusChanged = onFocusChanged
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            text = field.stringValue
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            if let field = obj.object as? NSTextField,
+               let editor = field.currentEditor() as? NSTextView {
+                editor.alignment = .left
+                editor.baseWritingDirection = .leftToRight
+            }
+            onFocusChanged?(true)
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            onFocusChanged?(false)
+        }
     }
 }

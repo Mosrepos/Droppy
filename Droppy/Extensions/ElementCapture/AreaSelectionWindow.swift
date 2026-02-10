@@ -17,6 +17,29 @@ class AreaSelectionWindow: NSWindow {
     var onCancel: (() -> Void)?
     
     private var selectionView: AreaSelectionView?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onCancel?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown && event.keyCode == 53 {
+            onCancel?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancel?()
+    }
     
     override init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: styleMask, backing: backing, defer: flag)
@@ -36,7 +59,7 @@ class AreaSelectionWindow: NSWindow {
         self.onSelectionComplete = onComplete
         
         // Create the selection view
-        let view = AreaSelectionView(frame: self.frame)
+        let view = AreaSelectionView(frame: NSRect(origin: .zero, size: contentRect(forFrameRect: frame).size))
         view.onSelectionComplete = { [weak self] rect in
             self?.onSelectionComplete?(rect)
         }
@@ -45,7 +68,30 @@ class AreaSelectionWindow: NSWindow {
         }
         
         self.contentView = view
+        self.initialFirstResponder = view
         self.selectionView = view
+    }
+
+    func presentForCapture() {
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        orderFrontRegardless()
+        if let selectionView {
+            makeFirstResponder(selectionView)
+            invalidateCursorRects(for: selectionView)
+        }
+        NSCursor.crosshair.set()
+
+        // Re-apply focus/cursor on next runloop to avoid first-click activation behavior.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.makeKeyAndOrderFront(nil)
+            if let selectionView = self.selectionView {
+                self.makeFirstResponder(selectionView)
+                self.invalidateCursorRects(for: selectionView)
+            }
+            NSCursor.crosshair.set()
+        }
     }
 }
 
@@ -68,6 +114,7 @@ class AreaSelectionView: NSView {
     
     // Dimension label layer
     private var dimensionLabel: CATextLayer?
+    private var cursorTrackingArea: NSTrackingArea?
     
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -81,6 +128,45 @@ class AreaSelectionView: NSView {
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+        window?.makeFirstResponder(self)
+        window?.invalidateCursorRects(for: self)
+        NSCursor.crosshair.set()
+    }
+
+    override func updateTrackingAreas() {
+        if let cursorTrackingArea {
+            removeTrackingArea(cursorTrackingArea)
+        }
+
+        let options: NSTrackingArea.Options = [
+            .activeAlways,
+            .inVisibleRect,
+            .mouseMoved,
+            .cursorUpdate
+        ]
+
+        let area = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(area)
+        cursorTrackingArea = area
+
+        super.updateTrackingAreas()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.crosshair.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        NSCursor.crosshair.set()
     }
     
     private func setupDimensionLabel() {
@@ -97,12 +183,15 @@ class AreaSelectionView: NSView {
     }
     
     override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     
     override func keyDown(with event: NSEvent) {
         // ESC to cancel
         if event.keyCode == 53 {
             onCancel?()
+            return
         }
+        super.keyDown(with: event)
     }
     
     override func mouseDown(with event: NSEvent) {

@@ -1082,7 +1082,12 @@ final class NotchWindowController: NSObject, ObservableObject {
                 
                 // Check if cursor is within the notch X range
                 let notchRect = window.getNotchRect()
-                let isWithinNotchX = nsMouseLocation.x >= notchRect.minX - 40 && nsMouseLocation.x <= notchRect.maxX + 40
+                let isWithinNotchX = window.isWithinTopEdgeHoverBand(
+                    x: nsMouseLocation.x,
+                    on: screen,
+                    notchRect: notchRect,
+                    extraPadding: 10
+                )
                 
                 if isWithinNotchX && !DroppyState.shared.isHovering(for: screen.displayID) {
                     // Cursor is at top edge of this screen within notch range - trigger hover!
@@ -1242,14 +1247,18 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         // Update timestamp
         lastSizeUpdateTime[displayID] = Date()
+        let expectedX = effectiveShelfCenterX(for: screen) - (window.frame.width / 2)
         
         // Only resize if significantly different (avoid micro-updates)
         // Keep this coarse to prevent update-constraints feedback loops.
         let currentHeight = window.frame.height
-        if abs(newHeight - currentHeight) > 10 {
+        let currentX = window.frame.origin.x
+        let needsHeightUpdate = abs(newHeight - currentHeight) > 10
+        let needsXUpdate = abs(expectedX - currentX) > 1
+        if needsHeightUpdate || needsXUpdate {
             // Resize from top - keep window anchored at screen top
             let newFrame = NSRect(
-                x: window.frame.origin.x,
+                x: expectedX,
                 y: screen.frame.origin.y + screen.frame.height - newHeight,
                 width: window.frame.width,
                 height: newHeight
@@ -1271,11 +1280,13 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         let currentHeight = window.frame.height
         let deviation = abs(currentHeight - expectedHeight)
+        let expectedX = effectiveShelfCenterX(for: screen) - (window.frame.width / 2)
+        let xDeviation = abs(window.frame.origin.x - expectedX)
         
-        if deviation > sizeDeviationTolerance {
+        if deviation > sizeDeviationTolerance || xDeviation > 2 {
             // Size doesn't match - force correct it NOW
             let newFrame = NSRect(
-                x: window.frame.origin.x,
+                x: expectedX,
                 y: screen.frame.origin.y + screen.frame.height - expectedHeight,
                 width: window.frame.width,
                 height: expectedHeight
@@ -1287,9 +1298,6 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Forces an immediate size recalculation and application for all windows
     /// Call this any time you need guaranteed correct sizing
     func forceRecalculateAllWindowSizes() {
-        // Never force frame changes inside an active drag session.
-        guard !DroppyState.shared.isDropTargeted, !DragMonitor.shared.isDragging else { return }
-
         for displayID in notchWindows.keys {
             guard let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { continue }
             let correctHeight = calculateCorrectWindowHeight(for: screen)
@@ -1749,10 +1757,19 @@ final class NotchWindowController: NSObject, ObservableObject {
         // DEBUG: Log when timer is started
         notchDebugLog("🟢 startAutoExpandTimer CALLED for displayID: \(displayID?.description ?? "nil")")
         
+        cancelAutoExpandTimer() // Reset if already running
+        
         // CRITICAL: Use object() ?? true to match @AppStorage default for new users
         guard (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true else { return }
         
-        cancelAutoExpandTimer() // Reset if already running
+        // External-display safeguard: avoid accidental menu bar obstruction unless explicitly enabled.
+        if let displayID = displayID,
+           let screen = NSScreen.screens.first(where: { $0.displayID == displayID }),
+           !screen.isBuiltIn {
+            let allowExternalAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnExternalDisplays) as? Bool)
+                ?? PreferenceDefault.autoExpandOnExternalDisplays
+            guard allowExternalAutoExpand else { return }
+        }
         
         // Use configurable delay (0.5-2.0 seconds, default 1.0s)
         let delay = UserDefaults.standard.double(forKey: "autoExpandDelay")
@@ -1771,28 +1788,28 @@ final class NotchWindowController: NSObject, ObservableObject {
             // Check setting again (in case user disabled it during the delay)
             // CRITICAL: Use object() ?? true to match @AppStorage default
             guard (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true else { return }
+            let currentMouse = NSEvent.mouseLocation
+            if let displayID = displayID,
+               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }),
+               !screen.isBuiltIn {
+                let allowExternalAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnExternalDisplays) as? Bool)
+                    ?? PreferenceDefault.autoExpandOnExternalDisplays
+                guard allowExternalAutoExpand else { return }
+            }
             
             // SKYLIGHT FIX: Recheck actual mouse geometry at timer fire time
             // After SkyLight lock/unlock, the isHovering state can become stale/incorrect.
             // Instead of trusting the state, we directly check if mouse is over the notch zone.
-            let currentMouse = NSEvent.mouseLocation
             let isExpanded = displayID.map { DroppyState.shared.isExpanded(for: $0) } ?? DroppyState.shared.isExpanded
             
             // Find the target screen and check if mouse is in notch zone
             var isMouseOverNotchZone = false
             if let targetDisplayID = displayID,
                let targetWindow = self?.notchWindows[targetDisplayID] {
-                // Use exact live notch rect from the target window instead of approximation.
-                let notchRect = targetWindow.getNotchRect()
-                let screenTopY = targetWindow.notchScreen?.frame.maxY ?? notchRect.maxY
-                let upwardExpansion = max(0, screenTopY - notchRect.maxY)
-                let hoverZone = NSRect(
-                    x: notchRect.origin.x - 10,
-                    y: notchRect.origin.y,
-                    width: notchRect.width + 20,
-                    height: notchRect.height + upwardExpansion
-                )
-                isMouseOverNotchZone = hoverZone.contains(currentMouse)
+                isMouseOverNotchZone = self?.isMouseInAutoExpandIntentZone(
+                    mouseLocation: currentMouse,
+                    window: targetWindow
+                ) ?? false
             }
             
             // Also check DroppyState as backup
@@ -1833,6 +1850,38 @@ final class NotchWindowController: NSObject, ObservableObject {
         autoExpandTimer = nil
     }
 
+    private func shouldPreventAutoExpandInMenuBar() -> Bool {
+        (UserDefaults.standard.object(forKey: AppPreferenceKey.preventAutoExpandInMenuBar) as? Bool)
+            ?? PreferenceDefault.preventAutoExpandInMenuBar
+    }
+
+    /// Smart hover intent:
+    /// - Default mode: relaxed zone (legacy feel).
+    /// - Menu-bar protection mode: tight zone near actual island/notch surface.
+    private func isMouseInAutoExpandIntentZone(mouseLocation: NSPoint, window: NotchWindow) -> Bool {
+        let notchRect = window.getNotchRect()
+        
+        if shouldPreventAutoExpandInMenuBar() {
+            let tightZone = NSRect(
+                x: notchRect.origin.x - 4,
+                y: notchRect.origin.y,
+                width: notchRect.width + 8,
+                height: notchRect.height + 6
+            )
+            return tightZone.contains(mouseLocation)
+        }
+        
+        let screenTopY = window.notchScreen?.frame.maxY ?? notchRect.maxY
+        let upwardExpansion = max(0, screenTopY - notchRect.maxY)
+        let relaxedZone = NSRect(
+            x: notchRect.origin.x - 10,
+            y: notchRect.origin.y,
+            width: notchRect.width + 20,
+            height: notchRect.height + upwardExpansion
+        )
+        return relaxedZone.contains(mouseLocation)
+    }
+
     /// Routed event handler from monitors
     /// Only routes to the window whose screen contains the mouse - prevents race conditions
     private func handleMouseEvent(_ event: NSEvent) {
@@ -1866,8 +1915,11 @@ final class NotchWindowController: NSObject, ObservableObject {
                     // Fitt's Law special case: at screen top within notch X range = always hover
                     // (Same as normal hover detection - cursor pushed against edge)
                     let isAtScreenTop = mouseLocation.y >= screenTopY - 20
-                    let isWithinNotchX = mouseLocation.x >= window.notchRect.minX - 30 && 
-                                         mouseLocation.x <= window.notchRect.maxX + 30
+                    let isWithinNotchX = window.isWithinTopEdgeHoverBand(
+                        x: mouseLocation.x,
+                        on: screen,
+                        notchRect: window.notchRect
+                    )
                     if isAtScreenTop && isWithinNotchX {
                         isInExpandedZone = true
                     }
@@ -2265,6 +2317,27 @@ class NotchWindow: NSPanel {
     func getNotchRect() -> NSRect {
         return notchRect
     }
+
+    /// Built-in notch displays can report cursor positions that "skip" across the cutout
+    /// at the top edge. Use a stable center-aligned band for top-edge hover intent.
+    func isWithinTopEdgeHoverBand(
+        x: CGFloat,
+        on screen: NSScreen,
+        notchRect: NSRect,
+        extraPadding: CGFloat = 0
+    ) -> Bool {
+        let hasPhysicalNotch = screen.isBuiltIn &&
+            screen.auxiliaryTopLeftArea != nil &&
+            screen.auxiliaryTopRightArea != nil
+
+        if hasPhysicalNotch {
+            let centerX = screen.frame.midX
+            let halfWidth = max((notchRect.width / 2) + 80, 170) + extraPadding
+            return abs(x - centerX) <= halfWidth
+        }
+
+        return x >= (notchRect.minX - 30 - extraPadding) && x <= (notchRect.maxX + 30 + extraPadding)
+    }
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
@@ -2444,7 +2517,11 @@ class NotchWindow: NSPanel {
             // 3. macOS may also report Y at or ABOVE maxY when cursor is at physical edge
             // 4. Menu bar is ~24px, notch is within that space, so 20px tolerance is safe
             let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 20  // Within 20px of absolute top
-            let isWithinNotchX = mouseLocation.x >= notchRect.minX - 30 && mouseLocation.x <= notchRect.maxX + 30
+            let isWithinNotchX = isWithinTopEdgeHoverBand(
+                x: mouseLocation.x,
+                on: targetScreen,
+                notchRect: notchRect
+            )
             if isAtScreenTop && isWithinNotchX {
                 isOverExpandedZone = true
             }
@@ -2458,7 +2535,11 @@ class NotchWindow: NSPanel {
         // For maintaining hover: exact notch OR at screen top within horizontal bounds
         var isOverExactOrEdge = isOverExactNotch
         let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 15  // Within 15px
-        let isWithinNotchX = mouseLocation.x >= notchRect.minX - 30 && mouseLocation.x <= notchRect.maxX + 30
+        let isWithinNotchX = isWithinTopEdgeHoverBand(
+            x: mouseLocation.x,
+            on: targetScreen,
+            notchRect: notchRect
+        )
         if isAtScreenTop && isWithinNotchX {
             isOverExactOrEdge = true
         }

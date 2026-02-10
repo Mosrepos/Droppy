@@ -144,7 +144,8 @@ final class HUDManager {
         dismissTimer?.invalidate()
         dismissTimer = nil
 
-        withAnimation(wasLockScreenHUD ? nil : DroppyAnimation.easeOut) {
+        let dismissAnimation = wasLockScreenHUD ? DroppyAnimation.notchState : DroppyAnimation.easeOut
+        withAnimation(dismissAnimation) {
             activeHUD = nil
         }
 
@@ -155,7 +156,7 @@ final class HUDManager {
         }
 
         // Process queue after dismiss animation
-        let queueDelay: TimeInterval = wasLockScreenHUD ? 0 : 0.2
+        let queueDelay: TimeInterval = wasLockScreenHUD ? 0.12 : 0.2
         DispatchQueue.main.asyncAfter(deadline: .now() + queueDelay) { [weak self] in
             self?.processQueue()
         }
@@ -179,7 +180,8 @@ final class HUDManager {
             isMuted: request.isMuted
         )
 
-        withAnimation(request.type == .lockScreen ? nil : DroppyAnimation.hover) {
+        let appearAnimation = request.type == .lockScreen ? DroppyAnimation.notchState : DroppyAnimation.hover
+        withAnimation(appearAnimation) {
             activeHUD = hud
         }
 

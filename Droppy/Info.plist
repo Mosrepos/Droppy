@@ -19,6 +19,10 @@
 	<string>Droppy</string>
 	<key>GumroadPurchaseURL</key>
 	<string>https://iordv.gumroad.com/l/Droppy</string>
+	<key>TrialEntitlementBaseURL</key>
+	<string>https://anannmonpspjsnfgdglb.supabase.co/functions/v1/trial-entitlement</string>
+	<key>TrialEntitlementPublicKey</key>
+	<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFuYW5ubW9ucHNwanNuZmdkZ2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1NDgxODQsImV4cCI6MjA4MzEyNDE4NH0.5BvuW5cS0kJCuA2Nm5HCVDLNWNzn6EA_8JVVrW6pfnY</string>
 	<key>NSServices</key>
 	<array>
 		<dict>

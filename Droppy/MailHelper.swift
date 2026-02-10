@@ -70,22 +70,10 @@ class MailHelper {
             return true
 
         case .appleMail:
-            if openURLs(urls, withBundleIdentifier: "com.apple.mail") {
-                return true
-            }
-            guard let service = NSSharingService(named: .composeEmail) else { return false }
-            service.perform(withItems: urls)
-            return true
+            return openURLs(urls, withBundleIdentifier: "com.apple.mail")
 
         case .outlook:
-            if composeWithOutlookAppleScript(urls: urls) {
-                return true
-            }
-            // Opening file URLs directly in Outlook does not reliably create attachments.
-            // Fall back to the system compose service instead.
-            guard let service = NSSharingService(named: .composeEmail) else { return false }
-            service.perform(withItems: urls)
-            return true
+            return composeWithOutlookAppleScript(urls: urls)
         }
     }
 
@@ -108,36 +96,61 @@ class MailHelper {
         guard isMailClientInstalled(.outlook) else { return false }
 
         let fileList = urls
-            .map { "\"\(escapeAppleScriptString($0.path))\"" }
+            .map { "POSIX file \"\(escapeAppleScriptString($0.path))\"" }
             .joined(separator: ", ")
-        let script = """
-        tell application id "com.microsoft.Outlook"
-            activate
-            set newMessage to make new outgoing message with properties {subject:""}
-            repeat with filePath in {\(fileList)}
-                set attachmentFile to POSIX file (filePath as text)
-                make new attachment with properties {file:attachmentFile} at newMessage
-            end repeat
-            open newMessage
-            return (count of attachments of newMessage)
-        end tell
-        """
 
-        let attachmentCount: Int = AppleScriptRuntime.execute {
-            var error: NSDictionary?
-            guard let appleScript = NSAppleScript(source: script) else { return 0 }
-            let result = appleScript.executeAndReturnError(&error)
-            if let error {
-                print("📧 MailHelper: Outlook AppleScript error: \(error)")
-                return 0
+        // Outlook scripting behavior differs between versions/builds.
+        // Try multiple attachment insertion variants before failing.
+        let scripts = [
+            """
+            tell application "Microsoft Outlook"
+                activate
+                set newMessage to make new outgoing message with properties {subject:""}
+                set attachedCount to 0
+                repeat with attachmentFile in {\(fileList)}
+                    make new attachment at newMessage with properties {file:(attachmentFile as alias)}
+                    set attachedCount to attachedCount + 1
+                end repeat
+                open newMessage
+                return attachedCount
+            end tell
+            """,
+            """
+            tell application id "com.microsoft.Outlook"
+                activate
+                set newMessage to make new outgoing message with properties {subject:""}
+                open newMessage
+                set attachedCount to 0
+                repeat with attachmentFile in {\(fileList)}
+                    make new attachment with properties {file:(attachmentFile as alias)} at newMessage
+                    set attachedCount to attachedCount + 1
+                end repeat
+                return attachedCount
+            end tell
+            """
+        ]
+
+        var bestAttachmentCount = 0
+        for script in scripts {
+            let attachmentCount: Int = AppleScriptRuntime.execute {
+                var error: NSDictionary?
+                guard let appleScript = NSAppleScript(source: script) else { return 0 }
+                let result = appleScript.executeAndReturnError(&error)
+                if let error {
+                    print("📧 MailHelper: Outlook AppleScript error: \(error)")
+                    return 0
+                }
+                return Int(result.int32Value)
             }
-            return Int(result.int32Value)
+
+            bestAttachmentCount = max(bestAttachmentCount, attachmentCount)
+            if attachmentCount == urls.count {
+                return true
+            }
         }
-        guard attachmentCount > 0 else {
-            print("📧 MailHelper: Outlook AppleScript created draft without attachments")
-            return false
-        }
-        return true
+
+        print("📧 MailHelper: Outlook draft attachment mismatch (\(bestAttachmentCount)/\(urls.count))")
+        return false
     }
 
     private static func escapeAppleScriptString(_ value: String) -> String {

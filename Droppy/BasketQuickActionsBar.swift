@@ -185,7 +185,11 @@ struct BasketQuickActionsBar: View {
     
     private func shareViaMail(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        _ = MailHelper.composeEmail(with: urls)
+        let didCompose = MailHelper.composeEmail(with: urls)
+        guard didCompose else {
+            HapticFeedback.error()
+            return
+        }
         basketState.ownerController?.hideBasketPreservingState()
             ?? FloatingBasketWindowController.shared.hideBasket(preserveState: true)
     }

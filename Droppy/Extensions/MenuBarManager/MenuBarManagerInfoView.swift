@@ -150,8 +150,8 @@ struct MenuBarManagerInfoView: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 featureRow(icon: "eye.fill", text: "Eye icon toggles visibility")
-                featureRow(icon: "chevron.compact.left", text: "Chevron shows when icons are hidden")
-                featureRow(icon: "hand.draw", text: "Drag icons left of chevron to hide")
+                featureRow(icon: "line.vertical", text: "Separator line shows when icons are hidden")
+                featureRow(icon: "hand.raised.fill", text: "Drag icons left of the separator to hide")
                 featureRow(icon: "arrow.left.arrow.right", text: "Rearrange by holding ⌘ and dragging")
             }
         }
@@ -181,8 +181,8 @@ struct MenuBarManagerInfoView: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 instructionRow(step: "1", text: "Look for the eye icon in your menu bar")
-                instructionRow(step: "2", text: "Click it to hide icons — a chevron ( ‹ ) will appear")
-                instructionRow(step: "3", text: "Hold ⌘ and drag icons LEFT of the chevron to hide them")
+                instructionRow(step: "2", text: "Click it to hide icons — a separator line ( | ) will appear")
+                instructionRow(step: "3", text: "Hold ⌘ and drag icons LEFT of the separator to hide them")
             }
             
             HStack(spacing: 8) {
@@ -195,11 +195,11 @@ struct MenuBarManagerInfoView: View {
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(DroppySpacing.lg)
         .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                 .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
         )
     }
@@ -207,7 +207,8 @@ struct MenuBarManagerInfoView: View {
     private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Settings")
-                .font(.headline)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
             
             // Hover to show toggle
             HStack {
@@ -267,12 +268,12 @@ struct MenuBarManagerInfoView: View {
             
             Divider()
             
-            // Chevron separator toggle
+            // Separator toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Show Chevron Separator")
+                    Text("Show Separator")
                         .font(.callout)
-                    Text("Display chevron between visible and hidden icons")
+                    Text("Display a separator between visible and hidden icons")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -354,11 +355,11 @@ struct MenuBarManagerInfoView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(DroppySpacing.lg)
         .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                 .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
         )
     }

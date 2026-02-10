@@ -15,6 +15,7 @@ struct CameraInfoView: View {
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.cameraInstalled) private var isInstalled = PreferenceDefault.cameraInstalled
     @AppStorage(AppPreferenceKey.cameraEnabled) private var isEnabled = PreferenceDefault.cameraEnabled
+    @AppStorage(AppPreferenceKey.cameraPreferredDeviceID) private var preferredDeviceID = PreferenceDefault.cameraPreferredDeviceID
 
     @ObservedObject private var manager = CameraManager.shared
     @State private var showReviewsSheet = false
@@ -50,6 +51,9 @@ struct CameraInfoView: View {
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .camera)
+        }
+        .onAppear {
+            manager.refreshAvailableDevices()
         }
     }
 
@@ -173,7 +177,7 @@ struct CameraInfoView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 Toggle(isOn: $isEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Enable Notchface")
@@ -183,15 +187,87 @@ struct CameraInfoView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(DroppySpacing.md)
+                .padding(.horizontal, DroppySpacing.lg)
+                .padding(.top, DroppySpacing.lg)
                 .disabled(!isInstalled)
+
+                Divider()
+                    .padding(.top, DroppySpacing.md)
+                    .padding(.horizontal, DroppySpacing.lg)
+
+                cameraSourceSection
+                    .padding(.horizontal, DroppySpacing.lg)
+                    .padding(.top, DroppySpacing.md)
+                    .padding(.bottom, DroppySpacing.lg)
             }
-            .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+            .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                     .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
             )
+            .disabled(!isInstalled)
+            .opacity(isInstalled ? 1 : 0.6)
+        }
+    }
+
+    private var cameraSourceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Camera Source")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Button {
+                    manager.refreshAvailableDevices()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(DroppyCircleButtonStyle(size: 28))
+                .help("Refresh connected cameras")
+            }
+
+            Text("Choose which connected camera Notchface should use.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                SettingsSegmentButton(
+                    icon: "camera.metering.center.weighted",
+                    label: "Auto",
+                    isSelected: normalizedPreferredDeviceID == nil,
+                    tileWidth: 96
+                ) {
+                    selectCamera(nil)
+                }
+
+                ForEach(manager.availableCameraDevices) { device in
+                    SettingsSegmentButton(
+                        icon: device.icon,
+                        label: cameraTileLabel(for: device.displayName),
+                        isSelected: normalizedPreferredDeviceID == device.id,
+                        tileWidth: 96
+                    ) {
+                        selectCamera(device.id)
+                    }
+                }
+            }
+
+            if manager.availableCameraDevices.isEmpty {
+                Text("No connected cameras detected. Grant camera permission and connect a camera.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if isPreferredDeviceMissing {
+                Text("Previously selected camera is not connected. Auto mode is being used.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Selected: \(selectedCameraDisplayName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -257,5 +333,50 @@ struct CameraInfoView: View {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private var normalizedPreferredDeviceID: String? {
+        let trimmed = preferredDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var isPreferredDeviceMissing: Bool {
+        guard let selectedID = normalizedPreferredDeviceID else { return false }
+        if manager.availableCameraDevices.contains(where: { $0.id == selectedID }) {
+            return false
+        }
+        return true
+    }
+
+    private func selectCamera(_ deviceID: String?) {
+        let normalized = deviceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        preferredDeviceID = normalized
+        manager.setPreferredDeviceID(normalized.isEmpty ? nil : normalized)
+    }
+
+    private func cameraTileLabel(for displayName: String) -> String {
+        if displayName.localizedCaseInsensitiveContains("iphone") {
+            return "iPhone"
+        }
+        if displayName.localizedCaseInsensitiveContains("facetime") {
+            return "FaceTime"
+        }
+
+        let cleaned = displayName
+            .replacingOccurrences(of: "Camera", with: "")
+            .replacingOccurrences(of: "camera", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if cleaned.count > 12 {
+            return String(cleaned.prefix(11)) + "…"
+        }
+        return cleaned.isEmpty ? "Camera" : cleaned
+    }
+
+    private var selectedCameraDisplayName: String {
+        guard let selectedID = normalizedPreferredDeviceID else {
+            return "Auto (best available)"
+        }
+        return manager.availableCameraDevices.first(where: { $0.id == selectedID })?.displayName ?? "Auto (best available)"
     }
 }

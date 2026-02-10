@@ -89,7 +89,10 @@ struct ShelfQuickActionsBar: View {
     
     private func shareViaMail(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        _ = MailHelper.composeEmail(with: urls)
+        let didCompose = MailHelper.composeEmail(with: urls)
+        if !didCompose {
+            HapticFeedback.error()
+        }
     }
     
     /// Droppy Quickshare - uploads files to 0x0.st and copies shareable link to clipboard

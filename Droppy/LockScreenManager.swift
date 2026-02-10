@@ -9,6 +9,7 @@
 import Foundation
 import AppKit
 import Combine
+import SwiftUI
 
 /// Manages screen lock/unlock detection for HUD display
 /// Uses NSWorkspace notifications to detect when screens sleep/wake
@@ -138,8 +139,10 @@ class LockScreenManager: ObservableObject {
                 self.lastEvent = .locked
                 self.lastChangeAt = Date()
 
-                // Show dedicated lock screen window (SkyLight-delegated, separate from main notch)
-                self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+                // Show dedicated lock screen window (SkyLight-delegated, separate from main notch).
+                withAnimation(DroppyAnimation.notchState) {
+                    self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+                }
 
                 // Gate all other HUDs during lock transition to guarantee no overlap.
                 HUDManager.shared.show(.lockScreen, on: NSScreen.builtInWithNotch?.displayID, duration: 3600)
@@ -158,7 +161,9 @@ class LockScreenManager: ObservableObject {
             // Re-show panel on screen wake (in case it was hidden during dim)
             if !self.isUnlocked {
                 LockScreenMediaPanelManager.shared.showPanel()
-                self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+                withAnimation(DroppyAnimation.notchState) {
+                    self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+                }
                 HUDManager.shared.show(.lockScreen, on: NSScreen.builtInWithNotch?.displayID, duration: 3600)
             }
         }
@@ -187,11 +192,20 @@ class LockScreenManager: ObservableObject {
             LockScreenMediaPanelManager.shared.hidePanel()
             
             // 3. Keep the dedicated lock HUD as the sole visible surface through unlock.
-            // It animates icon + width back toward desktop notch geometry before teardown.
-            LockScreenHUDWindowManager.shared.transitionToDesktopAndHide(after: 0.2) {
-                // 4. Release lock gate only after the lock HUD window is fully gone.
+            // Hand off to inline notch HUD, then fade dedicated surface out for seamless continuity.
+            LockScreenHUDWindowManager.shared.transitionToDesktopAndHide(
+                after: 0.06,
+                onHandoffStart: { [weak self] in
+                    withAnimation(DroppyAnimation.notchState) {
+                        self?.isDedicatedHUDActive = false
+                    }
+                }
+            ) { [weak self] in
+                // 4. Release lock gate after dedicated surface fade-out.
                 HUDManager.shared.dismiss()
-                self.isDedicatedHUDActive = false
+                withAnimation(DroppyAnimation.notchState) {
+                    self?.isDedicatedHUDActive = false
+                }
             }
         }
     }

@@ -18,7 +18,7 @@ struct MenuBarManagerExtension: ExtensionDefinition {
     
     static let features: [(icon: String, text: String)] = [
         ("menubar.rectangle", "Hide/show menu bar icons"),
-        ("chevron.left.2", "Click to expand hidden icons"),
+        ("line.vertical", "Separator between visible and hidden icons"),
         ("eye", "Always visible icons stay put"),
         ("eye.slash", "Always hidden icons stay hidden")
     ]

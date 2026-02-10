@@ -25,7 +25,7 @@ struct URLSchemeHandler {
         print("🔗 URLSchemeHandler: Received URL: \(url.absoluteString)")
 
         let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.isActivated {
+        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
             print("🔒 URLSchemeHandler: Blocked while license is not active")
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)

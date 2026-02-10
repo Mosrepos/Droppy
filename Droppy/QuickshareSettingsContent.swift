@@ -45,7 +45,7 @@ struct QuickshareSettingsContent: View {
                 }
                 .tint(.teal)
             } header: {
-                Text("Settings")
+                Text("Quickshare")
             }
             
             // MARK: - Shared Files Section

@@ -43,7 +43,7 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
             let hostingView = NSHostingView(rootView: view)
 
             let newWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 430, height: 520),
+                contentRect: NSRect(x: 0, y: 0, width: 540, height: 520),
                 styleMask: [.titled, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
@@ -91,7 +91,7 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let manager = LicenseManager.shared
-        let canClose = !manager.requiresLicenseEnforcement || manager.isActivated
+        let canClose = !manager.requiresLicenseEnforcement || manager.hasAccess
         if !canClose {
             HapticFeedback.error()
         }

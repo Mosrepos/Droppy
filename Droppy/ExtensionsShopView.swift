@@ -279,7 +279,6 @@ struct ExtensionsShopView: View {
                     
                     if index < extensions.count - 1 {
                         Divider()
-                            .padding(.leading, 60)
                     }
                 }
             }

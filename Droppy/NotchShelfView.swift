@@ -52,6 +52,7 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.showDropIndicator) private var showDropIndicator = PreferenceDefault.showDropIndicator  // Legacy, not migrated
     @AppStorage(AppPreferenceKey.useDynamicIslandStyle) private var useDynamicIslandStyle = PreferenceDefault.useDynamicIslandStyle
     @AppStorage(AppPreferenceKey.dynamicIslandHeightOffset) private var dynamicIslandHeightOffset = PreferenceDefault.dynamicIslandHeightOffset
+    @AppStorage(AppPreferenceKey.notchWidthOffset) private var notchWidthOffset = PreferenceDefault.notchWidthOffset
     @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
     @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
     @AppStorage(AppPreferenceKey.enableQuickActions) private var enableQuickActions = PreferenceDefault.enableQuickActions
@@ -160,22 +161,9 @@ struct NotchShelfView: View {
         if isDynamicIslandMode { return NotchLayoutConstants.dynamicIslandWidth }
 
         // Use target screen or fallback to built-in
-        guard let screen = targetScreen ?? NSScreen.builtInWithNotch ?? NSScreen.main else { return NotchLayoutConstants.physicalNotchWidth }
-        
-        // Use auxiliary areas to calculate true notch width
-        // The notch is the gap between the right edge of the left safe area
-        // and the left edge of the right safe area
-        if let leftArea = screen.auxiliaryTopLeftArea,
-           let rightArea = screen.auxiliaryTopRightArea {
-            // Correct calculation: the gap between the two auxiliary areas
-            // This is more accurate than (screen.width - leftWidth - rightWidth)
-            // which can have sub-pixel rounding errors on different display configurations
-            let notchGap = rightArea.minX - leftArea.maxX
-            return max(notchGap, NotchLayoutConstants.physicalNotchWidth)
-        }
-        
-        // Fallback for screens without notch data
-        return NotchLayoutConstants.physicalNotchWidth
+        let screen = targetScreen ?? NSScreen.builtInWithNotch ?? NSScreen.main
+        _ = notchWidthOffset // Keep @AppStorage reactive updates tied to width recomputation.
+        return NotchLayoutConstants.notchWidth(for: screen)
     }
     
     /// Notch height - scales with resolution
@@ -779,6 +767,9 @@ struct NotchShelfView: View {
         // CAFFEINE HOVER TAKES HIGHEST PRIORITY (after volume/brightness HUDs)
         } else if isCaffeineHoverActive {
             return highAlertHudWidth
+        // Pre-arm inline geometry during dedicated lock-HUD handoff to prevent width jump.
+        } else if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD {
+            return batteryHudWidth
         } else if shouldRenderInlineLockScreenHUD && !isCaffeineHoverActive {
             return batteryHudWidth  // Lock Screen HUD uses same width as battery HUD
         } else if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD {
@@ -1051,6 +1042,15 @@ struct NotchShelfView: View {
         // Built-in display WITHOUT notch (old MacBook Air, etc.): same behavior as external
         // No physical camera to cover, so respect the idle visibility setting
         return showIdleNotchOnExternalDisplays && enableNotchShelf
+    }
+
+    /// During lock-in we must hide the inline notch instantly (no opacity tween),
+    /// otherwise it visibly ghosts underneath the dedicated lock HUD.
+    private var shouldDisableInlineNotchVisibilityAnimation: Bool {
+        lockScreenManager.isDedicatedHUDActive &&
+        !lockScreenManager.isUnlocked &&
+        hasPhysicalNotchOnDisplay &&
+        isBuiltInDisplay
     }
     
     /// Returns appropriate shape for current mode
@@ -2477,11 +2477,9 @@ struct NotchShelfView: View {
             alignment: .top
         )
         .opacity(shouldShowVisualNotch ? 1.0 : 0.0)
-        // Keep lock-HUD handoff deterministic, but animate normal visibility changes.
+        // Keep regular transitions animated, but cut inline notch visibility instantly during lock handoff.
         .animation(
-            (lockScreenManager.isDedicatedHUDActive && hasPhysicalNotchOnDisplay && isBuiltInDisplay)
-                ? .none
-                : displayExpandCloseAnimation,
+            shouldDisableInlineNotchVisibilityAnimation ? nil : displayNotchStateAnimation,
             value: shouldShowVisualNotch
         )
         // PREMIUM: Subtle scale feedback on hover - "I'm ready to expand!"

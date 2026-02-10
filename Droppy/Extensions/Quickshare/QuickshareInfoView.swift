@@ -181,68 +181,70 @@ struct QuickshareInfoView: View {
     }
     
     private var settingsSection: some View {
-        VStack(spacing: 8) {
-            // Menu bar toggle
-            HStack {
-                HStack(spacing: 12) {
-                    Image(systemName: "menubar.rectangle")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.secondary)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show in Menu Bar")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.primary)
-                        Text("Show Quickshare submenu in Droppy menu")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                 
-                Spacer()
-                
-                Toggle("", isOn: $showInMenuBar)
-                    .toggleStyle(SwitchToggleStyle(tint: .cyan))
-                    .labelsHidden()
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Settings")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 0) {
+                quickshareToggleRow(
+                    icon: "menubar.rectangle",
+                    title: "Show in Menu Bar",
+                    subtitle: "Show Quickshare submenu in Droppy menu",
+                    binding: $showInMenuBar
+                )
+                .padding(.horizontal, DroppySpacing.lg)
+                .padding(.top, DroppySpacing.lg)
+
+                Divider()
+                    .padding(.horizontal, DroppySpacing.lg)
+                    .padding(.vertical, DroppySpacing.md)
+
+                quickshareToggleRow(
+                    icon: "sidebar.left",
+                    title: "Show in Settings Sidebar",
+                    subtitle: "Quick access to file management from Settings",
+                    binding: $showInSidebar
+                )
+                .padding(.horizontal, DroppySpacing.lg)
+                .padding(.bottom, DroppySpacing.lg)
             }
-            .padding(DroppySpacing.md)
             .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                     .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
             )
-            
-            // Settings sidebar toggle
-            HStack {
-                HStack(spacing: 12) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 16))
+        }
+    }
+
+    private func quickshareToggleRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        binding: Binding<Bool>
+    ) -> some View {
+        HStack {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show in Settings Sidebar")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.primary)
-                        Text("Quick access to file management from Settings")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
-                 
-                Spacer()
-                
-                Toggle("", isOn: $showInSidebar)
-                    .toggleStyle(SwitchToggleStyle(tint: .cyan))
-                    .labelsHidden()
             }
-            .padding(DroppySpacing.md)
-            .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
-                    .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
-            )
+
+            Spacer()
+
+            Toggle("", isOn: binding)
+                .toggleStyle(SwitchToggleStyle(tint: .cyan))
+                .labelsHidden()
         }
     }
     

@@ -40,14 +40,7 @@ final class LockScreenHUDWindowManager {
     /// Dynamically calculate HUD width to match NotchShelfView.batteryHudWidth exactly
     /// This ensures the lock screen HUD and main notch have identical dimensions
     private func hudWidth(for screen: NSScreen) -> CGFloat {
-        // Calculate notchWidth the same way as NotchShelfView
-        let notchWidth: CGFloat
-        if let leftArea = screen.auxiliaryTopLeftArea,
-           let rightArea = screen.auxiliaryTopRightArea {
-            notchWidth = max(rightArea.minX - leftArea.maxX, NotchLayoutConstants.physicalNotchWidth)
-        } else {
-            notchWidth = NotchLayoutConstants.physicalNotchWidth
-        }
+        let notchWidth = NotchLayoutConstants.notchWidth(for: screen)
         
         // batteryHudWidth = notchWidth + (batteryWingWidth * 2)
         return notchWidth + (batteryWingWidth * 2)
@@ -82,15 +75,18 @@ final class LockScreenHUDWindowManager {
         let targetFrame = calculateWindowFrame(for: screen, width: currentHudWidth)
         
         let window: NSWindow
+        let createdFreshWindow: Bool
 
         if let existingWindow = hudWindow {
             // Reuse existing window (e.g., re-lock without full unlock)
             window = existingWindow
+            createdFreshWindow = false
         } else {
             // Create fresh window
             window = createHUDWindow(frame: targetFrame)
             hudWindow = window
             hasDelegated = false
+            createdFreshWindow = true
         }
         
         // Ensure lock-screen visibility semantics for this phase.
@@ -137,7 +133,18 @@ final class LockScreenHUDWindowManager {
         }
         
         // Show window
+        if createdFreshWindow {
+            window.alphaValue = 0
+        }
         window.orderFrontRegardless()
+        if createdFreshWindow {
+            NSAnimationContext.beginGrouping()
+            let context = NSAnimationContext.current
+            context.duration = 0.14
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().alphaValue = 1
+            NSAnimationContext.endGrouping()
+        }
 
         print("LockScreenHUDWindowManager: ✅ Lock icon visible on lock screen")
         return true
@@ -147,9 +154,11 @@ final class LockScreenHUDWindowManager {
     /// This preserves a single visual surface from lock screen to unlocked desktop.
     func transitionToDesktopAndHide(
         after delay: TimeInterval,
+        onHandoffStart: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
     ) {
         guard let window = hudWindow else {
+            onHandoffStart?()
             completion?()
             return
         }
@@ -158,12 +167,25 @@ final class LockScreenHUDWindowManager {
         // Keep the exact same delegated surface alive through the unlock morph.
         // Avoid level/behavior mutations here to prevent cross-space visual artifacts.
         window.orderFrontRegardless()
+        window.alphaValue = 1
 
         hideTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            // Hold just long enough for the shared unlock icon sequence to settle.
-            try? await Task.sleep(nanoseconds: 280_000_000)
+
+            // Hand off to the inline notch HUD first so the user sees one continuous surface.
+            onHandoffStart?()
+
+            // Fade the dedicated lock surface out instead of abruptly destroying it.
+            let fadeDuration: TimeInterval = 0.22
+            NSAnimationContext.beginGrouping()
+            let context = NSAnimationContext.current
+            context.duration = fadeDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().alphaValue = 0
+            NSAnimationContext.endGrouping()
+
+            try? await Task.sleep(nanoseconds: UInt64(fadeDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
 
             self?.hideAndDestroy()
@@ -184,6 +206,9 @@ final class LockScreenHUDWindowManager {
             return
         }
         
+        // Reset alpha before teardown so reused/recreated windows always start fully visible.
+        window.alphaValue = 1
+
         // Remove from screen
         window.orderOut(nil)
         window.contentView = nil

@@ -66,11 +66,39 @@ struct DroppyMenuContent: View {
     }
     
     var body: some View {
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.isActivated {
+        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
             Button {
                 LicenseWindowController.shared.show()
             } label: {
                 Label("Activate License...", systemImage: "key.fill")
+            }
+            
+            if licenseManager.canStartTrial {
+                Button {
+                    if licenseManager.needsEmailForTrialStart {
+                        LicenseWindowController.shared.show()
+                    } else {
+                        Task {
+                            if await licenseManager.startTrial() {
+                                HapticFeedback.expand()
+                            } else {
+                                HapticFeedback.error()
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Start 3-Day Trial", systemImage: "clock.badge.checkmark")
+                }
+
+                if licenseManager.needsEmailForTrialStart {
+                    Text("Enter purchase email in Activate window to start trial.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text(licenseManager.trialStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Divider()
@@ -82,6 +110,18 @@ struct DroppyMenuContent: View {
             }
             .keyboardShortcut("q", modifiers: .command)
         } else {
+            if licenseManager.requiresLicenseEnforcement && licenseManager.isTrialActive && !licenseManager.isActivated {
+                Text(licenseManager.trialStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    LicenseWindowController.shared.show()
+                } label: {
+                    Label("Activate License...", systemImage: "key.fill")
+                }
+                Divider()
+            }
+
             // Show/Hide Notch or Dynamic Island toggle (only when shelf is enabled)
             if enableNotchShelf {
                 if notchController.isTemporarilyHidden {
@@ -288,7 +328,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppPreferenceKey.gumroadLicenseKeyHint: PreferenceDefault.gumroadLicenseKeyHint,
             AppPreferenceKey.gumroadLicenseDeviceName: PreferenceDefault.gumroadLicenseDeviceName,
             AppPreferenceKey.gumroadLicenseLastValidatedAt: PreferenceDefault.gumroadLicenseLastValidatedAt,
+            AppPreferenceKey.licenseTrialConsumed: PreferenceDefault.licenseTrialConsumed,
+            AppPreferenceKey.licenseTrialStartedAt: PreferenceDefault.licenseTrialStartedAt,
+            AppPreferenceKey.licenseTrialExpiresAt: PreferenceDefault.licenseTrialExpiresAt,
+            AppPreferenceKey.licenseTrialLastRemoteSyncAt: PreferenceDefault.licenseTrialLastRemoteSyncAt,
+            AppPreferenceKey.licenseTrialAccountHash: PreferenceDefault.licenseTrialAccountHash,
             AppPreferenceKey.terminalNotchExternalApp: PreferenceDefault.terminalNotchExternalApp,
+            AppPreferenceKey.cameraPreferredDeviceID: PreferenceDefault.cameraPreferredDeviceID,
             AppPreferenceKey.disableAnalytics: PreferenceDefault.disableAnalytics,
             AppPreferenceKey.windowSnapPointerModeEnabled: PreferenceDefault.windowSnapPointerModeEnabled,
             AppPreferenceKey.windowSnapMoveModifierMask: PreferenceDefault.windowSnapMoveModifierMask,
@@ -364,7 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let licenseManager = LicenseManager.shared
         licenseManager.bootstrap()
 
-        if !licenseManager.requiresLicenseEnforcement || licenseManager.isActivated {
+        if !licenseManager.requiresLicenseEnforcement || licenseManager.hasAccess {
             startLicensedFeaturesIfNeeded()
             showOnboardingIfNeeded()
         } else {
@@ -380,7 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let licenseManager = LicenseManager.shared
         guard licenseManager.requiresLicenseEnforcement else { return }
 
-        if licenseManager.isActivated {
+        if licenseManager.hasAccess {
             let licenseWindowWasVisible = LicenseWindowController.shared.isVisible
             startLicensedFeaturesIfNeeded()
             if !licenseWindowWasVisible {
@@ -567,7 +613,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidBecomeActive(_ notification: Notification) {
         let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.isActivated {
+        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
             LicenseWindowController.shared.show()
             return
         }

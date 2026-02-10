@@ -8,9 +8,20 @@
 
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 
 /// Droppy Quickshare - uploads files to 0x0.st and gets shareable links
 enum DroppyQuickshare {
+    private enum UploadFailure: LocalizedError {
+        case message(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .message(let message):
+                return message
+            }
+        }
+    }
     
     /// Share files via Droppy Quickshare
     /// Multiple files are automatically zipped into a single archive
@@ -27,8 +38,7 @@ enum DroppyQuickshare {
         if urls.count > 1 {
             displayFilename = "Droppy Share (\(urls.count) items).zip"
         } else {
-            guard let firstURL = urls.first else { return }
-            displayFilename = firstURL.lastPathComponent
+            displayFilename = urls[0].lastPathComponent
         }
         
         // Show progress window IMMEDIATELY so user knows upload is in progress
@@ -37,85 +47,56 @@ enum DroppyQuickshare {
         }
         
         DispatchQueue.global(qos: .userInitiated).async {
-            guard var uploadURL = urls.first else { return }
+            let fileURLs = urls.filter(\.isFileURL)
+            let itemCount = fileURLs.count
+            let thumbnailData: Data? = fileURLs.first.flatMap { QuickshareItem.generateThumbnail(from: $0) }
+
+            guard !fileURLs.isEmpty else {
+                completeUpload(
+                    .failure(.message("No valid files to upload.")),
+                    displayFilename: displayFilename,
+                    itemCount: urls.count,
+                    thumbnailData: nil,
+                    completion: completion
+                )
+                return
+            }
+
+            var uploadURL = fileURLs[0]
             var isTemporaryZip = false
             var finalDisplayFilename = displayFilename
-            
-            // If multiple files, create a ZIP first
-            if urls.count > 1 {
-                guard let zipURL = createZIP(from: urls) else {
-                    DispatchQueue.main.async {
-                        DroppyState.shared.isSharingInProgress = false
-                        DroppyState.shared.quickShareStatus = .failed
-                        QuickShareSuccessWindowController.updateToFailed(error: "Failed to create archive")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            DroppyState.shared.quickShareStatus = .idle
-                        }
-                    }
+
+            // 0x0.st accepts files, not directories. ZIP when multiple items OR any directory is included.
+            let shouldZip = fileURLs.count > 1 || fileURLs.contains { isDirectoryURL($0) }
+            if shouldZip {
+                guard let zipURL = createZIP(from: fileURLs) else {
+                    completeUpload(
+                        .failure(.message("Failed to create archive for upload.")),
+                        displayFilename: displayFilename,
+                        itemCount: itemCount,
+                        thumbnailData: thumbnailData,
+                        completion: completion
+                    )
                     return
                 }
                 uploadURL = zipURL
                 isTemporaryZip = true
-                finalDisplayFilename = "Droppy Share (\(urls.count) items).zip"
+                finalDisplayFilename = "Droppy Share (\(fileURLs.count) items).zip"
             }
-            
-            // Upload the file
-            let result = uploadTo0x0(fileURL: uploadURL)
-            
-            // Generate thumbnail from original file(s) before cleanup
-            let thumbnailData: Data? = urls.first.flatMap { QuickshareItem.generateThumbnail(from: $0) }
-            let itemCount = urls.count
-            
-            // Clean up temporary zip if we created one
+
+            let uploadResult = uploadTo0x0(fileURL: uploadURL)
+
             if isTemporaryZip {
                 try? FileManager.default.removeItem(at: uploadURL)
             }
-            
-            DispatchQueue.main.async {
-                DroppyState.shared.isSharingInProgress = false
-                
-                if let result = result {
-                    // Success! Copy URL to clipboard
-                    let clipboard = NSPasteboard.general
-                    clipboard.clearContents()
-                    clipboard.setString(result.shareURL, forType: .string)
-                    
-                    // Store in Quickshare Manager for history
-                    let quickshareItem = QuickshareItem(
-                        filename: finalDisplayFilename,
-                        shareURL: result.shareURL,
-                        token: result.token,
-                        fileSize: result.fileSize,
-                        thumbnailData: thumbnailData,
-                        itemCount: itemCount
-                    )
-                    print("🚀 [DroppyQuickshare] Created item, calling addItem...")
-                    QuickshareManager.shared.addItem(quickshareItem)
-                    print("🚀 [DroppyQuickshare] addItem called, manager items: \(QuickshareManager.shared.items.count)")
-                    
-                    // Show success feedback
-                    DroppyState.shared.quickShareStatus = .success(urls: [result.shareURL])
-                    HapticFeedback.copy()
-                    
-                    // Update window to success state (transitions smoothly)
-                    QuickShareSuccessWindowController.updateToSuccess(shareURL: result.shareURL)
-                    
-                    // Call completion handler (e.g. to hide basket)
-                    completion?()
-                    
-                    // Reset status after a short delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        DroppyState.shared.quickShareStatus = .idle
-                    }
-                } else {
-                    // Upload failed
-                    DroppyState.shared.quickShareStatus = .failed
-                    QuickShareSuccessWindowController.updateToFailed(error: "Upload failed. Please try again.")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        DroppyState.shared.quickShareStatus = .idle
-                    }
-                }
-            }
+
+            completeUpload(
+                uploadResult,
+                displayFilename: finalDisplayFilename,
+                itemCount: itemCount,
+                thumbnailData: thumbnailData,
+                completion: completion
+            )
         }
     }
     
@@ -184,9 +165,9 @@ enum DroppyQuickshare {
     }
     
     /// Uploads a file to 0x0.st and returns the shareable URL and management token
-    private static func uploadTo0x0(fileURL: URL) -> UploadResult? {
+    private static func uploadTo0x0(fileURL: URL) -> Result<UploadResult, UploadFailure> {
         let semaphore = DispatchSemaphore(value: 0)
-        var result: UploadResult? = nil
+        var result: Result<UploadResult, UploadFailure> = .failure(.message("Upload failed. Please try again."))
         
         // Get file size for expiration calculation
         let fileSize: Int64 = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
@@ -202,38 +183,69 @@ enum DroppyQuickshare {
         let filename = fileURL.lastPathComponent
 
         guard let multipartFileURL = createMultipartBodyFile(fileURL: fileURL, filename: filename, boundary: boundary) else {
-            return nil
+            return .failure(.message("Could not prepare file for upload."))
         }
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
-        request.timeoutInterval = 120
+        guard let requestBody = try? Data(contentsOf: multipartFileURL, options: .mappedIfSafe) else {
+            return .failure(.message("Could not read upload payload."))
+        }
+        request.setValue(String(requestBody.count), forHTTPHeaderField: "Content-Length")
+        request.timeoutInterval = 300
 
-        let task = URLSession.shared.uploadTask(with: request, fromFile: multipartFileURL) { data, response, error in
+        request.httpBody = requestBody
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             defer { semaphore.signal() }
             
             if let error = error {
                 print("Upload error: \(error)")
+                if let urlError = error as? URLError {
+                    switch urlError.code {
+                    case .timedOut:
+                        result = .failure(.message("Upload timed out. Please try again."))
+                    case .cancelled:
+                        result = .failure(.message("Upload cancelled."))
+                    case .notConnectedToInternet, .networkConnectionLost:
+                        result = .failure(.message("No internet connection."))
+                    default:
+                        result = .failure(.message("Network error: \(urlError.localizedDescription)"))
+                    }
+                } else {
+                    result = .failure(.message("Upload failed: \(error.localizedDescription)"))
+                }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                result = .failure(.message("Invalid server response."))
+                return
+            }
+
+            let responseString = String(data: data ?? Data(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let serverMessage = responseString.isEmpty
+                    ? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+                    : responseString
+                result = .failure(.message("Upload failed (\(httpResponse.statusCode)): \(serverMessage)"))
                 return
             }
             
             // Extract X-Token from response headers
-            var token = ""
-            if let httpResponse = response as? HTTPURLResponse {
-                token = httpResponse.value(forHTTPHeaderField: "X-Token") ?? ""
-            }
-            
-            if let data = data, let responseString = String(data: data, encoding: .utf8) {
-                let trimmed = responseString.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("http") {
-                    result = UploadResult(shareURL: trimmed, token: token, fileSize: fileSize)
-                }
+            let token = httpResponse.value(forHTTPHeaderField: "X-Token") ?? ""
+            if let shareURL = extractShareURL(from: responseString) {
+                result = .success(UploadResult(shareURL: shareURL, token: token, fileSize: fileSize))
+            } else {
+                let raw = responseString.isEmpty ? "Invalid upload response." : responseString
+                result = .failure(.message(raw))
             }
         }
         
         task.resume()
-        if semaphore.wait(timeout: .now() + 180) == .timedOut {
+        if semaphore.wait(timeout: .now() + 330) == .timedOut {
             task.cancel()
-            return nil
+            return .failure(.message("Upload timed out. Please try again."))
         }
         
         return result
@@ -257,13 +269,16 @@ enum DroppyQuickshare {
             inputHandle.closeFile()
         }
 
-        let header = """
-        --\(boundary)\r
-        Content-Disposition: form-data; name="file"; filename="\(filename)"\r
-        Content-Type: application/octet-stream\r
-        \r
-        """
-        outputHandle.write(Data(header.utf8))
+        let sanitizedFilename = sanitizeMultipartFilename(filename)
+        let contentType = inferredContentType(for: fileURL)
+        let headerLines = [
+            "--\(boundary)",
+            "Content-Disposition: form-data; name=\"file\"; filename=\"\(sanitizedFilename)\"",
+            "Content-Type: \(contentType)",
+            ""
+        ]
+        outputHandle.write(Data(headerLines.joined(separator: "\r\n").utf8))
+        outputHandle.write(Data("\r\n".utf8))
 
         let chunkSize = 64 * 1024
         while true {
@@ -276,5 +291,83 @@ enum DroppyQuickshare {
         outputHandle.write(Data(footer.utf8))
 
         return tempURL
+    }
+
+    private static func completeUpload(
+        _ uploadResult: Result<UploadResult, UploadFailure>,
+        displayFilename: String,
+        itemCount: Int,
+        thumbnailData: Data?,
+        completion: (() -> Void)?
+    ) {
+        DispatchQueue.main.async {
+            DroppyState.shared.isSharingInProgress = false
+
+            switch uploadResult {
+            case .success(let result):
+                let clipboard = NSPasteboard.general
+                clipboard.clearContents()
+                clipboard.setString(result.shareURL, forType: .string)
+
+                let quickshareItem = QuickshareItem(
+                    filename: displayFilename,
+                    shareURL: result.shareURL,
+                    token: result.token,
+                    fileSize: result.fileSize,
+                    thumbnailData: thumbnailData,
+                    itemCount: itemCount
+                )
+                QuickshareManager.shared.addItem(quickshareItem)
+
+                DroppyState.shared.quickShareStatus = .success(urls: [result.shareURL])
+                HapticFeedback.copy()
+                QuickShareSuccessWindowController.updateToSuccess(shareURL: result.shareURL)
+                completion?()
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    DroppyState.shared.quickShareStatus = .idle
+                }
+
+            case .failure(let error):
+                let message = error.errorDescription ?? "Upload failed. Please try again."
+                DroppyState.shared.quickShareStatus = .failed
+                QuickShareSuccessWindowController.updateToFailed(error: message)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    DroppyState.shared.quickShareStatus = .idle
+                }
+            }
+        }
+    }
+
+    private static func extractShareURL(from response: String) -> String? {
+        if response.hasPrefix("http://") || response.hasPrefix("https://") {
+            return response
+        }
+
+        let separators = CharacterSet.whitespacesAndNewlines
+        let tokens = response.components(separatedBy: separators).filter { !$0.isEmpty }
+        return tokens.first(where: { $0.hasPrefix("http://") || $0.hasPrefix("https://") })
+    }
+
+    private static func sanitizeMultipartFilename(_ filename: String) -> String {
+        let safe = filename.unicodeScalars.map { scalar -> Character in
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+            return allowed.contains(scalar) ? Character(scalar) : "_"
+        }
+        let collapsed = String(safe).replacingOccurrences(of: "__+", with: "_", options: .regularExpression)
+        let trimmed = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "._"))
+        return trimmed.isEmpty ? "upload.bin" : trimmed
+    }
+
+    private static func inferredContentType(for fileURL: URL) -> String {
+        guard let utType = UTType(filenameExtension: fileURL.pathExtension),
+              let mime = utType.preferredMIMEType else {
+            return "application/octet-stream"
+        }
+        return mime
+    }
+
+    private static func isDirectoryURL(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
     }
 }
