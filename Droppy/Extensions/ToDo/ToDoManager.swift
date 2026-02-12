@@ -88,6 +88,8 @@ final class ToDoManager {
     var isEditingText: Bool = false
     var availableReminderLists: [ToDoReminderListOption] = []
     var selectedReminderListIDs: Set<String> = []
+    var availableCalendarLists: [ToDoReminderListOption] = []
+    var selectedCalendarListIDs: Set<String> = []
     
     // State for the input field
     var newItemText: String = ""
@@ -118,9 +120,11 @@ final class ToDoManager {
     private var remindersAccessConfirmedInSession = false
     private var cleanupTimer: Timer?
     private var externalSyncTimer: Timer?
+    private var lastExternalSyncRequestAt: Date?
     private var eventStoreObserver: NSObjectProtocol?
     private var eventStoreSyncDebounceWorkItem: DispatchWorkItem?
     private let remindersSelectedListsKey = AppPreferenceKey.todoSyncRemindersListIDs
+    private let calendarSelectedListsKey = AppPreferenceKey.todoSyncCalendarListIDs
 
     private enum PermissionRequestSource {
         case userInteraction
@@ -132,6 +136,7 @@ final class ToDoManager {
     private init() {
         loadItems()
         loadSelectedReminderListIDs()
+        loadSelectedCalendarListIDs()
         setupCleanupTimer()
         setupExternalSyncTimer()
         observeEventStoreChanges()
@@ -227,6 +232,17 @@ final class ToDoManager {
         )
     }
 
+    var isShelfSplitViewEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.todoShelfSplitViewEnabled,
+            default: PreferenceDefault.todoShelfSplitViewEnabled
+        )
+    }
+
+    func setShelfSplitViewEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: AppPreferenceKey.todoShelfSplitViewEnabled)
+    }
+
     func setRemindersSyncEnabled(_ enabled: Bool) {
         Task { @MainActor in
             if enabled {
@@ -257,8 +273,10 @@ final class ToDoManager {
                 let granted = await requestCalendarAccess(source: .userInteraction)
                 UserDefaults.standard.set(granted, forKey: AppPreferenceKey.todoSyncCalendarEnabled)
                 if granted {
+                    self.refreshCalendarListsNow()
                     self.syncExternalSourcesNow()
                 } else {
+                    self.availableCalendarLists = []
                     self.removeExternalItems(for: .calendar)
                     if shouldOpenCalendarPrivacySettings() {
                         openCalendarPrivacySettings()
@@ -266,6 +284,7 @@ final class ToDoManager {
                 }
             } else {
                 UserDefaults.standard.set(false, forKey: AppPreferenceKey.todoSyncCalendarEnabled)
+                self.availableCalendarLists = []
                 self.removeExternalItems(for: .calendar)
                 self.calendarAccessConfirmedInSession = false
             }
@@ -275,6 +294,12 @@ final class ToDoManager {
     func refreshReminderListsNow() {
         Task {
             await refreshReminderLists()
+        }
+    }
+
+    func refreshCalendarListsNow() {
+        Task {
+            await refreshCalendarLists()
         }
     }
 
@@ -342,7 +367,39 @@ final class ToDoManager {
         syncExternalSourcesNow()
     }
 
-    func syncExternalSourcesNow() {
+    func isCalendarListSelected(_ listID: String) -> Bool {
+        selectedCalendarListIDs.contains(listID)
+    }
+
+    func toggleCalendarListSelection(_ listID: String) {
+        if selectedCalendarListIDs.contains(listID) {
+            selectedCalendarListIDs.remove(listID)
+        } else {
+            selectedCalendarListIDs.insert(listID)
+        }
+        saveSelectedCalendarListIDs()
+        syncExternalSourcesNow()
+    }
+
+    func selectAllCalendarLists() {
+        selectedCalendarListIDs = Set(availableCalendarLists.map(\.id))
+        saveSelectedCalendarListIDs()
+        syncExternalSourcesNow()
+    }
+
+    func clearCalendarListsSelection() {
+        selectedCalendarListIDs.removeAll()
+        saveSelectedCalendarListIDs()
+        syncExternalSourcesNow()
+    }
+
+    func syncExternalSourcesNow(minimumInterval: TimeInterval = 0) {
+        if minimumInterval > 0,
+           let lastRequest = lastExternalSyncRequestAt,
+           Date().timeIntervalSince(lastRequest) < minimumInterval {
+            return
+        }
+        lastExternalSyncRequestAt = Date()
         Task {
             await syncExternalSources()
         }
@@ -393,11 +450,13 @@ final class ToDoManager {
         if isCalendarSyncEnabled {
             let granted = await requestCalendarAccess(source: .backgroundSync)
             if granted {
+                await refreshCalendarLists()
                 calendarPayloads = await fetchCalendarEvents()
             } else {
                 await MainActor.run {
                     UserDefaults.standard.set(false, forKey: AppPreferenceKey.todoSyncCalendarEnabled)
                     self.calendarAccessConfirmedInSession = false
+                    self.availableCalendarLists = []
                 }
             }
         }
@@ -745,8 +804,13 @@ final class ToDoManager {
                 saveSelectedReminderListIDs()
             } else {
                 let prunedSelection = selectedReminderListIDs.intersection(availableIDs)
-                if prunedSelection != selectedReminderListIDs {
-                    selectedReminderListIDs = prunedSelection
+                // If stored selection becomes empty, recover to "all lists" to avoid
+                // a confusing blank reminders timeline.
+                let recoveredSelection = prunedSelection.isEmpty && !availableIDs.isEmpty
+                    ? availableIDs
+                    : prunedSelection
+                if recoveredSelection != selectedReminderListIDs {
+                    selectedReminderListIDs = recoveredSelection
                     saveSelectedReminderListIDs()
                 }
             }
@@ -754,13 +818,24 @@ final class ToDoManager {
     }
 
     private func fetchReminders() async -> [ExternalTaskPayload] {
-        let selectedIDs = selectedReminderListIDs
-        guard !selectedIDs.isEmpty else { return [] }
-
         let readStore = EKEventStore()
-        let selectedCalendars = readStore
-            .calendars(for: .reminder)
-            .filter { selectedIDs.contains($0.calendarIdentifier) }
+        let allCalendars = readStore.calendars(for: .reminder)
+        guard !allCalendars.isEmpty else { return [] }
+
+        let selectedIDs = selectedReminderListIDs
+        let selectedCalendars: [EKCalendar]
+        if selectedIDs.isEmpty {
+            selectedCalendars = allCalendars
+            await MainActor.run { [allCalendars] in
+                let allIDs = Set(allCalendars.map(\.calendarIdentifier))
+                if selectedReminderListIDs != allIDs {
+                    selectedReminderListIDs = allIDs
+                    saveSelectedReminderListIDs()
+                }
+            }
+        } else {
+            selectedCalendars = allCalendars.filter { selectedIDs.contains($0.calendarIdentifier) }
+        }
         guard !selectedCalendars.isEmpty else { return [] }
 
         let predicate = readStore.predicateForReminders(in: selectedCalendars)
@@ -790,7 +865,9 @@ final class ToDoManager {
 
     private func fetchCalendarEvents() async -> [ExternalTaskPayload] {
         let readStore = EKEventStore()
-        let calendars = readStore.calendars(for: .event)
+        let allCalendars = readStore.calendars(for: .event)
+        let selectedIDs = selectedCalendarListIDs
+        let calendars = allCalendars.filter { selectedIDs.contains($0.calendarIdentifier) }
         print("ToDoManager: Calendar fetch calendars count = \(calendars.count)")
         guard !calendars.isEmpty else { return [] }
 
@@ -1092,6 +1169,73 @@ final class ToDoManager {
         }
         UserDefaults.standard.set(raw, forKey: remindersSelectedListsKey)
     }
+
+    private func refreshCalendarLists() async {
+        guard isCalendarSyncEnabled else {
+            await MainActor.run {
+                availableCalendarLists = []
+            }
+            return
+        }
+
+        let status = EKEventStore.authorizationStatus(for: .event)
+        let hasAccess = status == .fullAccess || status == .writeOnly
+        guard hasAccess else {
+            await MainActor.run {
+                availableCalendarLists = []
+            }
+            return
+        }
+
+        let readStore = EKEventStore()
+        let options = readStore
+            .calendars(for: .event)
+            .map { calendar in
+                ToDoReminderListOption(
+                    id: calendar.calendarIdentifier,
+                    title: calendar.title,
+                    colorHex: Self.hexColor(from: calendar.cgColor)
+                )
+            }
+            .sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+
+        await MainActor.run {
+            availableCalendarLists = options
+            let availableIDs = Set(options.map(\.id))
+            let hasStoredSelection = UserDefaults.standard.object(forKey: calendarSelectedListsKey) != nil
+            if !hasStoredSelection {
+                selectedCalendarListIDs = availableIDs
+                saveSelectedCalendarListIDs()
+            } else {
+                let prunedSelection = selectedCalendarListIDs.intersection(availableIDs)
+                if prunedSelection != selectedCalendarListIDs {
+                    selectedCalendarListIDs = prunedSelection
+                    saveSelectedCalendarListIDs()
+                }
+            }
+        }
+    }
+
+    private func loadSelectedCalendarListIDs() {
+        guard let raw = UserDefaults.standard.string(forKey: calendarSelectedListsKey),
+              let data = raw.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+            selectedCalendarListIDs = []
+            return
+        }
+        selectedCalendarListIDs = Set(decoded)
+    }
+
+    private func saveSelectedCalendarListIDs() {
+        let payload = Array(selectedCalendarListIDs).sorted()
+        guard let data = try? JSONEncoder().encode(payload),
+              let raw = String(data: data, encoding: .utf8) else {
+            return
+        }
+        UserDefaults.standard.set(raw, forKey: calendarSelectedListsKey)
+    }
     
     // MARK: - Cleanup
     
@@ -1204,6 +1348,21 @@ final class ToDoManager {
 
     var overviewTaskItems: [ToDoItem] {
         sortedItems.filter { !($0.externalSource == .calendar && !$0.isCompleted) }
+    }
+
+    var shelfTimelineItemCount: Int {
+        let activeItems = sortedItems.filter { !$0.isCompleted }
+        let calendarItems = activeItems.filter { $0.externalSource == .calendar }
+        let taskItems = activeItems.filter { $0.externalSource != .calendar }
+
+        if isCalendarSyncEnabled {
+            // Keep a combined shelf whenever there are visible task/reminder items.
+            if !taskItems.isEmpty {
+                return calendarItems.count + taskItems.count
+            }
+            return calendarItems.count
+        }
+        return taskItems.count
     }
     
     private func rank(_ p: ToDoPriority) -> Int {

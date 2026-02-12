@@ -61,6 +61,7 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.enableGradientVisualizer) private var enableGradientVisualizer = PreferenceDefault.enableGradientVisualizer
     @AppStorage(AppPreferenceKey.cameraInstalled) private var cameraInstalled = PreferenceDefault.cameraInstalled
     @AppStorage(AppPreferenceKey.cameraEnabled) private var cameraEnabled = PreferenceDefault.cameraEnabled
+    @AppStorage(AppPreferenceKey.todoShelfSplitViewEnabled) private var todoShelfSplitViewEnabled = PreferenceDefault.todoShelfSplitViewEnabled
 
     
     // HUD State - Use @ObservedObject for singletons (they manage their own lifecycle)
@@ -528,8 +529,7 @@ struct NotchShelfView: View {
     private var shouldUseTodoSplitShelfWidth: Bool {
         shouldShowTodoShelfBar &&
         isTodoListExpanded &&
-        todoManager.isRemindersSyncEnabled &&
-        todoManager.isCalendarSyncEnabled
+        todoShelfSplitViewEnabled
     }
 
     private var shouldAttachTodoShelfBar: Bool {
@@ -956,7 +956,7 @@ struct NotchShelfView: View {
         let todoBarHeight: CGFloat = shouldShowTodoShelfBar
             ? ToDoShelfBar.expandedHeight(
                 isListExpanded: isTodoListExpanded,
-                itemCount: todoManager.items.count,
+                itemCount: todoManager.shelfTimelineItemCount,
                 notchHeight: contentLayoutNotchHeight,
                 showsUndoToast: todoManager.showUndoToast
             )
@@ -1708,6 +1708,8 @@ struct NotchShelfView: View {
         // Check if auto-collapse is enabled (new toggle)
         guard autoCollapseShelf else { return }
         guard isExpandedOnThisScreen else { return }
+        // Keep the shelf stable during active To-do interactions (popover/edit/split-toggle hold).
+        guard !ToDoManager.shared.isInteractingWithPopover else { return }
         
         // Cancel any existing timer
         autoShrinkWorkItem?.cancel()
@@ -1724,14 +1726,15 @@ struct NotchShelfView: View {
             if let screen = targetScreen {
                 let mouseLocation = NSEvent.mouseLocation
                 let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
+                let todoSplitTopExtension: CGFloat = (isTodoListExpanded && todoShelfSplitViewEnabled) ? 36 : 0
                 // Match the expanded zone calculation from NotchWindow.handleGlobalMouseEvent
                 // NOTE: expandedHeight already includes floating controls reserve via DroppyState SSOT.
                 // Do not add another floating button zone here or hover will stick and collapse won't trigger.
                 let expandedZone = CGRect(
                     x: screen.notchAlignedCenterX - (expandedWidth / 2) - 20,
-                    y: screen.frame.maxY - expandedHeight,
+                    y: screen.frame.maxY - expandedHeight - 20,
                     width: expandedWidth + 40,
-                    height: expandedHeight + 20  // +20 above for safe margin
+                    height: expandedHeight + 40 + todoSplitTopExtension
                 )
                 isMouseInExpandedZone = expandedZone.contains(mouseLocation)
                 notchShelfDebugLog("⏳ GEOMETRIC CHECK: mouse=\(mouseLocation), zone=\(expandedZone), isInZone=\(isMouseInExpandedZone)")
@@ -2878,7 +2881,7 @@ struct NotchShelfView: View {
                 let todoBarHeight = shouldShowTodoShelfBar
                     ? ToDoShelfBar.expandedHeight(
                         isListExpanded: false,
-                        itemCount: todoManager.items.count,
+                        itemCount: todoManager.shelfTimelineItemCount,
                         showsUndoToast: todoManager.showUndoToast
                     )
                     : 0
@@ -2895,7 +2898,7 @@ struct NotchShelfView: View {
                 let todoBarHeight = shouldShowTodoShelfBar
                     ? ToDoShelfBar.expandedHeight(
                         isListExpanded: isTodoListExpanded,
-                        itemCount: todoManager.items.count,
+                        itemCount: todoManager.shelfTimelineItemCount,
                         notchHeight: contentLayoutNotchHeight,
                         showsUndoToast: todoManager.showUndoToast
                     )

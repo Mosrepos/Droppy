@@ -52,8 +52,7 @@ class NotchDragContainer: NSView {
 
     private func currentExpandedShelfWidth() -> CGFloat {
         if ToDoManager.shared.isShelfListExpanded &&
-            ToDoManager.shared.isRemindersSyncEnabled &&
-            ToDoManager.shared.isCalendarSyncEnabled {
+            ToDoManager.shared.isShelfSplitViewEnabled {
             return max(expandedShelfBaseWidth, todoSplitShelfWidth)
         }
         return expandedShelfBaseWidth

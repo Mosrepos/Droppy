@@ -15,8 +15,10 @@ struct ToDoInfoView: View {
     @AppStorage(AppPreferenceKey.todoAutoCleanupHours) private var autoCleanupHours = PreferenceDefault.todoAutoCleanupHours
     @AppStorage(AppPreferenceKey.todoSyncCalendarEnabled) private var syncCalendarEnabled = PreferenceDefault.todoSyncCalendarEnabled
     @AppStorage(AppPreferenceKey.todoSyncRemindersEnabled) private var syncRemindersEnabled = PreferenceDefault.todoSyncRemindersEnabled
+    @AppStorage(AppPreferenceKey.todoShelfSplitViewEnabled) private var shelfSplitViewEnabled = PreferenceDefault.todoShelfSplitViewEnabled
     @State private var manager = ToDoManager.shared
     @State private var showReviewsSheet = false
+    @State private var focusedCalendarIndex: Int? = nil
     @State private var focusedListIndex: Int? = nil
 
     // Stats passed from parent
@@ -60,6 +62,7 @@ struct ToDoInfoView: View {
         }
         .onAppear {
             if syncCalendarEnabled {
+                manager.refreshCalendarListsNow()
                 manager.syncExternalSourcesNow()
             }
             if syncRemindersEnabled {
@@ -286,7 +289,7 @@ struct ToDoInfoView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Apple Reminders sync")
-                            .font(.callout.weight(.medium))
+                        .font(.callout.weight(.medium))
                         Text("Two-way sync with Apple Reminders")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -305,18 +308,47 @@ struct ToDoInfoView: View {
                 .padding(.horizontal, DroppySpacing.md)
                 .padding(.vertical, 12)
 
+                Divider()
+                    .padding(.horizontal, DroppySpacing.md)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Split details panel")
+                            .font(.callout.weight(.medium))
+                        Text("Show selected task/event details on the right side of shelf timeline.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { shelfSplitViewEnabled },
+                        set: { newValue in
+                            shelfSplitViewEnabled = newValue
+                            manager.setShelfSplitViewEnabled(newValue)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(.horizontal, DroppySpacing.md)
+                .padding(.vertical, 12)
+
+                if syncCalendarEnabled {
+                    Divider()
+                        .padding(.horizontal, DroppySpacing.md)
+
+                    calendarListsSection
+                }
+
                 if syncRemindersEnabled {
                     Divider()
                         .padding(.horizontal, DroppySpacing.md)
 
                     reminderListsSection
-
-                    Divider()
-                        .padding(.horizontal, DroppySpacing.md)
-                } else {
-                    Divider()
-                        .padding(.horizontal, DroppySpacing.md)
                 }
+
+                Divider()
+                    .padding(.horizontal, DroppySpacing.md)
 
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -340,6 +372,115 @@ struct ToDoInfoView: View {
             )
             .onChange(of: autoCleanupHours) { _, _ in
                 manager.performCleanupNow()
+            }
+        }
+    }
+
+    private var calendarListsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Calendar lists")
+                        .font(.callout.weight(.medium))
+                    Text("Choose which Apple Calendar calendars are shown.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                HStack(spacing: 6) {
+                    Button {
+                        manager.selectAllCalendarLists()
+                    } label: {
+                        Text("All")
+                            .frame(minWidth: 34)
+                    }
+                    .buttonStyle(DroppyPillButtonStyle(size: .small))
+
+                    Button {
+                        manager.clearCalendarListsSelection()
+                    } label: {
+                        Text("None")
+                            .frame(minWidth: 44)
+                    }
+                    .buttonStyle(DroppyPillButtonStyle(size: .small))
+                }
+            }
+            .padding(.horizontal, DroppySpacing.md)
+            .padding(.top, 12)
+
+            if manager.availableCalendarLists.isEmpty {
+                Text("No calendars found.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, DroppySpacing.md)
+                    .padding(.bottom, 12)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(manager.availableCalendarLists.enumerated()), id: \.element.id) { index, list in
+                        Button {
+                            manager.toggleCalendarListSelection(list.id)
+                        } label: {
+                            HStack(spacing: 10) {
+                                reminderListBadge(colorHex: list.colorHex)
+                                Text(list.title)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.92))
+                                    .lineLimit(1)
+                                Spacer()
+                                Image(systemName: manager.isCalendarListSelected(list.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(manager.isCalendarListSelected(list.id) ? .blue : AdaptiveColors.secondaryTextAuto.opacity(0.4))
+                            }
+                            .padding(.horizontal, DroppySpacing.md)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(focusedCalendarIndex == index ? AdaptiveColors.overlayAuto(0.08) : Color.clear)
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < manager.availableCalendarLists.count - 1 {
+                            Divider()
+                                .padding(.leading, DroppySpacing.md + 28)
+                                .padding(.trailing, DroppySpacing.md)
+                        }
+                    }
+                }
+                .onKeyPress(.downArrow) {
+                    let count = manager.availableCalendarLists.count
+                    guard count > 0 else { return .ignored }
+                    withAnimation(DroppyAnimation.hover) {
+                        if let current = focusedCalendarIndex {
+                            focusedCalendarIndex = min(current + 1, count - 1)
+                        } else {
+                            focusedCalendarIndex = 0
+                        }
+                    }
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    let count = manager.availableCalendarLists.count
+                    guard count > 0 else { return .ignored }
+                    withAnimation(DroppyAnimation.hover) {
+                        if let current = focusedCalendarIndex {
+                            focusedCalendarIndex = max(current - 1, 0)
+                        } else {
+                            focusedCalendarIndex = count - 1
+                        }
+                    }
+                    return .handled
+                }
+                .onKeyPress(.return) {
+                    guard let index = focusedCalendarIndex,
+                          index < manager.availableCalendarLists.count else { return .ignored }
+                    let list = manager.availableCalendarLists[index]
+                    manager.toggleCalendarListSelection(list.id)
+                    return .handled
+                }
+                .focusable()
+                .focusEffectDisabled()
             }
         }
     }

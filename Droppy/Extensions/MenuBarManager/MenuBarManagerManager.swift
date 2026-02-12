@@ -683,6 +683,11 @@ final class MenuBarManager: ObservableObject {
     /// Whether to show a separator between visible and hidden icons.
     @Published var showChevronSeparator: Bool {
         didSet {
+            // Separator is required for correct hide/reveal behavior.
+            if showChevronSeparator == false {
+                showChevronSeparator = true
+                return
+            }
             UserDefaults.standard.set(showChevronSeparator, forKey: "MenuBarManager_ShowChevronSeparator")
             // Update the hidden section's appearance
             if let hiddenSection = section(withName: .hidden) {
@@ -864,11 +869,8 @@ final class MenuBarManager: ObservableObject {
         let storedAutoHide = UserDefaults.standard.double(forKey: "MenuBarManager_AutoHideDelay")
         self.autoHideDelay = storedAutoHide  // 0 means don't auto-hide
         // Default to true for separator display
-        if UserDefaults.standard.object(forKey: "MenuBarManager_ShowChevronSeparator") == nil {
-            self.showChevronSeparator = true
-        } else {
-            self.showChevronSeparator = UserDefaults.standard.bool(forKey: "MenuBarManager_ShowChevronSeparator")
-        }
+        self.showChevronSeparator = true
+        UserDefaults.standard.set(true, forKey: "MenuBarManager_ShowChevronSeparator")
         
         // Load item spacing offset (default is 0)
         self.itemSpacingOffset = UserDefaults.standard.integer(forKey: "MenuBarManager_ItemSpacingOffset")

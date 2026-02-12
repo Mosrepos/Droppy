@@ -257,8 +257,7 @@ final class NotchWindowController: NSObject, ObservableObject {
 
     fileprivate func currentExpandedShelfWidth() -> CGFloat {
         if ToDoManager.shared.isShelfListExpanded &&
-            ToDoManager.shared.isRemindersSyncEnabled &&
-            ToDoManager.shared.isCalendarSyncEnabled {
+            ToDoManager.shared.isShelfSplitViewEnabled {
             return max(shelfBaseWidth, todoSplitShelfWidth)
         }
         return shelfBaseWidth
@@ -272,12 +271,19 @@ final class NotchWindowController: NSObject, ObservableObject {
         let expandedWidth = currentExpandedShelfWidth()
         let centerX = effectiveShelfCenterX(for: screen)
         let expandedHeight = DroppyState.expandedShelfHeight(for: screen)
+        let isTodoSplitExpanded = ToDoManager.shared.isShelfListExpanded &&
+            ToDoManager.shared.isShelfSplitViewEnabled
+        // ToDo split mode lifts top controls upward; extend the interaction zone upward
+        // so those controls never count as "outside click" targets.
+        // Keep this generous to cover notch + menu-bar-adjacent placements reliably.
+        let topPadding = verticalPadding + (isTodoSplitExpanded ? 80 : 0)
+        let bottomPadding = verticalPadding
 
         return NSRect(
             x: centerX - expandedWidth / 2 - horizontalPadding,
-            y: screen.frame.origin.y + screen.frame.height - expandedHeight - verticalPadding,
+            y: screen.frame.origin.y + screen.frame.height - expandedHeight - bottomPadding,
             width: expandedWidth + (horizontalPadding * 2),
-            height: expandedHeight + (verticalPadding * 2)
+            height: expandedHeight + bottomPadding + topPadding
         )
     }
 
@@ -1037,12 +1043,20 @@ final class NotchWindowController: NSObject, ObservableObject {
         // Keyboard monitor for spacebar Quick Look preview and Cmd+A select all
         // Local monitor - catches events when shelf is key window
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            // Route To-do timeline up/down navigation through AppKit monitor for
+            // consistent behavior without requiring SwiftUI focus rings.
+            if let self,
+               self.handleToDoTimelineArrowNavigation(event: event, modifiers: modifiers, fromGlobalMonitor: false) {
+                return nil
+            }
+
             // Only handle when shelf is expanded and has items
             guard DroppyState.shared.isExpanded,
                   !DroppyState.shared.items.isEmpty else {
                 return event
             }
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             
             // Spacebar triggers Quick Look (skip if rename is active)
             if event.keyCode == 49 {
@@ -1068,13 +1082,18 @@ final class NotchWindowController: NSObject, ObservableObject {
         // Global keyboard monitor - catches spacebar when shelf is visible but not key window
         // This ensures Quick Look works even when clicking on items briefly loses focus
         globalKeyboardMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            if let self {
+                _ = self.handleToDoTimelineArrowNavigation(event: event, modifiers: modifiers, fromGlobalMonitor: true)
+            }
+
             // Only handle when shelf is expanded and has items
             guard DroppyState.shared.isExpanded,
                   !DroppyState.shared.items.isEmpty else {
                 return
             }
             guard let self else { return }
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             
             // Spacebar quick look fallback.
             if event.keyCode == 49 {
@@ -1206,6 +1225,34 @@ final class NotchWindowController: NSObject, ObservableObject {
         (TerminalNotchManager.shared.isInstalled && TerminalNotchManager.shared.isVisible) ||
         DroppyState.shared.isRenaming ||
         isTextInputResponderActive()
+    }
+
+    private func handleToDoTimelineArrowNavigation(
+        event: NSEvent,
+        modifiers: NSEvent.ModifierFlags,
+        fromGlobalMonitor: Bool
+    ) -> Bool {
+        guard event.keyCode == 125 || event.keyCode == 126 else { return false }
+        guard modifiers.isEmpty else { return false }
+        guard DroppyState.shared.isExpanded else { return false }
+        guard ToDoManager.shared.isShelfListExpanded else { return false }
+        guard !ToDoManager.shared.isInteractingWithPopover else { return false }
+        guard !ToDoManager.shared.isEditingText else { return false }
+        guard !isTextInputResponderActive() else { return false }
+
+        if fromGlobalMonitor {
+            guard NSApp.isActive else { return false }
+            guard !isAnyExpandedShelfWindowKey() else { return false }
+            guard isMouseNearExpandedShelfZone() else { return false }
+        }
+
+        let step = event.keyCode == 125 ? 1 : -1
+        NotificationCenter.default.post(
+            name: .todoShelfNavigateTimeline,
+            object: nil,
+            userInfo: ["step": step]
+        )
+        return true
     }
 
     private func selectAllShelfItems() {
@@ -1423,6 +1470,12 @@ final class NotchWindowController: NSObject, ObservableObject {
             expectedWindowSizes[displayID] = correctHeight
             applySizeUpdate(for: displayID, height: correctHeight)
         }
+    }
+
+    /// Requests size recalculation using the controller's built-in throttling/coalescing path.
+    /// Prefer this for high-frequency UI updates to keep interaction smooth.
+    func recalculateAllWindowSizesCoalesced() {
+        updateAllWindowsSize()
     }
 
     
@@ -2852,6 +2905,8 @@ class NotchWindow: NSPanel {
         let isExpanded = state.isExpanded(for: displayID)
         let isDropTargeted = state.isDropTargeted && (state.dropTargetDisplayID == nil || state.dropTargetDisplayID == displayID)
         let isDraggingFiles = DragMonitor.shared.isDragging
+        let isTodoSplitExpanded = ToDoManager.shared.isShelfListExpanded &&
+            ToDoManager.shared.isShelfSplitViewEnabled
         let mouseLocation = NSEvent.mouseLocation
         let resolvedScreen = notchScreen ?? NSScreen.screens.first(where: { $0.displayID == displayID })
 
@@ -2861,8 +2916,9 @@ class NotchWindow: NSPanel {
             isMouseInExpandedShelfZone = expandedZone.contains(mouseLocation)
 
             // Keep menu bar items clickable while shelf is expanded.
-            // Only capture in the menu bar strip when cursor is actually over the notch trigger area.
-            if isMouseInExpandedShelfZone {
+            // But in ToDo split mode we intentionally lift/click top controls near the menu-bar strip,
+            // so do NOT apply notch-only gating there or those controls become unclickable.
+            if isMouseInExpandedShelfZone && !isTodoSplitExpanded {
                 let menuBarHeight = max(24, screen.frame.maxY - screen.visibleFrame.maxY)
                 let isInMenuBarStrip = mouseLocation.y >= (screen.frame.maxY - menuBarHeight)
                 if isInMenuBarStrip {

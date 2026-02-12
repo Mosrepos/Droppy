@@ -163,10 +163,17 @@ struct MenuBarManagerInfoView: View {
     
     private func featureRow(icon: String, text: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.blue)
-                .frame(width: 24)
+            Group {
+                if NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil {
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .medium))
+                } else {
+                    Text("|")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                }
+            }
+            .foregroundStyle(.blue)
+            .frame(width: 24)
             
             Text(text)
                 .font(.callout)
@@ -272,20 +279,19 @@ struct MenuBarManagerInfoView: View {
             
             Divider()
             
-            // Separator toggle
+            // Separator is required
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Show Separator")
                         .font(.callout)
-                    Text("Display a separator between visible and hidden icons")
+                    Text("Required for hiding and revealing menu bar icons")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Toggle("", isOn: $manager.showChevronSeparator)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                Text("Always On")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
             
             Divider()
