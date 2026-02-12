@@ -819,7 +819,7 @@ struct NotchShelfView: View {
             return batteryHudWidth  // Focus/DND HUD uses same width as battery HUD
         } else if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD {
             return updateHudWidth  // Update HUD uses wider width to fit "Update" + version text
-        } else if hudManager.isNotificationHUDVisible && notificationHUDManager.isInstalled {
+        } else if hudManager.isNotificationHUDVisible && notificationHUDManager.canRenderNotificationHUD {
             // Notification HUD: mode-aware width
             return isDynamicIslandMode ? hudWidth : expandedWidth
         } else if isMediaHUDSurfaceActive {
@@ -863,7 +863,7 @@ struct NotchShelfView: View {
             return notchHeight  // Focus/DND HUD just uses notch height (no slider)
         } else if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD {
             return notchHeight  // Update HUD just uses notch height (no slider)
-        } else if hudManager.isNotificationHUDVisible && notificationHUDManager.isInstalled {
+        } else if hudManager.isNotificationHUDVisible && notificationHUDManager.canRenderNotificationHUD {
             // Notification HUD: keep notch container height in sync with render height
             // to prevent bottom clipping/padding mismatch.
             return notificationHUDHeight

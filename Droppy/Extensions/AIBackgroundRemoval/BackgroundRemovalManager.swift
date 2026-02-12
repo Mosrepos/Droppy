@@ -176,7 +176,7 @@ final class BackgroundRemovalManager: ObservableObject {
     }
     
     nonisolated private static func candidatePythonPaths() -> [String] {
-        var paths: [String] = []
+        var paths: [String] = [AIInstallManager.managedVenvPythonPath]
         
         if let cachedPath = UserDefaults.standard.string(forKey: "aiBackgroundRemovalPythonPath") {
             paths.append(cachedPath)

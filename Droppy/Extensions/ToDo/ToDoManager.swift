@@ -123,8 +123,12 @@ final class ToDoManager {
     private var lastExternalSyncRequestAt: Date?
     private var eventStoreObserver: NSObjectProtocol?
     private var eventStoreSyncDebounceWorkItem: DispatchWorkItem?
+    private var dueSoonNotificationRefreshWorkItem: DispatchWorkItem?
+    private var dueSoonNotificationTimer: Timer?
+    private var dueSoonDeliveredTokens: Set<String> = []
     private let remindersSelectedListsKey = AppPreferenceKey.todoSyncRemindersListIDs
     private let calendarSelectedListsKey = AppPreferenceKey.todoSyncCalendarListIDs
+    private let dueSoonLeadTimes: [TimeInterval] = [15 * 60, 60]
 
     private enum PermissionRequestSource {
         case userInteraction
@@ -144,6 +148,7 @@ final class ToDoManager {
         // Initial cleanup on launch
         cleanupOldItems()
         syncExternalSourcesNow()
+        scheduleDueSoonNotificationsRefresh(debounce: 0)
     }
     
     deinit {
@@ -153,6 +158,8 @@ final class ToDoManager {
             NotificationCenter.default.removeObserver(eventStoreObserver)
         }
         eventStoreSyncDebounceWorkItem?.cancel()
+        dueSoonNotificationRefreshWorkItem?.cancel()
+        dueSoonNotificationTimer?.invalidate()
         undoTimer?.invalidate()
         cleanupToastTimer?.invalidate()
     }
@@ -239,8 +246,35 @@ final class ToDoManager {
         )
     }
 
+    var isDueSoonNotificationsEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.todoDueSoonNotificationsEnabled,
+            default: PreferenceDefault.todoDueSoonNotificationsEnabled
+        )
+    }
+
+    var isDueSoonNotificationChimeEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.todoDueSoonNotificationsChimeEnabled,
+            default: PreferenceDefault.todoDueSoonNotificationsChimeEnabled
+        )
+    }
+
     func setShelfSplitViewEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: AppPreferenceKey.todoShelfSplitViewEnabled)
+    }
+
+    func setDueSoonNotificationsEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: AppPreferenceKey.todoDueSoonNotificationsEnabled)
+        if !enabled {
+            clearDueSoonNotifications()
+        }
+        scheduleDueSoonNotificationsRefresh(debounce: 0)
+    }
+
+    func setDueSoonNotificationChimeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: AppPreferenceKey.todoDueSoonNotificationsChimeEnabled)
+        scheduleDueSoonNotificationsRefresh(debounce: 0)
     }
 
     func setRemindersSyncEnabled(_ enabled: Bool) {
@@ -982,6 +1016,146 @@ final class ToDoManager {
         let listTitle: String?
         let listColorHex: String?
     }
+
+    private struct DueSoonNotificationCandidate {
+        let id: UUID
+        let title: String
+        let source: ToDoExternalSource?
+        let dueDate: Date
+        let listTitle: String?
+    }
+
+    private struct DueSoonNotificationEntry {
+        let token: String
+        let candidate: DueSoonNotificationCandidate
+        let leadTime: TimeInterval
+        let fireDate: Date
+    }
+
+    private func scheduleDueSoonNotificationsRefresh(debounce: TimeInterval = 0.25) {
+        dueSoonNotificationRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.refreshDueSoonNotificationsNow()
+        }
+        dueSoonNotificationRefreshWorkItem = workItem
+        if debounce <= 0 {
+            DispatchQueue.main.async(execute: workItem)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + debounce, execute: workItem)
+        }
+    }
+
+    private func refreshDueSoonNotificationsNow() {
+        dueSoonNotificationRefreshWorkItem = nil
+
+        dueSoonNotificationTimer?.invalidate()
+        dueSoonNotificationTimer = nil
+
+        guard isDueSoonNotificationsEnabled else { return }
+
+        let shouldUseChime = isDueSoonNotificationChimeEnabled
+        let now = Date()
+        let candidates = items.compactMap { item -> DueSoonNotificationCandidate? in
+            guard !item.isCompleted else { return nil }
+            guard let dueDate = item.dueDate else { return nil }
+            guard dueDate > now else { return nil }
+            guard hasExplicitDueTime(dueDate) else { return nil }
+            return DueSoonNotificationCandidate(
+                id: item.id,
+                title: item.title,
+                source: item.externalSource,
+                dueDate: dueDate,
+                listTitle: item.externalListTitle
+            )
+        }
+        let entries = dueSoonEntries(from: candidates)
+        let activeTokens = Set(entries.map(\.token))
+        dueSoonDeliveredTokens = dueSoonDeliveredTokens.intersection(activeTokens)
+
+        let recentThreshold = now.addingTimeInterval(-90)
+        let dueNow = entries
+            .filter { $0.fireDate <= now && $0.fireDate >= recentThreshold }
+            .filter { !dueSoonDeliveredTokens.contains($0.token) }
+            .sorted { $0.fireDate < $1.fireDate }
+
+        for entry in dueNow {
+            dueSoonDeliveredTokens.insert(entry.token)
+            NotificationHUDManager.shared.showDueSoonNotification(
+                title: entry.candidate.title,
+                subtitle: dueSoonNotificationSubtitle(for: entry.candidate, leadTime: entry.leadTime),
+                body: dueSoonNotificationBody(for: entry.candidate),
+                playChime: shouldUseChime
+            )
+        }
+
+        guard let nextEntry = entries
+            .filter({ $0.fireDate > now && !dueSoonDeliveredTokens.contains($0.token) })
+            .min(by: { $0.fireDate < $1.fireDate }) else {
+            return
+        }
+
+        let delay = max(0.05, nextEntry.fireDate.timeIntervalSince(now))
+        let timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.refreshDueSoonNotificationsNow()
+        }
+        dueSoonNotificationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func dueSoonEntries(from candidates: [DueSoonNotificationCandidate]) -> [DueSoonNotificationEntry] {
+        var entries: [DueSoonNotificationEntry] = []
+        entries.reserveCapacity(candidates.count * dueSoonLeadTimes.count)
+
+        for candidate in candidates {
+            for leadTime in dueSoonLeadTimes {
+                let fireDate = candidate.dueDate.addingTimeInterval(-leadTime)
+                let dueStamp = Int(candidate.dueDate.timeIntervalSince1970)
+                let token = "\(candidate.id.uuidString)_\(dueStamp)_\(Int(leadTime))"
+                entries.append(
+                    DueSoonNotificationEntry(
+                        token: token,
+                        candidate: candidate,
+                        leadTime: leadTime,
+                        fireDate: fireDate
+                    )
+                )
+            }
+        }
+        return entries
+    }
+
+    private func dueSoonNotificationSubtitle(
+        for candidate: DueSoonNotificationCandidate,
+        leadTime: TimeInterval
+    ) -> String {
+        let isCalendarEvent = candidate.source == .calendar
+        if leadTime >= 15 * 60 {
+            return isCalendarEvent ? "Event starts in 15 minutes" : "Due in 15 minutes"
+        }
+        return isCalendarEvent ? "Event starts in 1 minute" : "Due in 1 minute"
+    }
+
+    private func dueSoonNotificationBody(for candidate: DueSoonNotificationCandidate) -> String {
+        let dueStamp = candidate.dueDate.formatted(date: .abbreviated, time: .shortened)
+        let sourceTitle = candidate.source == .calendar ? "Calendar" : "Task"
+        if let listTitle = candidate.listTitle, !listTitle.isEmpty {
+            return "\(sourceTitle) at \(dueStamp) • \(listTitle)"
+        }
+        return "\(sourceTitle) at \(dueStamp)"
+    }
+
+    private func clearDueSoonNotifications() {
+        dueSoonNotificationRefreshWorkItem?.cancel()
+        dueSoonNotificationRefreshWorkItem = nil
+        dueSoonNotificationTimer?.invalidate()
+        dueSoonNotificationTimer = nil
+        dueSoonDeliveredTokens.removeAll()
+    }
+
+    private func hasExplicitDueTime(_ date: Date) -> Bool {
+        let components = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+        return (components.hour ?? 0) != 0 || (components.minute ?? 0) != 0 || (components.second ?? 0) != 0
+    }
     
     func toggleCompletion(for item: ToDoItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
@@ -1128,6 +1302,7 @@ final class ToDoManager {
             
             let data = try JSONEncoder().encode(items)
             try data.write(to: url)
+            scheduleDueSoonNotificationsRefresh()
         } catch {
             print("ToDoManager: Failed to save items: \(error)")
         }

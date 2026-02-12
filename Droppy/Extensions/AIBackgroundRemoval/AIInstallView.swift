@@ -304,7 +304,7 @@ struct AIInstallView: View {
             }
             
             Text(manager.hasDetectedPythonPath
-                 ? "Install Now will install only the AI background-removal package into this Python."
+                 ? "Install Now creates an isolated AI environment using this Python."
                  : "Install Now will try to set up Python first (or you can run the command below in Terminal).")
                 .font(.caption)
                 .foregroundStyle(.secondary)

@@ -16,6 +16,8 @@ struct ToDoInfoView: View {
     @AppStorage(AppPreferenceKey.todoSyncCalendarEnabled) private var syncCalendarEnabled = PreferenceDefault.todoSyncCalendarEnabled
     @AppStorage(AppPreferenceKey.todoSyncRemindersEnabled) private var syncRemindersEnabled = PreferenceDefault.todoSyncRemindersEnabled
     @AppStorage(AppPreferenceKey.todoShelfSplitViewEnabled) private var shelfSplitViewEnabled = PreferenceDefault.todoShelfSplitViewEnabled
+    @AppStorage(AppPreferenceKey.todoDueSoonNotificationsEnabled) private var dueSoonNotificationsEnabled = PreferenceDefault.todoDueSoonNotificationsEnabled
+    @AppStorage(AppPreferenceKey.todoDueSoonNotificationsChimeEnabled) private var dueSoonNotificationsChimeEnabled = PreferenceDefault.todoDueSoonNotificationsChimeEnabled
     @AppStorage(AppPreferenceKey.todoShowTaskWeekNumber) private var showTaskWeekNumber = PreferenceDefault.todoShowTaskWeekNumber
     @AppStorage(AppPreferenceKey.todoShowTaskViewTimezone) private var showTaskViewTimezone = PreferenceDefault.todoShowTaskViewTimezone
     @State private var manager = ToDoManager.shared
@@ -334,6 +336,59 @@ struct ToDoInfoView: View {
                 }
                 .padding(.horizontal, DroppySpacing.md)
                 .padding(.vertical, 12)
+
+                Divider()
+                    .padding(.horizontal, DroppySpacing.md)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Due soon notifications")
+                            .font(.callout.weight(.medium))
+                        Text("Notify 15 minutes and 1 minute before due tasks/events.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { dueSoonNotificationsEnabled },
+                        set: { newValue in
+                            dueSoonNotificationsEnabled = newValue
+                            manager.setDueSoonNotificationsEnabled(newValue)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(.horizontal, DroppySpacing.md)
+                .padding(.vertical, 12)
+
+                if dueSoonNotificationsEnabled {
+                    Divider()
+                        .padding(.horizontal, DroppySpacing.md)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Notification chime")
+                                .font(.callout.weight(.medium))
+                            Text("Play a subtle chime for due-soon notifications.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { dueSoonNotificationsChimeEnabled },
+                            set: { newValue in
+                                dueSoonNotificationsChimeEnabled = newValue
+                                manager.setDueSoonNotificationChimeEnabled(newValue)
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                    .padding(.horizontal, DroppySpacing.md)
+                    .padding(.vertical, 12)
+                }
+
                 Divider()
                     .padding(.horizontal, DroppySpacing.md)
 
@@ -371,7 +426,6 @@ struct ToDoInfoView: View {
                 }
                 .padding(.horizontal, DroppySpacing.md)
                 .padding(.vertical, 12)
-
 
                 if syncCalendarEnabled {
                     Divider()

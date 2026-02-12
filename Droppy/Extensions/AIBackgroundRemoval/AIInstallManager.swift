@@ -33,6 +33,16 @@ private struct AIInstallProcessResult: Sendable {
     let output: String
 }
 
+private struct PythonRuntimeInfo: Sendable {
+    let major: Int
+    let minor: Int
+    let machine: String
+
+    var versionString: String {
+        "\(major).\(minor)"
+    }
+}
+
 /// Runs a process while continuously draining output to prevent deadlocks on verbose commands.
 private func runAIInstallProcess(executable: String, arguments: [String]) async throws -> AIInstallProcessResult {
     let process = Process()
@@ -75,6 +85,19 @@ private func runAIInstallProcess(executable: String, arguments: [String]) async 
 final class AIInstallManager: ObservableObject {
     static let shared = AIInstallManager()
     static let selectedPythonPathKey = "aiBackgroundRemovalPythonPath"
+
+    nonisolated static var managedVenvURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base
+            .appendingPathComponent("Droppy", isDirectory: true)
+            .appendingPathComponent("AIBackgroundRemoval", isDirectory: true)
+            .appendingPathComponent("venv", isDirectory: true)
+    }
+
+    nonisolated static var managedVenvPythonPath: String {
+        managedVenvURL.appendingPathComponent("bin/python3").path
+    }
     
     @Published var isInstalled = false
     @Published var isInstalling = false
@@ -84,6 +107,7 @@ final class AIInstallManager: ObservableObject {
     @Published private(set) var detectedPythonPath: String?
     
     private let installedCacheKey = "aiBackgroundRemovalInstalled"
+    private let transparentBackgroundRequirement = "transparent-background==1.2.10"
     
     private init() {
         // Load cached status immediately for instant UI response
@@ -103,7 +127,8 @@ final class AIInstallManager: ObservableObject {
     func checkInstallationStatus() {
         Task {
             let candidates = await pythonCandidatePaths()
-            detectedPythonPath = candidates.sorted { rankForInstall($0) < rankForInstall($1) }.first
+            let installCandidates = await installBaseCandidates(from: candidates).paths
+            detectedPythonPath = installCandidates.first ?? preferredDetectedPythonPath(from: candidates)
             
             let installedPython = await findPythonWithTransparentBackground(in: candidates)
             setInstalledState(installedPython != nil, pythonPath: installedPython)
@@ -115,9 +140,17 @@ final class AIInstallManager: ObservableObject {
     }
     
     var recommendedManualInstallCommand: String {
+        let venvPath = Self.managedVenvURL.path
+        let venvPython = Self.managedVenvPythonPath
+
+        if FileManager.default.fileExists(atPath: venvPython) {
+            return "\(shellQuote(venvPython)) -m pip install --upgrade \(transparentBackgroundRequirement)"
+        }
+
         let preferredPath = activePythonPath ?? detectedPythonPath
         let python = (preferredPath.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }) ?? "python3"
-        return "\(shellQuote(python)) -m pip install --user --upgrade transparent-background"
+
+        return "\(shellQuote(python)) -m venv \(shellQuote(venvPath)) && \(shellQuote(venvPython)) -m pip install --upgrade \(transparentBackgroundRequirement)"
     }
     
     var hasDetectedPythonPath: Bool {
@@ -164,6 +197,8 @@ final class AIInstallManager: ObservableObject {
     
     private func pythonCandidatePaths() async -> [String] {
         var candidates: [String] = []
+
+        candidates.append(Self.managedVenvPythonPath)
         
         if let cachedPath = UserDefaults.standard.string(forKey: Self.selectedPythonPathKey) {
             candidates.append(cachedPath)
@@ -192,6 +227,11 @@ final class AIInstallManager: ObservableObject {
         
         return unique
     }
+
+    private func preferredDetectedPythonPath(from candidates: [String]) -> String? {
+        let sorted = candidates.sorted { rankForInstall($0) < rankForInstall($1) }
+        return sorted.first { $0 != Self.managedVenvPythonPath } ?? sorted.first
+    }
     
     private func pythonPathFromWhich() async -> String? {
         do {
@@ -210,17 +250,8 @@ final class AIInstallManager: ObservableObject {
         }
     }
     
-    private func selectPythonForInstall(from candidates: [String]) async -> String? {
-        let sorted = candidates.sorted { rankForInstall($0) < rankForInstall($1) }
-        for path in sorted {
-            if await ensurePipAvailable(at: path) {
-                return path
-            }
-        }
-        return nil
-    }
-    
     private func rankForInstall(_ path: String) -> Int {
+        if path == Self.managedVenvPythonPath { return -100 }
         if path.hasPrefix("/opt/homebrew/") { return 0 }
         if path.hasPrefix("/usr/local/") { return 1 }
         if path.hasPrefix("/Library/Frameworks/Python.framework/") { return 2 }
@@ -255,6 +286,92 @@ final class AIInstallManager: ObservableObject {
         }
         
         return false
+    }
+
+    private func pythonRuntimeInfo(at pythonPath: String) async -> PythonRuntimeInfo? {
+        do {
+            let result = try await runAIInstallProcess(
+                executable: pythonPath,
+                arguments: ["-c", "import platform, sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}|{platform.machine()}')"]
+            )
+            guard result.status == 0 else { return nil }
+            guard let firstLine = result.output
+                .split(separator: "\n")
+                .map({ String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
+                .first else {
+                return nil
+            }
+            let parts = firstLine.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return nil }
+
+            let versionParts = parts[0].split(separator: ".", maxSplits: 1).map(String.init)
+            guard versionParts.count == 2,
+                  let major = Int(versionParts[0]),
+                  let minor = Int(versionParts[1]) else {
+                return nil
+            }
+
+            return PythonRuntimeInfo(
+                major: major,
+                minor: minor,
+                machine: parts[1].lowercased()
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private func compatibilityIssue(for info: PythonRuntimeInfo) -> String? {
+        let isIntel = info.machine == "x86_64" || info.machine == "amd64" || info.machine == "i386"
+        if isIntel && info.major == 3 && info.minor >= 13 {
+            return "Intel Macs are currently unsupported on Python \(info.versionString). Use Python 3.12 or older for AI background removal."
+        }
+        return nil
+    }
+
+    private func installBaseCandidates(from candidates: [String]) async -> (paths: [String], issues: [String]) {
+        let sorted = candidates
+            .filter { $0 != Self.managedVenvPythonPath }
+            .sorted { rankForInstall($0) < rankForInstall($1) }
+
+        var usable: [String] = []
+        var issues: [String] = []
+
+        for path in sorted {
+            guard await ensurePipAvailable(at: path) else {
+                issues.append("pip unavailable at \(path)")
+                continue
+            }
+
+            if let info = await pythonRuntimeInfo(at: path),
+               let issue = compatibilityIssue(for: info) {
+                issues.append("\(path): \(issue)")
+                continue
+            }
+
+            usable.append(path)
+        }
+
+        return (usable, issues)
+    }
+
+    private func recreateManagedVenv(using basePythonPath: String) async -> AIInstallProcessResult? {
+        let venvURL = Self.managedVenvURL
+        let fileManager = FileManager.default
+
+        do {
+            try fileManager.createDirectory(at: venvURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if fileManager.fileExists(atPath: venvURL.path) {
+                try fileManager.removeItem(at: venvURL)
+            }
+
+            return try await runAIInstallProcess(
+                executable: basePythonPath,
+                arguments: ["-m", "venv", venvURL.path]
+            )
+        } catch {
+            return nil
+        }
     }
     
     private func isXcodeCliInstalled() async -> Bool {
@@ -307,7 +424,8 @@ final class AIInstallManager: ObservableObject {
         }
         
         var candidates = await pythonCandidatePaths()
-        detectedPythonPath = candidates.sorted { rankForInstall($0) < rankForInstall($1) }.first
+        var candidateEvaluation = await installBaseCandidates(from: candidates)
+        detectedPythonPath = candidateEvaluation.paths.first ?? preferredDetectedPythonPath(from: candidates)
         
         if let installedPython = await findPythonWithTransparentBackground(in: candidates) {
             installProgress = "AI background removal is already installed."
@@ -315,74 +433,98 @@ final class AIInstallManager: ObservableObject {
             return
         }
         
-        if candidates.isEmpty, !(await isXcodeCliInstalled()) {
+        let systemCandidates = candidates.filter { $0 != Self.managedVenvPythonPath }
+        if systemCandidates.isEmpty, !(await isXcodeCliInstalled()) {
             let requested = await triggerXcodeCliInstall()
             if requested {
                 candidates = await pythonCandidatePaths()
-                detectedPythonPath = candidates.sorted { rankForInstall($0) < rankForInstall($1) }.first
+                candidateEvaluation = await installBaseCandidates(from: candidates)
+                detectedPythonPath = candidateEvaluation.paths.first ?? preferredDetectedPythonPath(from: candidates)
             }
         }
         
-        guard !candidates.isEmpty else {
+        let refreshedSystemCandidates = candidates.filter { $0 != Self.managedVenvPythonPath }
+        guard !refreshedSystemCandidates.isEmpty else {
             installProgress = ""
             installError = "Python 3 is required. Install Command Line Tools or Python from python.org, then retry."
             return
         }
         
-        guard let pythonPath = await selectPythonForInstall(from: candidates) else {
+        let installCandidates = candidateEvaluation.paths
+        let candidateIssues = candidateEvaluation.issues
+        guard !installCandidates.isEmpty else {
             installProgress = ""
-            installError = "Python was found, but pip is unavailable. Install pip for Python 3 and retry."
+            if let compatibilityIssue = candidateIssues.first(where: { $0.localizedCaseInsensitiveContains("intel macs are currently unsupported") }) {
+                installError = "No compatible Python found. \(compatibilityIssue)"
+            } else if candidateIssues.contains(where: { $0.localizedCaseInsensitiveContains("pip unavailable") }) {
+                installError = "Python was found, but pip/venv is unavailable. Install pip for Python 3 and retry."
+            } else {
+                installError = "No compatible Python runtime found for AI background removal. Install Python 3.12 or run Command Line Tools, then retry."
+            }
             return
         }
-        
-        activePythonPath = pythonPath
-        UserDefaults.standard.set(pythonPath, forKey: Self.selectedPythonPathKey)
-        
-        installProgress = "Installing transparent-background package..."
-        
-        let baseArgs = [
+
+        let installArgs = [
             "-m", "pip", "install",
-            "--user",
             "--upgrade",
             "--disable-pip-version-check",
-            "transparent-background"
+            transparentBackgroundRequirement
         ]
-        
-        do {
-            var result = try await runAIInstallProcess(executable: pythonPath, arguments: baseArgs)
-            
-            if result.status != 0 && result.output.lowercased().contains("externally-managed-environment") {
-                installProgress = "Retrying with compatibility flags..."
-                result = try await runAIInstallProcess(
-                    executable: pythonPath,
-                    arguments: baseArgs + ["--break-system-packages"]
-                )
+
+        var lastError: String?
+
+        for basePythonPath in installCandidates {
+            installProgress = "Preparing isolated Python environment..."
+
+            guard let venvResult = await recreateManagedVenv(using: basePythonPath) else {
+                lastError = "Failed to create AI Python environment. Try installing Python from python.org and retry."
+                continue
             }
-            
-            guard result.status == 0 else {
-                installProgress = ""
-                installError = formatInstallError(result.output)
-                return
+
+            guard venvResult.status == 0 else {
+                lastError = formatInstallError(venvResult.output)
+                continue
             }
-            
-            guard await isTransparentBackgroundInstalled(at: pythonPath) else {
-                installProgress = ""
-                installError = "Install finished, but verification failed. Click Re-check or run the manual command."
-                return
+
+            let venvPythonPath = Self.managedVenvPythonPath
+            guard await ensurePipAvailable(at: venvPythonPath) else {
+                lastError = "Virtual environment was created, but pip is unavailable. Reinstall Python and retry."
+                continue
             }
-            
+
+            activePythonPath = venvPythonPath
+            UserDefaults.standard.set(venvPythonPath, forKey: Self.selectedPythonPathKey)
+            installProgress = "Installing transparent-background package..."
+
+            do {
+                let result = try await runAIInstallProcess(executable: venvPythonPath, arguments: installArgs)
+                guard result.status == 0 else {
+                    lastError = formatInstallError(result.output)
+                    continue
+                }
+            } catch {
+                lastError = "Failed to start installation: \(error.localizedDescription)"
+                continue
+            }
+
+            guard await isTransparentBackgroundInstalled(at: venvPythonPath) else {
+                lastError = "Install finished, but verification failed. Click Re-check or run the manual command."
+                continue
+            }
+
             installProgress = "Installation complete!"
-            setInstalledState(true, pythonPath: pythonPath)
-            
+            setInstalledState(true, pythonPath: venvPythonPath)
+
             // Keep legacy key for backward compatibility.
             UserDefaults.standard.set(true, forKey: "useLocalBackgroundRemoval")
-            
+
             // Track extension activation
             AnalyticsService.shared.trackExtensionActivation(extensionId: "aiBackgroundRemoval")
-        } catch {
-            installProgress = ""
-            installError = "Failed to start installation: \(error.localizedDescription)"
+            return
         }
+
+        installProgress = ""
+        installError = lastError ?? formatInstallError(candidateIssues.joined(separator: "\n"))
     }
     
     private func formatInstallError(_ rawOutput: String) -> String {
@@ -394,7 +536,13 @@ final class AIInstallManager: ObservableObject {
         }
         
         if normalized.contains("externally-managed-environment") {
-            return "Python refused package changes in this environment. Use the manual command or a Homebrew/Python.org install."
+            return "Python refused package changes in this environment. Droppy now installs in an isolated venv; retry install."
+        }
+
+        if normalized.contains("resolutionimpossible")
+            || normalized.contains("no matching distribution found for torch")
+            || (normalized.contains("no matching distributions available for your environment") && normalized.contains("torch")) {
+            return "This Python build is incompatible with required AI dependencies (torch). On Intel Macs, use Python 3.12 or older."
         }
         
         if normalized.contains("permission denied") {
@@ -455,6 +603,9 @@ final class AIInstallManager: ObservableObject {
             
             let output = result.output.lowercased()
             if result.status == 0 || output.contains("not installed") {
+                if pythonPath == Self.managedVenvPythonPath {
+                    removeManagedVenvIfPresent()
+                }
                 setInstalledState(false, pythonPath: nil)
                 
                 // Keep legacy key for backward compatibility.
@@ -480,6 +631,7 @@ final class AIInstallManager: ObservableObject {
             UserDefaults.standard.removeObject(forKey: Self.selectedPythonPathKey)
             UserDefaults.standard.removeObject(forKey: "useLocalBackgroundRemoval")
             UserDefaults.standard.removeObject(forKey: "aiBackgroundRemovalTracked")
+            removeManagedVenvIfPresent()
             
             // Reset state
             isInstalled = false
@@ -490,6 +642,13 @@ final class AIInstallManager: ObservableObject {
             NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.aiBackgroundRemoval)
             
             print("[AIInstallManager] Cleanup complete")
+        }
+    }
+
+    private func removeManagedVenvIfPresent() {
+        let venvURL = Self.managedVenvURL
+        if FileManager.default.fileExists(atPath: venvURL.path) {
+            try? FileManager.default.removeItem(at: venvURL)
         }
     }
     

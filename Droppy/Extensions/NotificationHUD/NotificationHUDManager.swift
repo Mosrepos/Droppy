@@ -10,6 +10,11 @@ import SwiftUI
 import SQLite3
 import Observation
 
+enum CapturedNotificationOrigin {
+    case system
+    case dueSoon
+}
+
 /// Represents a captured macOS notification
 struct CapturedNotification: Identifiable, Equatable {
     let id: UUID = UUID()
@@ -20,6 +25,7 @@ struct CapturedNotification: Identifiable, Equatable {
     let body: String?
     let timestamp: Date
     var appIcon: NSImage?
+    let origin: CapturedNotificationOrigin
     
     /// Display title: prefer sender name for messages, fall back to title/app
     var displayTitle: String {
@@ -60,6 +66,11 @@ final class NotificationHUDManager {
     private(set) var hasFullDiskAccess: Bool = false
     
     var queueCount: Int { notificationQueue.count }
+    var canRenderNotificationHUD: Bool {
+        if isInstalled { return true }
+        if currentNotification?.origin == .dueSoon { return true }
+        return notificationQueue.contains(where: { $0.origin == .dueSoon })
+    }
     
     // Track apps that have sent notifications (bundleID -> (name, icon))
     private(set) var seenApps: [String: (name: String, icon: NSImage?)] = [:]
@@ -454,7 +465,8 @@ final class NotificationHUDManager {
                 subtitle: subtitle,
                 body: body,
                 timestamp: timestamp,
-                appIcon: appIcon
+                appIcon: appIcon,
+                origin: .system
             )
             
             // Track this app as having sent notifications (safe: we're on databaseQueue)
@@ -527,14 +539,54 @@ final class NotificationHUDManager {
     // MARK: - Notification Processing
 
     private func processNewNotifications(_ notifications: [CapturedNotification]) {
+        processIncomingNotifications(
+            notifications,
+            bypassEnabledCheck: false,
+            bypassFocusCheck: false
+        )
+    }
+
+    func showDueSoonNotification(title: String, subtitle: String, body: String?, playChime: Bool) {
+        let bundleID = Bundle.main.bundleIdentifier ?? "app.getdroppy.Droppy"
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "Droppy"
+        let notification = CapturedNotification(
+            appBundleID: bundleID,
+            appName: appName,
+            title: title,
+            subtitle: subtitle,
+            body: body,
+            timestamp: Date(),
+            appIcon: NSApp.applicationIconImage,
+            origin: .dueSoon
+        )
+
+        DispatchQueue.main.async { [weak self] in
+            self?.processIncomingNotifications(
+                [notification],
+                bypassEnabledCheck: true,
+                bypassFocusCheck: true
+            )
+            if playChime {
+                self?.playDueSoonChime()
+            }
+        }
+    }
+
+    private func processIncomingNotifications(
+        _ notifications: [CapturedNotification],
+        bypassEnabledCheck: Bool,
+        bypassFocusCheck: Bool
+    ) {
         // Respect the "Notify me!" toggle in HUDs settings
-        guard isEnabled else {
+        guard bypassEnabledCheck || isEnabled else {
             debugLog("Skipping \(notifications.count) notification(s) - extension disabled")
             return
         }
 
         // Respect Focus mode / DND - don't show notifications when Focus is active
-        guard !DNDManager.shared.isDNDActive else {
+        guard bypassFocusCheck || !DNDManager.shared.isDNDActive else {
             debugLog("Skipping \(notifications.count) notification(s) - DND/Focus active")
             return
         }
@@ -559,6 +611,12 @@ final class NotificationHUDManager {
                 notificationQueue.append(notification)
             }
         }
+    }
+
+    private func playDueSoonChime() {
+        guard let sound = NSSound(named: "Pop") else { return }
+        sound.volume = 0.4
+        sound.play()
     }
 
     private func scheduleAutoDismiss() {

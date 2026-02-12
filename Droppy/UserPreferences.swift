@@ -174,6 +174,8 @@ enum AppPreferenceKey {
     static let todoSyncRemindersListIDs = "todo_syncRemindersListIDs"  // JSON array of selected reminder list identifiers
     static let todoSyncCalendarListIDs = "todo_syncCalendarListIDs"  // JSON array of selected calendar identifiers
     static let todoShelfSplitViewEnabled = "todo_shelfSplitViewEnabled"
+    static let todoDueSoonNotificationsEnabled = "todo_dueSoonNotificationsEnabled"
+    static let todoDueSoonNotificationsChimeEnabled = "todo_dueSoonNotificationsChimeEnabled"
     static let todoShowTaskViewTimezone = "todo_showTaskViewTimezone"
     static let todoShowTaskWeekNumber = "todo_showTaskWeekNumber"
     
@@ -358,7 +360,10 @@ enum PreferenceDefault {
     static let todoSyncCalendarEnabled = false
     static let todoSyncRemindersEnabled = false
     static let todoSyncRemindersListIDs = "[]"
+    static let todoSyncCalendarListIDs = "[]"
     static let todoShelfSplitViewEnabled = true
+    static let todoDueSoonNotificationsEnabled = true
+    static let todoDueSoonNotificationsChimeEnabled = true
     static let todoShowTaskViewTimezone = false
     static let todoShowTaskWeekNumber = true
     
