@@ -419,7 +419,7 @@ struct MediaPlayerView: View {
             }
             .padding(NotchLayoutConstants.contentEdgeInsets(notchHeight: notchHeight, isExternalWithNotchStyle: isExternalWithNotchStyle))
             .background(alignment: .bottomLeading) {
-                if musicManager.albumArt.size.width > 0 {
+                if enableMediaAlbumArtGlow && musicManager.albumArt.size.width > 0 {
                     Ellipse()
                         .fill(
                             RadialGradient(
@@ -670,7 +670,7 @@ struct MediaPlayerView: View {
             )
             // Composite the entire view before applying shadow to prevent ghosting during animations
             .compositingGroup()
-            .droppyCardShadow()
+            .droppyCardShadow(opacity: enableMediaAlbumArtGlow ? 0.25 : 0)
         }
         .buttonStyle(DroppyCardButtonStyle(cornerRadius: DroppyRadius.large))
         .scaleEffect((isAlbumArtPressed ? 0.95 : (isAlbumArtHovering ? 1.02 : 1.0)) * albumArtPauseScale)
@@ -803,7 +803,7 @@ struct MediaPlayerView: View {
                         .stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 0.5)
                 )
                 .compositingGroup()
-                .droppyCardShadow(opacity: 0.3)
+                .droppyCardShadow(opacity: enableMediaAlbumArtGlow ? 0.3 : 0)
             }
             .buttonStyle(DroppyCardButtonStyle(cornerRadius: DroppyRadius.lx))
             .scaleEffect((isAlbumArtPressed ? 0.96 : (isAlbumArtHovering ? 1.02 : 1.0)) * albumArtPauseScale)
