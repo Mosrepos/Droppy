@@ -63,6 +63,7 @@ struct ToDoShelfBar: View {
     @State private var splitToggleInteractionWorkItem: DispatchWorkItem?
     @State private var detailTitleCommitWorkItem: DispatchWorkItem?
     @State private var timelineSnapshot = TimelineSnapshot.empty
+    @State private var completingTimelineItemIDs: Set<UUID> = []
     @State private var skipNextExpandedResizeRecalc = false
     @FocusState private var isDetailTitleFieldFocused: Bool
 
@@ -223,11 +224,11 @@ struct ToDoShelfBar: View {
         }
         .onChange(of: manager.items) { _, _ in
             guard isListExpanded else { return }
-            refreshTimelineSnapshot()
+            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
         }
         .onChange(of: calendarSyncEnabled) { _, _ in
             guard isListExpanded else { return }
-            refreshTimelineSnapshot()
+            refreshTimelineSnapshot(animation: DroppyAnimation.smoothContent)
         }
         .onChange(of: inputText) { _, newValue in
             refreshListMentionState(for: newValue)
@@ -721,6 +722,7 @@ struct ToDoShelfBar: View {
                                     item: item,
                                     manager: manager,
                                     isSelected: isSplitViewEnabled && selectedTimelineItemID == item.id,
+                                    isCompleting: completingTimelineItemIDs.contains(item.id),
                                     allowCompactDetailsPopover: !isSplitViewEnabled,
                                     useAdaptiveForegrounds: useAdaptiveForegrounds,
                                     timeLabel: formattedTimelineTimeLabel(for: item),
@@ -730,14 +732,11 @@ struct ToDoShelfBar: View {
                                         selectedTimelineItemID = item.id
                                     },
                                     onToggleCompletion: {
-                                        manager.toggleCompletion(for: item)
-                                        refreshTimelineSnapshot()
-                                        syncTimelineSelection()
-                                        syncDetailDraftFromSelection()
+                                        animateTimelineCompletion(for: item)
                                     },
                                     onDelete: {
                                         manager.removeItem(item)
-                                        refreshTimelineSnapshot()
+                                        refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
                                         syncTimelineSelection()
                                         syncDetailDraftFromSelection()
                                     }
@@ -749,6 +748,7 @@ struct ToDoShelfBar: View {
                                         priority: item.priority
                                     )
                                 )
+                                .transition(.scale(scale: 0.9).combined(with: .opacity))
                             }
                         }
                         .id(section.dayStart)
@@ -757,6 +757,7 @@ struct ToDoShelfBar: View {
                 .padding(.top, Layout.listTopPadding)
                 .padding(.bottom, Layout.listBottomPadding)
                 .padding(.horizontal, timelineColumnHorizontalPadding)
+                .animation(DroppyAnimation.itemInsertion, value: timelineDaySectionSignature)
             }
             .coordinateSpace(name: "timeline-scroll")
             .onPreferenceChange(TimelineSectionOffsetPreferenceKey.self) { offsets in
@@ -925,10 +926,7 @@ struct ToDoShelfBar: View {
 
                         HStack(spacing: 8) {
                             Button {
-                                manager.toggleCompletion(for: item)
-                                refreshTimelineSnapshot()
-                                syncTimelineSelection()
-                                syncDetailDraftFromSelection()
+                                animateTimelineCompletion(for: item)
                             } label: {
                                 Text(item.isCompleted ? "Mark Pending" : "Mark Complete")
                                     .frame(maxWidth: .infinity)
@@ -937,7 +935,7 @@ struct ToDoShelfBar: View {
 
                             Button(role: .destructive) {
                                 manager.removeItem(item)
-                                refreshTimelineSnapshot()
+                                refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
                                 syncTimelineSelection()
                                 syncDetailDraftFromSelection()
                             } label: {
@@ -1090,7 +1088,7 @@ struct ToDoShelfBar: View {
             )
         }
         if isListExpanded {
-            refreshTimelineSnapshot()
+            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
             syncTimelineSelection()
             syncDetailDraftFromSelection()
         }
@@ -1721,6 +1719,7 @@ private struct ShelfTimelineRow: View {
     let item: ToDoItem
     let manager: ToDoManager
     let isSelected: Bool
+    let isCompleting: Bool
     let allowCompactDetailsPopover: Bool
     let useAdaptiveForegrounds: Bool
     let timeLabel: String
@@ -1795,6 +1794,9 @@ private struct ShelfTimelineRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+        .scaleEffect(isCompleting ? 0.92 : 1.0, anchor: .center)
+        .opacity(isCompleting ? 0.0 : 1.0)
+        .blur(radius: isCompleting ? 0.8 : 0)
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -1807,6 +1809,8 @@ private struct ShelfTimelineRow: View {
         .onTapGesture {
             onSelect()
         }
+        .allowsHitTesting(!isCompleting)
+        .animation(DroppyAnimation.smooth(duration: 0.18), value: isCompleting)
         .modifier(
             CompactTimelineDetailsModifier(
                 enabled: allowCompactDetailsPopover,
@@ -2606,7 +2610,7 @@ private extension ToDoShelfBar {
         timelineSnapshot.hasVisibleTaskItems
     }
 
-    func refreshTimelineSnapshot() {
+    func refreshTimelineSnapshot(animation: Animation? = nil) {
         let activeItems = manager.sortedItems.filter { !$0.isCompleted }
         let hasTaskItems = activeItems.contains { $0.externalSource != .calendar }
         let mode: TimelineContentMode
@@ -2652,7 +2656,7 @@ private extension ToDoShelfBar {
             }
         }
 
-        timelineSnapshot = TimelineSnapshot(
+        let nextSnapshot = TimelineSnapshot(
             mode: mode,
             hasVisibleTaskItems: hasTaskItems,
             visibleItems: visibleItems,
@@ -2660,6 +2664,39 @@ private extension ToDoShelfBar {
             selectionSignature: selectionHasher.finalize(),
             daySectionSignature: hasher.finalize()
         )
+        if let animation {
+            withAnimation(animation) {
+                timelineSnapshot = nextSnapshot
+            }
+        } else {
+            timelineSnapshot = nextSnapshot
+        }
+        let visibleIDs = Set(visibleItems.map(\.id))
+        completingTimelineItemIDs = completingTimelineItemIDs.intersection(visibleIDs)
+    }
+
+    private func animateTimelineCompletion(for item: ToDoItem) {
+        guard !item.isCompleted else {
+            manager.toggleCompletion(for: item)
+            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
+            syncTimelineSelection()
+            syncDetailDraftFromSelection()
+            return
+        }
+
+        let itemID = item.id
+        guard !completingTimelineItemIDs.contains(itemID) else { return }
+
+        withAnimation(DroppyAnimation.smooth(duration: 0.18)) {
+            _ = completingTimelineItemIDs.insert(itemID)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            manager.toggleCompletion(for: item)
+            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
+            syncTimelineSelection()
+            syncDetailDraftFromSelection()
+        }
     }
 
     private func buildTimelineDaySections(from visibleItems: [ToDoItem]) -> [TimelineDaySection] {

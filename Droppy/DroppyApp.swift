@@ -581,7 +581,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if needsAccessibility && !isGranted {
                 print("🔐 Droppy: Accessibility needed for enabled features - prompting...")
-                PermissionManager.shared.requestAccessibility()
+                PermissionManager.shared.requestAccessibility(context: .automatic)
             } else {
                 print("🔐 DEBUG: NOT prompting - needsAccessibility=\(needsAccessibility) isGranted=\(isGranted)")
             }

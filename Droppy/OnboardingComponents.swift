@@ -216,17 +216,19 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             // Defer to next runloop to avoid releasing view while callback is in progress
             DispatchQueue.main.async {
                 // Mark onboarding as complete first
-                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                UserDefaults.standard.set(true, forKey: AppPreferenceKey.hasCompletedOnboarding)
                 self?.close()
             }
         }
 
         
+        let preferredSize = OnboardingView.preferredWindowSize
+
         let hostingView = NSHostingView(rootView: contentView)
         
         // Use NSPanel with borderless style to match extension windows (no traffic lights)
         let newWindow = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 580),
+            contentRect: NSRect(x: 0, y: 0, width: preferredSize.width, height: preferredSize.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -261,7 +263,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         newWindow.alphaValue = 0
         if let contentView = newWindow.contentView {
             contentView.wantsLayer = true
-            contentView.layer?.transform = CATransform3DMakeScale(0.85, 0.85, 1.0)
+            contentView.layer?.transform = CATransform3DMakeScale(0.9, 0.9, 1.0)
             contentView.layer?.opacity = 0
         }
         
@@ -287,7 +289,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             
             // Scale with spring overshoot
             let scaleAnim = CASpringAnimation(keyPath: "transform.scale")
-            scaleAnim.fromValue = 0.85
+            scaleAnim.fromValue = 0.9
             scaleAnim.toValue = 1.0
             scaleAnim.mass = 1.0
             scaleAnim.stiffness = 250  // Slightly softer for larger window

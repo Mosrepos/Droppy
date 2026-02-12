@@ -266,7 +266,7 @@ struct BasketItemView: View {
                                     RoundedRectangle(cornerRadius: DroppyRadius.small, style: .continuous)
                                         .fill(AdaptiveColors.overlayAuto(0.08))
                                         .overlay(
-                                            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                                            Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: item.url.path))
                                                 .resizable()
                                                 .aspectRatio(contentMode: .fit)
                                                 .frame(width: 24, height: 24)
@@ -601,7 +601,7 @@ struct BasketItemView: View {
                             RoundedRectangle(cornerRadius: DroppyRadius.small, style: .continuous)
                                 .fill(AdaptiveColors.overlayAuto(0.08))
                                 .overlay(
-                                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                                    Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: item.url.path))
                                         .resizable()
                                         .aspectRatio(contentMode: .fit)
                                         .frame(width: 24, height: 24)
@@ -1785,7 +1785,7 @@ private struct BasketItemContent: View {
                             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous))
                     } else {
                         // Native icon (folders, dmg, zip, etc): keep original shape
-                        Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                        Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: item.url.path))
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             // AUTO-TINT for Pinned Folders: Blue -> Yellow (+180 deg)

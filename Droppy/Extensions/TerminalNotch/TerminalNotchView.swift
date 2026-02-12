@@ -57,6 +57,35 @@ struct TerminalNotchView: View {
     
     /// Animated dash phase for marching ants effect on dotted outline
     @State private var dashPhase: CGFloat = 0
+    @State private var focusRequestToken = UUID()
+
+    private func forceInputFocus() {
+        guard manager.isVisible else { return }
+        isInputFocused = false
+        DispatchQueue.main.async {
+            guard manager.isVisible else { return }
+            isInputFocused = true
+        }
+    }
+
+    private func requestInputFocus() {
+        guard manager.isVisible else { return }
+        let requestToken = UUID()
+        focusRequestToken = requestToken
+
+        // Retry across the shelf/open animation to avoid focus races.
+        for delay in [0.0, 0.06, 0.16, 0.32] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard manager.isVisible, focusRequestToken == requestToken else { return }
+                forceInputFocus()
+            }
+        }
+    }
+
+    private func cancelFocusRequests() {
+        focusRequestToken = UUID()
+        isInputFocused = false
+    }
     
     var body: some View {
         ZStack {
@@ -90,26 +119,29 @@ struct TerminalNotchView: View {
         // No external styling - terminal lives inside shelf's content area
         // which already has its own black background
         .onAppear {
-            isInputFocused = true
-            DispatchQueue.main.async {
-                isInputFocused = true
-            }
+            requestInputFocus()
         }
         .onChange(of: manager.isVisible) { _, isVisible in
             if isVisible {
-                // Focus the text field when terminal becomes visible
-                isInputFocused = true
-                DispatchQueue.main.async {
-                    isInputFocused = true
-                }
+                requestInputFocus()
+            } else {
+                cancelFocusRequests()
             }
         }
+        .onChange(of: manager.isExpanded) { _, _ in
+            requestInputFocus()
+        }
+        .onChange(of: manager.hasExecutedCommand) { _, _ in
+            requestInputFocus()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            guard manager.isVisible else { return }
-            isInputFocused = true
-            DispatchQueue.main.async {
-                isInputFocused = true
-            }
+            requestInputFocus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            requestInputFocus()
+        }
+        .onDisappear {
+            cancelFocusRequests()
         }
     }
     

@@ -81,7 +81,13 @@ final class ToDoManager {
     
     // MARK: - State
     
-    var items: [ToDoItem] = []
+    var items: [ToDoItem] = [] {
+        didSet {
+            // Keep sorted view data in sync during the same mutation transaction
+            // so insert/remove transitions animate reliably.
+            sortedItemsCache = nil
+        }
+    }
     var isVisible: Bool = false
     var isShelfListExpanded: Bool = false
     var isInteractingWithPopover: Bool = false

@@ -25,7 +25,9 @@ final class DNDManager: ObservableObject {
     
     // MARK: - Private State
     private var pollingSource: DispatchSourceTimer?
+    private let pollingQueue = DispatchQueue(label: "com.droppy.dnd.polling", qos: .utility)
     private var hasInitialized = false
+    private var lastObservedModificationDate: Date?
     
     // Focus mode file path (requires Full Disk Access)
     private let dndPath: String
@@ -68,9 +70,10 @@ final class DNDManager: ObservableObject {
     
     private func startPolling() {
         pollingSource?.cancel()
+        lastObservedModificationDate = nil
         
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        let timer = DispatchSource.makeTimerSource(queue: pollingQueue)
+        timer.schedule(deadline: .now() + 0.5, repeating: .milliseconds(500), leeway: .milliseconds(120))
         timer.setEventHandler { [weak self] in
             self?.checkDNDState()
         }
@@ -100,13 +103,25 @@ final class DNDManager: ObservableObject {
     }
     
     private func checkDNDState() {
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: dndPath),
+           let modificationDate = attributes[.modificationDate] as? Date {
+            if let lastObservedModificationDate,
+               modificationDate <= lastObservedModificationDate {
+                return
+            }
+            lastObservedModificationDate = modificationDate
+        }
+
         let (_, newState) = readDNDState()
-        
-        if isDNDActive != newState {
-            isDNDActive = newState
-            if hasInitialized {
-                lastChangeAt = Date()
-                print("DNDManager: Focus changed to \(newState ? "ON" : "OFF")")
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.isDNDActive != newState {
+                self.isDNDActive = newState
+                if self.hasInitialized {
+                    self.lastChangeAt = Date()
+                    print("DNDManager: Focus changed to \(newState ? "ON" : "OFF")")
+                }
             }
         }
     }

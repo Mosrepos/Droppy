@@ -268,6 +268,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         horizontalPadding: CGFloat = 12,
         verticalPadding: CGFloat = 12
     ) -> NSRect {
+        let usingMediaHeight = shouldUseMediaInteractionHeight(on: screen)
         let expandedWidth = currentExpandedShelfWidth()
         let centerX = effectiveShelfCenterX(for: screen)
         let expandedHeight = expandedShelfInteractionHeight(for: screen)
@@ -277,7 +278,10 @@ final class NotchWindowController: NSObject, ObservableObject {
         // so those controls never count as "outside click" targets.
         // Keep this generous to cover notch + menu-bar-adjacent placements reliably.
         let topPadding = verticalPadding + (isTodoSplitExpanded ? 80 : 0)
-        let bottomPadding = verticalPadding
+        // Media mode uses a reduced base height for less "sticky" hover behavior.
+        // Add back just the floating-controls lane so buttons below the card remain reachable.
+        let mediaFloatingControlsPadding = usingMediaHeight ? expandedFloatingControlsReachPadding(for: screen) : 0
+        let bottomPadding = verticalPadding + mediaFloatingControlsPadding
 
         return NSRect(
             x: centerX - expandedWidth / 2 - horizontalPadding,
@@ -333,6 +337,44 @@ final class NotchWindowController: NSObject, ObservableObject {
         let fallbackHeight = DroppyState.expandedShelfHeight(for: screen)
         guard shouldUseMediaInteractionHeight(on: screen) else { return fallbackHeight }
         return min(fallbackHeight, expandedMediaInteractionHeight(for: screen))
+    }
+
+    /// Additional downward interaction reach required for floating controls beneath
+    /// the expanded media card (close/terminal/camera/caffeine + quick actions).
+    private func expandedFloatingControlsReachPadding(for screen: NSScreen) -> CGFloat {
+        let displayID = screen.displayID
+        guard DroppyState.shared.isExpanded(for: displayID) else { return 0 }
+
+        let enableNotchShelf = (UserDefaults.standard.object(forKey: AppPreferenceKey.enableNotchShelf) as? Bool) ?? true
+        guard enableNotchShelf else { return 0 }
+
+        let dragging = DragMonitor.shared.isDragging
+        let autoCollapseEnabled = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoCollapseShelf) as? Bool) ?? true
+        let enableQuickActions = UserDefaults.standard.preference(AppPreferenceKey.enableQuickActions, default: PreferenceDefault.enableQuickActions)
+
+        let terminalInstalled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchInstalled, default: PreferenceDefault.terminalNotchInstalled)
+        let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
+        let caffeineInstalled = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled)
+        let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
+        let cameraInstalled = UserDefaults.standard.preference(AppPreferenceKey.cameraInstalled, default: PreferenceDefault.cameraInstalled)
+        let cameraEnabled = UserDefaults.standard.preference(AppPreferenceKey.cameraEnabled, default: PreferenceDefault.cameraEnabled)
+
+        let regularButtonsVisible = !dragging && (
+            (terminalInstalled && terminalEnabled) ||
+            (caffeineInstalled && caffeineEnabled) ||
+            (cameraInstalled && cameraEnabled) ||
+            !autoCollapseEnabled
+        )
+        let quickActionsVisible = dragging && enableQuickActions
+
+        guard regularButtonsVisible || quickActionsVisible else { return 0 }
+
+        let isDynamicIsland = NotchLayoutConstants.isDynamicIslandMode(for: screen)
+        let islandCompensation: CGFloat = isDynamicIsland ? NotchLayoutConstants.floatingButtonIslandCompensation : 0
+        let controlHeight: CGFloat = quickActionsVisible ? 44 : 32
+        let hoverHeadroom: CGFloat = 20
+
+        return NotchLayoutConstants.floatingButtonGap + islandCompensation + controlHeight + hoverHeadroom
     }
 
     func isMouseInsideExpandedShelfInteractionZone(on screen: NSScreen, at location: NSPoint = NSEvent.mouseLocation) -> Bool {
@@ -2658,11 +2700,11 @@ class NotchWindow: NSPanel {
             let centerX = screen.notchAlignedCenterX
             // Keep the top-edge helper close to the actual notch. A very wide
             // band can cause accidental hover activation while using menu-bar items.
-            let halfWidth = (notchRect.width / 2) + 28 + extraPadding
+            let halfWidth = (notchRect.width / 2) + 12 + extraPadding
             return abs(x - centerX) <= halfWidth
         }
 
-        return x >= (notchRect.minX - 30 - extraPadding) && x <= (notchRect.maxX + 30 + extraPadding)
+        return x >= (notchRect.minX - 14 - extraPadding) && x <= (notchRect.maxX + 14 + extraPadding)
     }
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
@@ -2789,6 +2831,9 @@ class NotchWindow: NSPanel {
         }
 
         let collapsedRect = collapsedInteractionRect()
+        // Use true notch/island geometry for top-edge intent checks.
+        // Collapsed interaction rect can include media wings and become too wide.
+        let topEdgeReferenceRect = notchRect
         let isOverExactNotch = collapsedRect.contains(mouseLocation)
         var isOverExpandedZone: Bool
 
@@ -2806,17 +2851,21 @@ class NotchWindow: NSPanel {
             let upwardExpansion = max(0, screenTopY - collapsedRect.maxY)
 
             let expandedNotchRect = NSRect(
-                x: collapsedRect.origin.x - 20,                     // 20px expansion on left
+                x: collapsedRect.origin.x - 10,                     // 10px expansion on left
                 y: collapsedRect.origin.y,                          // Keep bottom edge EXACT (no downward expansion!)
-                width: collapsedRect.width + 40,                    // 20px expansion on each side = 40px total
+                width: collapsedRect.width + 20,                    // 10px expansion on each side = 20px total
                 height: collapsedRect.height + upwardExpansion      // Extend upward to screen top (covers the gap)
             )
             isOverExpandedZone = expandedNotchRect.contains(mouseLocation)
 
             // Special case: If cursor is at the absolute screen top edge within island X range,
             // always treat it as hovering (Fitt's Law - user slamming cursor to top)
-            let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 20  // Within 20px
-            let isWithinIslandX = mouseLocation.x >= collapsedRect.minX - 30 && mouseLocation.x <= collapsedRect.maxX + 30
+            let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 10  // Within 10px
+            let isWithinIslandX = isWithinTopEdgeHoverBand(
+                x: mouseLocation.x,
+                on: targetScreen,
+                notchRect: topEdgeReferenceRect
+            )
             if isAtScreenTop && isWithinIslandX {
                 isOverExpandedZone = true
             }
@@ -2830,9 +2879,9 @@ class NotchWindow: NSPanel {
             let upwardExpansion = (screenTopY - collapsedRect.maxY) + 5  // +5px buffer to capture absolute edge
 
             let expandedNotchRect = NSRect(
-                x: collapsedRect.origin.x - 20,                     // 20px expansion on left
+                x: collapsedRect.origin.x - 10,                     // 10px expansion on left
                 y: collapsedRect.origin.y,                          // Keep bottom edge exact (no downward expansion)
-                width: collapsedRect.width + 40,                    // 20px expansion on each side = 40px total
+                width: collapsedRect.width + 20,                    // 10px expansion on each side = 20px total
                 height: collapsedRect.height + upwardExpansion      // Extend to screen top edge + buffer
             )
             isOverExpandedZone = expandedNotchRect.contains(mouseLocation)
@@ -2843,11 +2892,11 @@ class NotchWindow: NSPanel {
             // 2. The last event before hitting the edge might have a Y slightly below maxY
             // 3. macOS may also report Y at or ABOVE maxY when cursor is at physical edge
             // 4. Menu bar is ~24px, notch is within that space, so 20px tolerance is safe
-            let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 20  // Within 20px of absolute top
+            let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 10  // Within 10px of absolute top
             let isWithinNotchX = isWithinTopEdgeHoverBand(
                 x: mouseLocation.x,
                 on: targetScreen,
-                notchRect: collapsedRect
+                notchRect: topEdgeReferenceRect
             )
             if isAtScreenTop && isWithinNotchX {
                 isOverExpandedZone = true
@@ -2861,11 +2910,11 @@ class NotchWindow: NSPanel {
 
         // For maintaining hover: exact notch OR at screen top within horizontal bounds
         var isOverExactOrEdge = isOverExactNotch
-        let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 15  // Within 15px
+        let isAtScreenTop = mouseLocation.y >= targetScreen.frame.maxY - 10  // Within 10px
         let isWithinNotchX = isWithinTopEdgeHoverBand(
             x: mouseLocation.x,
             on: targetScreen,
-            notchRect: collapsedRect
+            notchRect: topEdgeReferenceRect
         )
         if isAtScreenTop && isWithinNotchX {
             isOverExactOrEdge = true

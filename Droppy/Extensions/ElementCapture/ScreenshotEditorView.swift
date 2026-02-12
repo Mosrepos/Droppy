@@ -15,6 +15,7 @@ import CoreImage.CIFilterBuiltins
 
 enum AnnotationTool: String, CaseIterable, Identifiable {
     case arrow = "arrow.up.right"
+    case curvedArrow = "arrow.uturn.up"
     case line = "line.diagonal"
     case rectangle = "rectangle"
     case ellipse = "oval"
@@ -28,6 +29,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .arrow: return "Arrow"
+        case .curvedArrow: return "Curved Arrow"
         case .line: return "Line"
         case .rectangle: return "Rectangle"
         case .ellipse: return "Ellipse"
@@ -42,6 +44,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     var defaultShortcut: Character {
         switch self {
         case .arrow: return "a"
+        case .curvedArrow: return "c"
         case .line: return "l"
         case .rectangle: return "r"
         case .ellipse: return "o"  // O for oval/ellipse
@@ -118,6 +121,7 @@ struct ScreenshotEditorView: View {
     // Annotation moving
     @State private var selectedAnnotationIndex: Int? = nil
     @State private var isDraggingAnnotation = false
+    @State private var draggedAnnotationInitialPoints: [CGPoint] = []
     
     private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .purple, .white]
     private let strokeWidths: [(CGFloat, String)] = [(2, "S"), (4, "M"), (6, "L")]
@@ -250,6 +254,7 @@ struct ScreenshotEditorView: View {
                     switch action {
                     // Tools
                     case .arrow: selectedTool = .arrow; return nil
+                    case .curvedArrow: selectedTool = .curvedArrow; return nil
                     case .line: selectedTool = .line; return nil
                     case .rectangle: selectedTool = .rectangle; return nil
                     case .ellipse: selectedTool = .ellipse; return nil
@@ -296,7 +301,7 @@ struct ScreenshotEditorView: View {
     private func updateCursor() {
         // Use crosshair cursor for drawing tools
         switch selectedTool {
-        case .arrow, .line, .rectangle, .ellipse, .freehand, .highlighter, .blur:
+        case .arrow, .curvedArrow, .line, .rectangle, .ellipse, .freehand, .highlighter, .blur:
             NSCursor.crosshair.set()
         case .text:
             NSCursor.iBeam.set()
@@ -715,22 +720,30 @@ struct ScreenshotEditorView: View {
             y: value.startLocation.y / containerSize.height
         )
         
-        // Check if we're dragging an existing text annotation
+        // Check if we're dragging an existing annotation
         if isDraggingAnnotation, let index = selectedAnnotationIndex, index < annotations.count {
-            // Move the text annotation
-            annotations[index].points = [normalizedPoint]
+            // Move annotation by drag delta while keeping normalized points in bounds.
+            let proposedDelta = CGPoint(
+                x: normalizedPoint.x - normalizedStart.x,
+                y: normalizedPoint.y - normalizedStart.y
+            )
+            annotations[index].points = translatePoints(
+                draggedAnnotationInitialPoints,
+                by: proposedDelta
+            )
             return
         }
         
-        // Check if clicking on existing text annotation (to select for moving)
-        if value.translation.width == 0 && value.translation.height == 0 {
-            // This is the start of a drag - check for text annotation under cursor
+        // Check if clicking on existing annotation (to select for moving)
+        if abs(value.translation.width) <= 1 && abs(value.translation.height) <= 1 {
+            // This is the start of a drag - check for annotation under cursor
             let normalizedClickPoint = CGPoint(
                 x: value.startLocation.x / containerSize.width,
                 y: value.startLocation.y / containerSize.height
             )
-            if let textIndex = findTextAnnotationAt(point: normalizedClickPoint, in: containerSize) {
-                selectedAnnotationIndex = textIndex
+            if let annotationIndex = findAnnotationAt(point: normalizedClickPoint, in: containerSize) {
+                selectedAnnotationIndex = annotationIndex
+                draggedAnnotationInitialPoints = annotations[annotationIndex].points
                 isDraggingAnnotation = true
                 return
             }
@@ -782,7 +795,7 @@ struct ScreenshotEditorView: View {
         let dy = end.y - start.y
         
         switch tool {
-        case .arrow, .line:
+        case .arrow, .curvedArrow, .line:
             // Snap to nearest 45° angle (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
             let angle = atan2(dy, dx)
             let snappedAngle = round(angle / (.pi / 4)) * (.pi / 4)
@@ -806,10 +819,11 @@ struct ScreenshotEditorView: View {
     }
     
     private func handleDragEnd(_ value: DragGesture.Value, in containerSize: CGSize) {
-        // Reset drag state for text moving
+        // Reset drag state for annotation moving
         if isDraggingAnnotation {
             isDraggingAnnotation = false
             selectedAnnotationIndex = nil
+            draggedAnnotationInitialPoints = []
             return
         }
         
@@ -890,28 +904,215 @@ struct ScreenshotEditorView: View {
         annotations = lastState
     }
     
-    /// Find a text annotation at the given point, returning its index if found
-    private func findTextAnnotationAt(point: CGPoint, in containerSize: CGSize) -> Int? {
-        // Check text annotations in reverse order (top-most first)
+    /// Find any annotation at the given point, returning its index if found
+    private func findAnnotationAt(point: CGPoint, in containerSize: CGSize) -> Int? {
+        // Check in reverse order so top-most annotations are picked first.
         for (index, annotation) in annotations.enumerated().reversed() {
-            guard annotation.tool == .text, !annotation.points.isEmpty else { continue }
-            
-            let textPoint = annotation.points[0]
-            // Estimate text bounds - approximately 150x40 for typical text
-            let textWidth: CGFloat = CGFloat(annotation.text.count) * annotation.strokeWidth * 5
-            let textHeight: CGFloat = annotation.strokeWidth * 12
-            let textRect = CGRect(
-                x: textPoint.x,
-                y: textPoint.y,
-                width: max(60, textWidth),
-                height: textHeight
-            )
-            
-            if textRect.contains(point) {
+            if annotationContains(point: point, annotation: annotation, in: containerSize) {
                 return index
             }
         }
         return nil
+    }
+    
+    private func annotationContains(point: CGPoint, annotation: Annotation, in containerSize: CGSize) -> Bool {
+        guard !annotation.points.isEmpty else { return false }
+        
+        let hitPoint = scaleNormalizedPoint(point, to: containerSize)
+        let baseTolerance = max(10, annotation.strokeWidth * 3)
+        
+        switch annotation.tool {
+        case .arrow, .line:
+            guard let endPoint = annotation.points.last else { return false }
+            let start = scaleNormalizedPoint(annotation.points[0], to: containerSize)
+            let end = scaleNormalizedPoint(endPoint, to: containerSize)
+            return pointToSegmentDistance(hitPoint, start: start, end: end) <= baseTolerance
+            
+        case .curvedArrow:
+            guard let endPoint = annotation.points.last else { return false }
+            let start = scaleNormalizedPoint(annotation.points[0], to: containerSize)
+            let end = scaleNormalizedPoint(endPoint, to: containerSize)
+            return pointToCurvedArrowDistance(hitPoint, start: start, end: end) <= baseTolerance
+            
+        case .rectangle, .blur:
+            guard let endPoint = annotation.points.last else { return false }
+            let rect = rectFromNormalizedPoints(annotation.points[0], endPoint, in: containerSize)
+            return rect.insetBy(dx: -baseTolerance, dy: -baseTolerance).contains(hitPoint)
+            
+        case .ellipse:
+            guard let endPoint = annotation.points.last else { return false }
+            let rect = rectFromNormalizedPoints(annotation.points[0], endPoint, in: containerSize)
+            guard rect.width > 1, rect.height > 1 else { return false }
+            let expandedRect = rect.insetBy(dx: -baseTolerance, dy: -baseTolerance)
+            guard expandedRect.contains(hitPoint) else { return false }
+            
+            // Treat ellipse hit testing as inside-or-near-shape for easy grabbing.
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let rx = rect.width / 2
+            let ry = rect.height / 2
+            let nx = (hitPoint.x - center.x) / rx
+            let ny = (hitPoint.y - center.y) / ry
+            let normalizedDistance = (nx * nx) + (ny * ny)
+            let toleranceScale = max(baseTolerance / max(min(rx, ry), 1), 0.2)
+            return normalizedDistance <= (1.0 + toleranceScale)
+            
+        case .freehand, .highlighter:
+            let points = annotation.points.map { scaleNormalizedPoint($0, to: containerSize) }
+            guard points.count >= 2 else {
+                guard let first = points.first else { return false }
+                return hypot(hitPoint.x - first.x, hitPoint.y - first.y) <= baseTolerance
+            }
+            let lineTolerance = annotation.tool == .highlighter
+                ? max(baseTolerance, annotation.strokeWidth * 5)
+                : baseTolerance
+            for index in 1..<points.count {
+                let start = points[index - 1]
+                let end = points[index]
+                if pointToSegmentDistance(hitPoint, start: start, end: end) <= lineTolerance {
+                    return true
+                }
+            }
+            return false
+            
+        case .text:
+            let textRect = textBounds(for: annotation, in: containerSize)
+            return textRect.insetBy(dx: -8, dy: -6).contains(hitPoint)
+        }
+    }
+    
+    private func translatePoints(_ points: [CGPoint], by proposedDelta: CGPoint) -> [CGPoint] {
+        guard !points.isEmpty else { return points }
+        
+        var minX = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var minY = CGFloat.infinity
+        var maxY = -CGFloat.infinity
+        
+        for point in points {
+            minX = min(minX, point.x)
+            maxX = max(maxX, point.x)
+            minY = min(minY, point.y)
+            maxY = max(maxY, point.y)
+        }
+        
+        let clampedDeltaX = min(max(proposedDelta.x, -minX), 1 - maxX)
+        let clampedDeltaY = min(max(proposedDelta.y, -minY), 1 - maxY)
+        
+        return points.map { point in
+            CGPoint(
+                x: point.x + clampedDeltaX,
+                y: point.y + clampedDeltaY
+            )
+        }
+    }
+    
+    private func scaleNormalizedPoint(_ point: CGPoint, to containerSize: CGSize) -> CGPoint {
+        CGPoint(
+            x: point.x * containerSize.width,
+            y: point.y * containerSize.height
+        )
+    }
+    
+    private func rectFromNormalizedPoints(_ p1: CGPoint, _ p2: CGPoint, in containerSize: CGSize) -> CGRect {
+        let s1 = scaleNormalizedPoint(p1, to: containerSize)
+        let s2 = scaleNormalizedPoint(p2, to: containerSize)
+        return CGRect(
+            x: min(s1.x, s2.x),
+            y: min(s1.y, s2.y),
+            width: abs(s2.x - s1.x),
+            height: abs(s2.y - s1.y)
+        )
+    }
+    
+    private func textBounds(for annotation: Annotation, in containerSize: CGSize) -> CGRect {
+        guard let textOrigin = annotation.points.first else { return .zero }
+        let scaledOrigin = scaleNormalizedPoint(textOrigin, to: containerSize)
+        
+        // Approximate dimensions to keep hit testing lightweight.
+        let textWidth = max(60, CGFloat(annotation.text.count) * annotation.strokeWidth * 5)
+        let textHeight = max(16, annotation.strokeWidth * 12)
+        
+        return CGRect(
+            x: scaledOrigin.x,
+            y: scaledOrigin.y,
+            width: textWidth,
+            height: textHeight
+        )
+    }
+    
+    private func pointToSegmentDistance(_ point: CGPoint, start: CGPoint, end: CGPoint) -> CGFloat {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        
+        guard dx != 0 || dy != 0 else {
+            return hypot(point.x - start.x, point.y - start.y)
+        }
+        
+        let t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)
+        let clampedT = min(max(t, 0), 1)
+        
+        let projection = CGPoint(
+            x: start.x + clampedT * dx,
+            y: start.y + clampedT * dy
+        )
+        return hypot(point.x - projection.x, point.y - projection.y)
+    }
+    
+    private func pointToCurvedArrowDistance(_ point: CGPoint, start: CGPoint, end: CGPoint) -> CGFloat {
+        let sampledPoints = sampledCurvedArrowPoints(from: start, to: end)
+        guard sampledPoints.count >= 2 else { return .greatestFiniteMagnitude }
+        
+        var minDistance = CGFloat.greatestFiniteMagnitude
+        for idx in 1..<sampledPoints.count {
+            let segmentDistance = pointToSegmentDistance(
+                point,
+                start: sampledPoints[idx - 1],
+                end: sampledPoints[idx]
+            )
+            minDistance = min(minDistance, segmentDistance)
+        }
+        
+        return minDistance
+    }
+    
+    private func sampledCurvedArrowPoints(from start: CGPoint, to end: CGPoint, segments: Int = 20) -> [CGPoint] {
+        let control = curvedArrowControlPoint(from: start, to: end)
+        let clampedSegments = max(2, segments)
+
+        var points: [CGPoint] = []
+        points.reserveCapacity(clampedSegments + 1)
+
+        for index in 0...clampedSegments {
+            let t = CGFloat(index) / CGFloat(clampedSegments)
+            let oneMinusT = 1 - t
+            let startWeight = oneMinusT * oneMinusT
+            let controlWeight = 2 * oneMinusT * t
+            let endWeight = t * t
+
+            let x = (startWeight * start.x) + (controlWeight * control.x) + (endWeight * end.x)
+            let y = (startWeight * start.y) + (controlWeight * control.y) + (endWeight * end.y)
+            points.append(CGPoint(x: x, y: y))
+        }
+
+        return points
+    }
+    
+    private func curvedArrowControlPoint(from start: CGPoint, to end: CGPoint) -> CGPoint {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = hypot(dx, dy)
+        guard distance > 0.001 else {
+            return CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        }
+        
+        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let normal = CGPoint(x: -dy / distance, y: dx / distance)
+        let curveAmount = min(max(distance * 0.28, 20), 120)
+        
+        return CGPoint(
+            x: mid.x + normal.x * curveAmount,
+            y: mid.y + normal.y * curveAmount
+        )
     }
     
     private func saveAnnotatedImage() {
@@ -1139,6 +1340,9 @@ struct ScreenshotEditorView: View {
         case .arrow:
             drawArrow(from: annotation.points[0], to: annotation.points.last ?? annotation.points[0], strokeWidth: annotation.strokeWidth, in: size)
             
+        case .curvedArrow:
+            drawCurvedArrow(from: annotation.points[0], to: annotation.points.last ?? annotation.points[0], strokeWidth: annotation.strokeWidth, in: size)
+            
         case .line:
             // Simple straight line (no arrowhead)
             let path = NSBezierPath()
@@ -1271,6 +1475,62 @@ struct ScreenshotEditorView: View {
         arrowPath.stroke()
     }
     
+    private func drawCurvedArrow(from start: CGPoint, to end: CGPoint, strokeWidth: CGFloat, in size: NSSize) {
+        let scaledStart = scalePoint(start, to: size)
+        let scaledEnd = scalePoint(end, to: size)
+        let control = curvedArrowControlPoint(from: scaledStart, to: scaledEnd)
+        
+        let cubicControl1 = CGPoint(
+            x: scaledStart.x + (2.0 / 3.0) * (control.x - scaledStart.x),
+            y: scaledStart.y + (2.0 / 3.0) * (control.y - scaledStart.y)
+        )
+        let cubicControl2 = CGPoint(
+            x: scaledEnd.x + (2.0 / 3.0) * (control.x - scaledEnd.x),
+            y: scaledEnd.y + (2.0 / 3.0) * (control.y - scaledEnd.y)
+        )
+        
+        let path = NSBezierPath()
+        path.lineWidth = strokeWidth
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.move(to: scaledStart)
+        path.curve(to: scaledEnd, controlPoint1: cubicControl1, controlPoint2: cubicControl2)
+        path.stroke()
+        
+        let tangent = CGPoint(
+            x: scaledEnd.x - control.x,
+            y: scaledEnd.y - control.y
+        )
+        let fallback = CGPoint(
+            x: scaledEnd.x - scaledStart.x,
+            y: scaledEnd.y - scaledStart.y
+        )
+        let headVector = hypot(tangent.x, tangent.y) > 0.001 ? tangent : fallback
+        let angle = atan2(headVector.y, headVector.x)
+        
+        let arrowLength: CGFloat = 15 + strokeWidth * 2
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let arrowPath = NSBezierPath()
+        arrowPath.lineWidth = strokeWidth
+        arrowPath.lineCapStyle = .round
+        arrowPath.lineJoinStyle = .round
+        
+        let point1 = CGPoint(
+            x: scaledEnd.x - arrowLength * cos(angle - arrowAngle),
+            y: scaledEnd.y - arrowLength * sin(angle - arrowAngle)
+        )
+        let point2 = CGPoint(
+            x: scaledEnd.x - arrowLength * cos(angle + arrowAngle),
+            y: scaledEnd.y - arrowLength * sin(angle + arrowAngle)
+        )
+        
+        arrowPath.move(to: point1)
+        arrowPath.line(to: scaledEnd)
+        arrowPath.line(to: point2)
+        arrowPath.stroke()
+    }
+    
     private func rectFromPoints(_ p1: CGPoint, _ p2: CGPoint, in size: NSSize) -> NSRect {
         let s1 = scalePoint(p1, to: size)
         let s2 = scalePoint(p2, to: size)
@@ -1290,6 +1550,7 @@ struct ScreenshotEditorView: View {
             y: (1.0 - point.y) * size.height  // Flip Y for NSImage (0-1 normalized, 0=top, 1=bottom in SwiftUI)
         )
     }
+    
 }
 
 // MARK: - Annotation Canvas
@@ -1326,6 +1587,11 @@ struct AnnotationCanvas: View {
             let start = scalePoint(annotation.points[0], to: size)
             let end = scalePoint(annotation.points.last ?? annotation.points[0], to: size)
             drawArrow(from: start, to: end, color: color, strokeStyle: strokeStyle, in: context)
+            
+        case .curvedArrow:
+            let start = scalePoint(annotation.points[0], to: size)
+            let end = scalePoint(annotation.points.last ?? annotation.points[0], to: size)
+            drawCurvedArrow(from: start, to: end, color: color, strokeStyle: strokeStyle, in: context)
             
         case .line:
             let start = scalePoint(annotation.points[0], to: size)
@@ -1440,6 +1706,44 @@ struct AnnotationCanvas: View {
         context.stroke(arrowPath, with: .color(color), style: strokeStyle)
     }
     
+    private func drawCurvedArrow(from start: CGPoint, to end: CGPoint, color: Color, strokeStyle: StrokeStyle, in context: GraphicsContext) {
+        let control = curvedArrowControlPoint(from: start, to: end)
+        
+        var curvePath = Path()
+        curvePath.move(to: start)
+        curvePath.addQuadCurve(to: end, control: control)
+        context.stroke(curvePath, with: .color(color), style: strokeStyle)
+        
+        let tangent = CGPoint(
+            x: end.x - control.x,
+            y: end.y - control.y
+        )
+        let fallback = CGPoint(
+            x: end.x - start.x,
+            y: end.y - start.y
+        )
+        let headVector = hypot(tangent.x, tangent.y) > 0.001 ? tangent : fallback
+        let angle = atan2(headVector.y, headVector.x)
+        
+        let arrowLength: CGFloat = 15 + strokeStyle.lineWidth * 2
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let point1 = CGPoint(
+            x: end.x - arrowLength * cos(angle - arrowAngle),
+            y: end.y - arrowLength * sin(angle - arrowAngle)
+        )
+        let point2 = CGPoint(
+            x: end.x - arrowLength * cos(angle + arrowAngle),
+            y: end.y - arrowLength * sin(angle + arrowAngle)
+        )
+        
+        var arrowPath = Path()
+        arrowPath.move(to: point1)
+        arrowPath.addLine(to: end)
+        arrowPath.addLine(to: point2)
+        context.stroke(arrowPath, with: .color(color), style: strokeStyle)
+    }
+    
     private func rectFromPoints(_ p1: CGPoint, _ p2: CGPoint, size: CGSize) -> CGRect {
         let s1 = scalePoint(p1, to: size)
         let s2 = scalePoint(p2, to: size)
@@ -1454,5 +1758,23 @@ struct AnnotationCanvas: View {
     // Scale normalized 0-1 point to display coordinates
     private func scalePoint(_ point: CGPoint, to size: CGSize) -> CGPoint {
         CGPoint(x: point.x * size.width, y: point.y * size.height)
+    }
+    
+    private func curvedArrowControlPoint(from start: CGPoint, to end: CGPoint) -> CGPoint {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let distance = hypot(dx, dy)
+        guard distance > 0.001 else {
+            return CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        }
+        
+        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let normal = CGPoint(x: -dy / distance, y: dx / distance)
+        let curveAmount = min(max(distance * 0.28, 20), 120)
+        
+        return CGPoint(
+            x: mid.x + normal.x * curveAmount,
+            y: mid.y + normal.y * curveAmount
+        )
     }
 }

@@ -64,7 +64,7 @@ enum ElementCaptureMode: String, CaseIterable, Identifiable {
 // MARK: - Editor Shortcut Actions
 enum EditorShortcut: String, CaseIterable, Identifiable {
     // Tool shortcuts
-    case arrow, line, rectangle, ellipse, freehand, highlighter, blur, text
+    case arrow, curvedArrow, line, rectangle, ellipse, freehand, highlighter, blur, text
     // Action shortcuts
     case strokeSmall, strokeMedium, strokeLarge
     case zoomIn, zoomOut, zoomReset
@@ -76,6 +76,7 @@ enum EditorShortcut: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .arrow: return "Arrow"
+        case .curvedArrow: return "Curved Arrow"
         case .line: return "Line"
         case .rectangle: return "Rectangle"
         case .ellipse: return "Ellipse"
@@ -99,6 +100,7 @@ enum EditorShortcut: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .arrow: return "arrow.up.right"
+        case .curvedArrow: return "arrow.uturn.up"
         case .line: return "line.diagonal"
         case .rectangle: return "rectangle"
         case .ellipse: return "oval"
@@ -127,6 +129,7 @@ enum EditorShortcut: String, CaseIterable, Identifiable {
     var defaultKeyCode: Int {
         switch self {
         case .arrow: return 0        // A
+        case .curvedArrow: return 8  // C
         case .line: return 37        // L
         case .rectangle: return 15   // R
         case .ellipse: return 31     // O
@@ -164,7 +167,7 @@ enum EditorShortcut: String, CaseIterable, Identifiable {
     /// Is this a tool shortcut vs action shortcut
     var isTool: Bool {
         switch self {
-        case .arrow, .line, .rectangle, .ellipse, .freehand, .highlighter, .blur, .text:
+        case .arrow, .curvedArrow, .line, .rectangle, .ellipse, .freehand, .highlighter, .blur, .text:
             return true
         default:
             return false
@@ -173,7 +176,7 @@ enum EditorShortcut: String, CaseIterable, Identifiable {
     
     /// Tool shortcuts only
     static var tools: [EditorShortcut] {
-        [.arrow, .line, .rectangle, .ellipse, .freehand, .highlighter, .blur, .text]
+        [.arrow, .curvedArrow, .line, .rectangle, .ellipse, .freehand, .highlighter, .blur, .text]
     }
     
     /// Action shortcuts only
@@ -559,7 +562,7 @@ final class ElementCaptureManager: ObservableObject {
         
         if !PermissionManager.shared.isAccessibilityGranted {
             print("🔐 ElementCaptureManager: Requesting Accessibility via native dialog")
-            PermissionManager.shared.requestAccessibility()
+            PermissionManager.shared.requestAccessibility(context: .userInitiated)
         }
         
         if !PermissionManager.shared.isScreenRecordingGranted {

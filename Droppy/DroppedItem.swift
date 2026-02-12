@@ -225,15 +225,20 @@ struct DroppedItem: Identifiable, Hashable, Transferable {
     /// Cache for available apps by file extension (reduces expensive system queries)
     private static var availableAppsCache: [String: (apps: [(name: String, icon: NSImage, url: URL)], timestamp: Date)] = [:]
     private static let cacheTTL: TimeInterval = 60 // 60 second cache
+    private static let maxCacheEntries = 64
     
     /// Gets the list of applications that can open this file (cached)
     /// Returns an array of (name, icon, URL) tuples sorted by name
     func getAvailableApplications() -> [(name: String, icon: NSImage, url: URL)] {
         let ext = url.pathExtension.lowercased()
+        let now = Date()
+
+        // Keep cache bounded to avoid gradual memory growth from rare file types.
+        DroppedItem.pruneAvailableAppsCache(now: now)
         
         // Check cache first
         if let cached = DroppedItem.availableAppsCache[ext],
-           Date().timeIntervalSince(cached.timestamp) < DroppedItem.cacheTTL {
+           now.timeIntervalSince(cached.timestamp) < DroppedItem.cacheTTL {
             return cached.apps
         }
         
@@ -244,7 +249,7 @@ struct DroppedItem: Identifiable, Hashable, Transferable {
         
         for appURL in appURLs {
             let name = appURL.deletingPathExtension().lastPathComponent
-            let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+            let icon = ThumbnailCache.shared.cachedIcon(forPath: appURL.path)
             apps.append((name: name, icon: icon, url: appURL))
         }
         
@@ -255,6 +260,23 @@ struct DroppedItem: Identifiable, Hashable, Transferable {
         DroppedItem.availableAppsCache[ext] = (apps: sorted, timestamp: Date())
         
         return sorted
+    }
+
+    private static func pruneAvailableAppsCache(now: Date) {
+        availableAppsCache = availableAppsCache.filter {
+            now.timeIntervalSince($0.value.timestamp) < cacheTTL
+        }
+
+        guard availableAppsCache.count > maxCacheEntries else { return }
+
+        let overflow = availableAppsCache.count - maxCacheEntries
+        let keysToDrop = availableAppsCache
+            .sorted { $0.value.timestamp < $1.value.timestamp }
+            .prefix(overflow)
+            .map { $0.key }
+        for key in keysToDrop {
+            availableAppsCache.removeValue(forKey: key)
+        }
     }
     
     /// Reveals the file in Finder
@@ -369,4 +391,3 @@ struct DroppedItem: Identifiable, Hashable, Transferable {
         }
     }
 }
-

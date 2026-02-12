@@ -423,7 +423,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         // Use ONLY macOS native dialogs - no Droppy custom dialogs
         if !accessibilityOk {
             print("🔐 ClipboardWindowController: Requesting Accessibility via native dialog")
-            PermissionManager.shared.requestAccessibility()
+            PermissionManager.shared.requestAccessibility(context: .automatic)
         }
         if !inputMonitoringOk {
             print("🔐 ClipboardWindowController: Opening Input Monitoring settings (no native dialog available)")

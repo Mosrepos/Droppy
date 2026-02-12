@@ -10,6 +10,260 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 
+enum QuickActionsCloudProvider: String, CaseIterable, Identifiable {
+    case droppyQuickshare
+    case iCloudDrive
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .droppyQuickshare: return "Quickshare"
+        case .iCloudDrive: return "iCloud Drive"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .droppyQuickshare: return "drop.fill"
+        case .iCloudDrive: return "icloud.fill"
+        }
+    }
+
+    var quickActionDescription: String {
+        switch self {
+        case .droppyQuickshare:
+            return "Upload to cloud and copy shareable link"
+        case .iCloudDrive:
+            return "Upload to iCloud Drive and share a link"
+        }
+    }
+
+    static var selected: QuickActionsCloudProvider {
+        let rawValue = UserDefaults.standard.preference(
+            AppPreferenceKey.quickActionsCloudProvider,
+            default: PreferenceDefault.quickActionsCloudProvider
+        )
+        return QuickActionsCloudProvider(rawValue: rawValue) ?? .droppyQuickshare
+    }
+}
+
+enum QuickActionsCloudShare {
+    private static let cloudSharingServiceName = NSSharingService.Name("com.apple.share.CloudSharing")
+
+    /// Performs an immediate iCloud Drive accessibility check.
+    /// Call this from settings to trigger the macOS permission flow up front.
+    @discardableResult
+    static func ensureICloudDriveAccessReady(showErrors: Bool = true) -> Bool {
+        guard let destinationFolder = resolveICloudDestinationFolder(showErrors: showErrors) else {
+            return false
+        }
+
+        do {
+            // Force an actual read to trigger Files & Folders permission prompt if needed.
+            _ = try FileManager.default.contentsOfDirectory(
+                at: destinationFolder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            return true
+        } catch {
+            if showErrors {
+                showErrorAlert(
+                    title: "iCloud Drive Permission Required",
+                    message: "Allow Droppy to access iCloud Drive in the macOS prompt, then try again.\n\n\(error.localizedDescription)"
+                )
+                HapticFeedback.error()
+            }
+            return false
+        }
+    }
+
+    static func share(urls: [URL], completion: (() -> Void)? = nil) {
+        switch QuickActionsCloudProvider.selected {
+        case .droppyQuickshare:
+            DroppyQuickshare.share(urls: urls, completion: completion)
+        case .iCloudDrive:
+            shareToICloudDrive(urls: urls, completion: completion)
+        }
+    }
+
+    private static func shareToICloudDrive(urls: [URL], completion: (() -> Void)? = nil) {
+        let fileURLs = urls.filter(\.isFileURL)
+        guard !fileURLs.isEmpty else {
+            HapticFeedback.error()
+            return
+        }
+
+        guard ensureICloudDriveAccessReady(showErrors: true),
+              let destinationFolder = resolveICloudDestinationFolder(showErrors: false) else {
+            return
+        }
+        let fileManager = FileManager.default
+
+        var copiedURLs: [URL] = []
+        var firstCopyError: Error?
+
+        for sourceURL in fileURLs {
+            var destinationURL = destinationFolder.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
+
+            if sourceURL.standardizedFileURL == destinationURL.standardizedFileURL {
+                copiedURLs.append(sourceURL)
+                continue
+            }
+
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                destinationURL = uniqueDestinationURL(for: sourceURL, in: destinationFolder)
+            }
+
+            do {
+                try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                copiedURLs.append(destinationURL)
+            } catch {
+                if firstCopyError == nil {
+                    firstCopyError = error
+                }
+            }
+        }
+
+        guard !copiedURLs.isEmpty else {
+            showErrorAlert(
+                title: "Copy to iCloud Drive Failed",
+                message: firstCopyError?.localizedDescription ?? "No files were copied."
+            )
+            HapticFeedback.error()
+            return
+        }
+
+        let launchShareFlow = {
+            NSApp.activate(ignoringOtherApps: true)
+
+            if let cloudSharingService = NSSharingService(named: cloudSharingServiceName) {
+                performCloudShareWhenReady(
+                    service: cloudSharingService,
+                    items: copiedURLs,
+                    completion: completion
+                )
+                return
+            }
+
+            // Fallback: reveal files if Cloud Sharing service is unavailable.
+            NSWorkspace.shared.activateFileViewerSelecting(copiedURLs)
+            showErrorAlert(
+                title: "iCloud Sharing Not Available",
+                message: "Files were copied to iCloud Drive, but link sharing is unavailable on this Mac."
+            )
+            HapticFeedback.error()
+            completion?()
+        }
+
+        if Thread.isMainThread {
+            launchShareFlow()
+        } else {
+            DispatchQueue.main.async {
+                launchShareFlow()
+            }
+        }
+    }
+
+    private static func performCloudShareWhenReady(
+        service: NSSharingService,
+        items: [URL],
+        completion: (() -> Void)?,
+        attemptsRemaining: Int = 10
+    ) {
+        if service.canPerform(withItems: items) || attemptsRemaining <= 0 {
+            // Even if canPerform remains false after retries, attempt perform once.
+            // On some Macs this becomes available shortly after iCloud finishes indexing.
+            service.perform(withItems: items)
+            HapticFeedback.select()
+            completion?()
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            performCloudShareWhenReady(
+                service: service,
+                items: items,
+                completion: completion,
+                attemptsRemaining: attemptsRemaining - 1
+            )
+        }
+    }
+
+    private static func uniqueDestinationURL(for sourceURL: URL, in directory: URL) -> URL {
+        let fileManager = FileManager.default
+        let fileExtension = sourceURL.pathExtension
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        var candidate = directory.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
+        var index = 2
+
+        while fileManager.fileExists(atPath: candidate.path) {
+            let numberedName: String
+            if fileExtension.isEmpty {
+                numberedName = "\(baseName) \(index)"
+            } else {
+                numberedName = "\(baseName) \(index).\(fileExtension)"
+            }
+            candidate = directory.appendingPathComponent(numberedName, isDirectory: false)
+            index += 1
+        }
+
+        return candidate
+    }
+
+    private static func resolveICloudDestinationFolder(showErrors: Bool) -> URL? {
+        let fileManager = FileManager.default
+        let cloudDocsURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+
+        guard fileManager.fileExists(atPath: cloudDocsURL.path) else {
+            if showErrors {
+                showErrorAlert(
+                    title: "iCloud Drive Unavailable",
+                    message: "Enable iCloud Drive in System Settings and try again."
+                )
+                HapticFeedback.error()
+            }
+            return nil
+        }
+
+        let destinationFolder = cloudDocsURL.appendingPathComponent("Droppy Quick Actions", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+            return destinationFolder
+        } catch {
+            if showErrors {
+                showErrorAlert(
+                    title: "Could Not Prepare iCloud Drive Folder",
+                    message: error.localizedDescription
+                )
+                HapticFeedback.error()
+            }
+            return nil
+        }
+    }
+
+    private static func showErrorAlert(title: String, message: String) {
+        let showAlert = {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = title
+            alert.informativeText = message
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+
+        if Thread.isMainThread {
+            showAlert()
+        } else {
+            DispatchQueue.main.async {
+                showAlert()
+            }
+        }
+    }
+}
+
 /// Droppy Quickshare - uploads files to 0x0.st and gets shareable links
 enum DroppyQuickshare {
     private enum UploadTarget {

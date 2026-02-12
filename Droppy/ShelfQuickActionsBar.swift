@@ -64,7 +64,7 @@ struct ShelfQuickActionsBar: View {
                         removal: .scale(scale: 0.5).combined(with: .opacity).animation(DroppyAnimation.hover)
                     ))
                 if isQuickshareEnabled {
-                    ShelfQuickActionButton(actionType: .quickshare, useTransparent: useTransparent, shareAction: quickShareTo0x0)
+                    ShelfQuickActionButton(actionType: .quickshare, useTransparent: useTransparent, shareAction: cloudShare)
                         .transition(.asymmetric(
                             insertion: .scale(scale: 0.5).combined(with: .opacity).animation(DroppyAnimation.itemInsertion.delay(0.09)),
                             removal: .scale(scale: 0.5).combined(with: .opacity).animation(DroppyAnimation.hover)
@@ -95,9 +95,9 @@ struct ShelfQuickActionsBar: View {
         }
     }
     
-    /// Droppy Quickshare - uploads files to 0x0.st and copies shareable link to clipboard
-    private func quickShareTo0x0(_ urls: [URL]) {
-        DroppyQuickshare.share(urls: urls) {
+    /// Uses the configured cloud action (Droppy Quickshare or iCloud Drive).
+    private func cloudShare(_ urls: [URL]) {
+        QuickActionsCloudShare.share(urls: urls) {
             // No need to hide shelf after share - user may want to continue working
         }
     }

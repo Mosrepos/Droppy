@@ -423,7 +423,8 @@ struct TrackedFolderSwitcherView: View {
                 // File preview header
                 VStack(spacing: 8) {
                     // File icon(s)
-                    if pendingFiles.count == 1, let icon = NSWorkspace.shared.icon(forFile: pendingFiles[0].path) as NSImage? {
+                    if pendingFiles.count == 1 {
+                        let icon = ThumbnailCache.shared.cachedIcon(forPath: pendingFiles[0].path)
                         Image(nsImage: icon)
                             .resizable()
                             .aspectRatio(contentMode: .fit)

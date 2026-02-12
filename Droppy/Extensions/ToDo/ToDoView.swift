@@ -136,36 +136,35 @@ struct ToDoView: View {
             // Removed negative top padding causing clipping
 
             // List
-            if manager.items.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "checklist")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary.opacity(0.5))
-                    Text("no_tasks_yet")
-                        .foregroundColor(.secondary)
-                        .font(.subheadline)
-                    Text("type_above_hint")
-                        .foregroundColor(.secondary.opacity(0.6))
-                        .font(.caption)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 40)
-            } else {
-                ScrollView {
+            ScrollView {
+                if manager.items.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 40))
+                            .foregroundColor(.secondary.opacity(0.5))
+                        Text("no_tasks_yet")
+                            .foregroundColor(.secondary)
+                            .font(.subheadline)
+                        Text("type_above_hint")
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .font(.caption)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 220)
+                    .padding(.vertical, 40)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
                     VStack(spacing: 1) {
                         if !overviewTaskItems.isEmpty {
-                            ForEach(Array(overviewTaskItems.enumerated()), id: \.element.id) { index, item in
+                            let lastOverviewItemID = overviewTaskItems.last?.id
+                            ForEach(overviewTaskItems) { item in
                                 ToDoRow(
                                     item: item,
                                     manager: manager,
                                     reminderListOptions: reminderListMenuOptions
                                 )
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .top).combined(with: .opacity),
-                                        removal: .scale(scale: 0.98).combined(with: .opacity)
-                                    ))
+                                    .transition(.move(edge: .top).combined(with: .opacity))
 
-                                if index < overviewTaskItems.count - 1 {
+                                if item.id != lastOverviewItemID {
                                     Divider()
                                         .background(AdaptiveColors.overlayAuto(0.06))
                                         .padding(.horizontal, 24)
@@ -192,18 +191,16 @@ struct ToDoView: View {
                             .padding(.horizontal, 24)
                             .padding(.vertical, 4)
 
-                            ForEach(Array(upcomingCalendarItems.enumerated()), id: \.element.id) { index, item in
+                            let lastUpcomingItemID = upcomingCalendarItems.last?.id
+                            ForEach(upcomingCalendarItems) { item in
                                 ToDoRow(
                                     item: item,
                                     manager: manager,
                                     reminderListOptions: reminderListMenuOptions
                                 )
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .top).combined(with: .opacity),
-                                        removal: .scale(scale: 0.98).combined(with: .opacity)
-                                    ))
+                                    .transition(.move(edge: .top).combined(with: .opacity))
 
-                                if index < upcomingCalendarItems.count - 1 {
+                                if item.id != lastUpcomingItemID {
                                     Divider()
                                         .background(AdaptiveColors.overlayAuto(0.06))
                                         .padding(.horizontal, 24)
@@ -248,6 +245,9 @@ struct ToDoView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.showUndoToast)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.showCleanupToast)
+        .animation(.smooth(duration: 0.25), value: manager.items.isEmpty)
+        .animation(.smooth(duration: 0.28), value: overviewTaskItems.map(\.id))
+        .animation(.smooth(duration: 0.28), value: upcomingCalendarItems.map(\.id))
         .onChange(of: isInputFocused) { _, focused in
             manager.isEditingText = focused
         }

@@ -1232,7 +1232,7 @@ final class WindowSnapManager: ObservableObject {
     private func showPermissionAlert() {
         // Use ONLY macOS native dialogs - no Droppy custom dialogs
         print("🔐 WindowSnapManager: Requesting Accessibility via native dialog")
-        PermissionManager.shared.requestAccessibility()
+        PermissionManager.shared.requestAccessibility(context: .userInitiated)
     }
     
     // MARK: - Window Manipulation (Accessibility API)

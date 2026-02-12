@@ -30,7 +30,7 @@ enum QuickActionType: String, CaseIterable {
         case .airdrop: return "dot.radiowaves.left.and.right"
         case .messages: return "message.fill"
         case .mail: return "envelope.fill"
-        case .quickshare: return "drop.fill"
+        case .quickshare: return QuickActionsCloudProvider.selected.icon
         }
     }
     
@@ -40,7 +40,7 @@ enum QuickActionType: String, CaseIterable {
         case .airdrop: return "AirDrop"
         case .messages: return "Messages"
         case .mail: return "Mail"
-        case .quickshare: return "Quickshare"
+        case .quickshare: return QuickActionsCloudProvider.selected.title
         }
     }
     
@@ -50,7 +50,7 @@ enum QuickActionType: String, CaseIterable {
         case .airdrop: return "Send files wirelessly to nearby Apple devices"
         case .messages: return "Share files via iMessage or SMS"
         case .mail: return "Attach files to a new email"
-        case .quickshare: return "Upload to cloud and copy shareable link"
+        case .quickshare: return QuickActionsCloudProvider.selected.quickActionDescription
         }
     }
 }

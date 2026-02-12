@@ -32,7 +32,10 @@ struct HexagonDotsEffect: View {
                 let spacing: CGFloat = 10 // Slightly larger spacing for fewer draw calls
                 let radius: CGFloat = 0.8
                 let hexHeight = spacing * sqrt(3) / 2
-                
+                let limit: CGFloat = 80
+                let limitSquared = limit * limit
+                let baseOpacity: CGFloat = 0.015
+
                 let cols = min(Int(size.width / spacing) + 2, 200) // Cap max columns
                 let rows = min(Int(size.height / hexHeight) + 2, 200) // Cap max rows
                 
@@ -43,12 +46,13 @@ struct HexagonDotsEffect: View {
                         let y = CGFloat(row) * hexHeight
                         
                         let point = CGPoint(x: x, y: y)
-                        let distance = sqrt(pow(point.x - localMouse.x, 2) + pow(point.y - localMouse.y, 2))
+                        let dx = point.x - localMouse.x
+                        let dy = point.y - localMouse.y
+                        let distanceSquared = dx * dx + dy * dy
                         
                         // Effect logic
-                        let limit: CGFloat = 80
-                        if isHovering && distance < limit {
-                            let intensity = 1 - (distance / limit)
+                        if isHovering && distanceSquared < limitSquared {
+                            let intensity = 1 - (sqrt(distanceSquared) / limit)
                             let scale = 1 + (intensity * 0.5)
                             let opacity = 0.02 + (intensity * 0.13)
                             
@@ -65,7 +69,7 @@ struct HexagonDotsEffect: View {
                             
                         } else {
                             // Base state
-                            context.opacity = 0.015
+                            context.opacity = baseOpacity
                             let rect = CGRect(
                                 x: x - radius,
                                 y: y - radius,

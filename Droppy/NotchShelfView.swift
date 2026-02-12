@@ -40,6 +40,7 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.enableDNDHUD) private var enableDNDHUD = PreferenceDefault.enableDNDHUD
     @AppStorage(AppPreferenceKey.enableUpdateHUD) private var enableUpdateHUD = PreferenceDefault.enableUpdateHUD
     @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
+    @AppStorage(AppPreferenceKey.showExternalMouseSwitchButton) private var showExternalMouseSwitchButton = PreferenceDefault.showExternalMouseSwitchButton
     @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
     @AppStorage(AppPreferenceKey.debounceMediaChanges) private var debounceMediaChanges = PreferenceDefault.debounceMediaChanges
     @AppStorage(AppPreferenceKey.autoShrinkShelf) private var autoShrinkShelf = PreferenceDefault.autoShrinkShelf  // Legacy
@@ -71,6 +72,7 @@ struct NotchShelfView: View {
     @ObservedObject private var batteryManager = BatteryManager.shared
     @ObservedObject private var capsLockManager = CapsLockManager.shared
     @ObservedObject private var musicManager = MusicManager.shared
+    @ObservedObject private var externalMouseMonitor = ExternalMouseMonitor.shared
     @ObservedObject private var notchController = NotchWindowController.shared  // For hide/show animation
     var airPodsManager = AirPodsManager.shared  // @Observable - no wrapper needed
     @ObservedObject private var lockScreenManager = LockScreenManager.shared
@@ -481,6 +483,21 @@ struct NotchShelfView: View {
         !musicManager.isPlayerIdle &&
         !shouldBlockAutoSwitch &&
         (isForced || autoOrSongDriven)
+    }
+
+    private var shouldShowExternalMouseSwitchFloatingButton: Bool {
+        showExternalMouseSwitchButton &&
+        externalMouseMonitor.hasExternalMouse &&
+        showMediaPlayer &&
+        !musicManager.isPlayerIdle &&
+        !isTerminalViewVisible &&
+        !isCaffeineViewVisible &&
+        !isCameraViewVisible &&
+        !shouldLockMediaForTodo
+    }
+
+    private var isShowingExpandedMediaSurface: Bool {
+        isMediaPlayerVisibleInShelf
     }
 
     private var isTodoExtensionActive: Bool {
@@ -1185,8 +1202,23 @@ struct NotchShelfView: View {
                     }
                     
                     // Regular floating buttons (caffeine/terminal/close) - appear when NOT dragging
-                    if !dragMonitor.isDragging && (caffeineShouldShow || terminalShouldShow || cameraShouldShow || !autoCollapseShelf) {
+                    if !dragMonitor.isDragging && (shouldShowExternalMouseSwitchFloatingButton || caffeineShouldShow || terminalShouldShow || cameraShouldShow || !autoCollapseShelf) {
                         HStack(spacing: 12) {
+                            if shouldShowExternalMouseSwitchFloatingButton {
+                                Button(action: {
+                                    toggleExpandedShelfMediaSurface()
+                                }) {
+                                    Image(systemName: isShowingExpandedMediaSurface ? "tray.fill" : "music.note")
+                                }
+                                .buttonStyle(DroppyCircleButtonStyle(
+                                    size: 32,
+                                    useTransparent: shouldUseFloatingButtonTransparent,
+                                    solidFill: isDynamicIslandMode ? dynamicIslandGray : .black
+                                ))
+                                .help(isShowingExpandedMediaSurface ? "Show Shelf" : "Show Media")
+                                .transition(displayElementTransition)
+                            }
+
                             // Caffeine button (if extension installed AND enabled)
                             if caffeineShouldShow {
                                 let isHighlight = showCaffeineView || CaffeineManager.shared.isActive
@@ -1703,6 +1735,22 @@ struct NotchShelfView: View {
         }
         mediaFadeWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func toggleExpandedShelfMediaSurface() {
+        guard showMediaPlayer else { return }
+        let showMedia = !isMediaPlayerVisibleInShelf
+
+        HapticFeedback.tap()
+        withAnimation(displayUnifiedOpenCloseAnimation) {
+            musicManager.isMediaHUDForced = showMedia
+            musicManager.isMediaHUDHidden = !showMedia
+        }
+
+        notchController.forceRecalculateAllWindowSizes()
+        DispatchQueue.main.async {
+            notchController.forceRecalculateAllWindowSizes()
+        }
     }
     
     // MARK: - Auto-Shrink Timer
@@ -2821,6 +2869,9 @@ struct NotchShelfView: View {
     private var expandedShelfContent: some View {
         // Grid Items or Media Player or Drop Zone or Terminal
         // No header row - auto-collapse handles hiding, right-click for settings/clipboard
+        let isQuickActionOverlayVisible = state.hoveredShelfQuickAction != nil
+        let shouldShowTodoBar = shouldShowTodoShelfBar && !isQuickActionOverlayVisible
+
         return ZStack {
             // TERMINAL VIEW: Highest priority - takes over the shelf when active
             if isTerminalViewVisible {
@@ -2848,7 +2899,7 @@ struct NotchShelfView: View {
                     .transition(displayContentSwapTransition)
             }
             // Show drop zone when dragging over (takes priority) - but NOT when Todo bar is visible
-            else if state.isDropTargeted && state.items.isEmpty && !shouldShowTodoShelfBar {
+            else if state.isDropTargeted && state.items.isEmpty && !shouldShowTodoBar {
                 emptyShelfContent
                     .frame(height: currentExpandedHeight, alignment: .top)
                     .transition(displayContentSwapTransition)
@@ -2874,9 +2925,9 @@ struct NotchShelfView: View {
             }
             // Show empty shelf when no items and no music (or user swiped to hide music)
             // Show drop zone + todo input bar coexisting, but HIDE drop zone when task list is expanded
-            else if state.items.isEmpty && !(shouldShowTodoShelfBar && isTodoListExpanded) {
+            else if state.items.isEmpty && !(shouldShowTodoBar && isTodoListExpanded) {
                 // When todo bar is visible (but list collapsed), reduce the drop zone height to leave room at bottom
-                let todoBarHeight = shouldShowTodoShelfBar
+                let todoBarHeight = shouldShowTodoBar
                     ? ToDoShelfBar.expandedHeight(
                         isListExpanded: false,
                         itemCount: todoManager.shelfTimelineItemCount,
@@ -2893,7 +2944,7 @@ struct NotchShelfView: View {
             // Show items grid when items exist
             else if !state.items.isEmpty {
                 // When todo bar is visible, add bottom content inset so items don't overlap with it
-                let todoBarHeight = shouldShowTodoShelfBar
+                let todoBarHeight = shouldShowTodoBar
                     ? ToDoShelfBar.expandedHeight(
                         isListExpanded: isTodoListExpanded,
                         itemCount: todoManager.shelfTimelineItemCount,
@@ -2931,7 +2982,7 @@ struct NotchShelfView: View {
 
             // TODO INPUT BAR: Persistent bar at bottom when Todo extension is installed
             // Only show when viewing shelf content (not Terminal, Caffeine, or Media player)
-            if shouldAttachTodoShelfBar && shouldShowTodoShelfBar {
+            if shouldAttachTodoShelfBar && shouldShowTodoBar {
                 VStack(spacing: 0) {
                     Spacer()
                     ToDoShelfBar(

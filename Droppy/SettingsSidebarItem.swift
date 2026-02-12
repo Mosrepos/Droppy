@@ -15,9 +15,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case shelf = "Shelf"
     case basket = "Basket"
     case clipboard = "Clipboard"
-    case huds = "HUDs"
-    case extensions = "Extensions"
     case quickshare = "Quickshare"  // Conditional: shown when enabled in settings
+    case extensions = "Extensions"
+    case huds = "HUDs"
     case accessibility = "Accessibility"
     case about = "About"
     
@@ -82,12 +82,12 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var sectionHeader: String? {
         switch self {
         case .general: return nil
-        case .shelf: return "Features"
-        case .basket, .clipboard: return nil // Same section as Shelf
+        case .shelf: return "Workspace"
+        case .basket, .clipboard, .quickshare: return nil // Same section as Shelf
+        case .extensions: return "Extensions"
         case .huds: return "System"
-        case .extensions: return "Other"
-        case .quickshare: return nil // Same section as Extensions (conditional)
-        case .accessibility, .about: return nil // Same section as Extensions
+        case .accessibility: return nil // Same section as HUDs
+        case .about: return "About & Updates"
         }
     }
     
@@ -232,11 +232,11 @@ struct SettingsSidebar: View {
                     selectedTab = tab
                 }
             }
-            
-            Spacer()
 
             // Update button at bottom
             updateButton
+
+            Spacer()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)

@@ -22,6 +22,11 @@ import Combine
 final class PermissionManager: ObservableObject {
     static let shared = PermissionManager()
     
+    enum AccessibilityPromptContext {
+        case automatic
+        case userInitiated
+    }
+    
     // MARK: - Cache Keys
     private let accessibilityGrantedKey = "accessibilityGranted"
     private let screenRecordingGrantedKey = "screenRecordingGranted"
@@ -43,6 +48,9 @@ final class PermissionManager: ObservableObject {
     // Track last prompt time to avoid prompting twice in same boot cycle
     private let lastAccessibilityPromptBootTimeKey = "lastAccessibilityPromptBootTime"
     private let lastScreenRecordingPromptBootTimeKey = "lastScreenRecordingPromptBootTime"
+    private let lastAccessibilityPromptDateKey = "lastAccessibilityPromptDate"
+    private let accessibilityAutoPromptCooldown: TimeInterval = 60 * 60 * 24 // 24h
+    private let earlyBootPromptSuppression: TimeInterval = 90 // seconds
     
     private init() {
         print("🔐 PermissionManager: Initialized")
@@ -116,7 +124,37 @@ final class PermissionManager: ObservableObject {
     }
     
     /// Request accessibility permission and start polling
-    func requestAccessibility() {
+    func requestAccessibility(context: AccessibilityPromptContext = .automatic) {
+        // Fast path: if trust is now available, persist and skip prompting.
+        if AXIsProcessTrusted() {
+            if !UserDefaults.standard.bool(forKey: accessibilityGrantedKey) {
+                UserDefaults.standard.set(true, forKey: accessibilityGrantedKey)
+            }
+            print("🔐 PermissionManager: Accessibility already trusted, skipping prompt")
+            return
+        }
+        
+        if context == .automatic {
+            let hasPromptHistory = UserDefaults.standard.object(forKey: lastAccessibilityPromptDateKey) as? Date != nil
+            
+            // Avoid showing the system prompt repeatedly from startup flows.
+            if let lastPromptDate = UserDefaults.standard.object(forKey: lastAccessibilityPromptDateKey) as? Date,
+               Date().timeIntervalSince(lastPromptDate) < accessibilityAutoPromptCooldown {
+                print("🔐 PermissionManager: Skipping automatic accessibility prompt (cooldown active)")
+                startPollingForAccessibility()
+                return
+            }
+            
+            // After reboot, TCC can lag. Suppress auto-prompts briefly to avoid false prompts.
+            if let bootTime = getSystemBootTime(),
+               Date().timeIntervalSince(bootTime) < earlyBootPromptSuppression,
+               hasPromptHistory {
+                print("🔐 PermissionManager: Skipping automatic accessibility prompt (early boot TCC suppression)")
+                startPollingForAccessibility()
+                return
+            }
+        }
+        
         // Prevent duplicate prompts in same session
         if hasPromptedAccessibility {
             print("🔐 PermissionManager: Skipping accessibility prompt (already prompted this session)")
@@ -134,7 +172,9 @@ final class PermissionManager: ObservableObject {
         }
         
         hasPromptedAccessibility = true
-        UserDefaults.standard.set(Date(), forKey: lastAccessibilityPromptBootTimeKey)
+        let now = Date()
+        UserDefaults.standard.set(now, forKey: lastAccessibilityPromptBootTimeKey)
+        UserDefaults.standard.set(now, forKey: lastAccessibilityPromptDateKey)
         
         print("🔐 PermissionManager: Requesting accessibility permission (showing macOS dialog)...")
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary

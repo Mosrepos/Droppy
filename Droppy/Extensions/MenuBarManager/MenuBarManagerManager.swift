@@ -605,7 +605,7 @@ enum MBMIconSet: String, CaseIterable, Identifiable {
     var visibleSymbol: String {
         switch self {
         case .eye: return "eye.fill"
-        case .chevron: return "chevron.right"
+        case .chevron: return "chevron.left"
         case .circle: return "circle.fill"
         case .line: return "line.3.horizontal"
         case .dot: return "smallcircle.filled.circle"
@@ -618,7 +618,7 @@ enum MBMIconSet: String, CaseIterable, Identifiable {
     var hiddenSymbol: String {
         switch self {
         case .eye: return "eye.slash.fill"
-        case .chevron: return "chevron.left"
+        case .chevron: return "chevron.right"
         case .circle: return "circle"
         case .line: return "line.3.horizontal.decrease"
         case .dot: return "smallcircle.circle"

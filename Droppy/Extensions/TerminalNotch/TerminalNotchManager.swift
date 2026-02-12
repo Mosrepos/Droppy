@@ -290,7 +290,11 @@ class TerminalNotchManager: ObservableObject {
         configuration.activates = true
 
         NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { app, _ in
-            app?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            if #available(macOS 14.0, *) {
+                app?.activate(options: [.activateAllWindows])
+            } else {
+                app?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            }
         }
     }
     

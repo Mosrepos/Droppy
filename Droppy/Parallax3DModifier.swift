@@ -54,10 +54,16 @@ struct Parallax3DModifier: ViewModifier {
                         // Normalize mouse position to -1...1 range
                         let x = (location.x / viewSize.width) * 2 - 1
                         let y = (location.y / viewSize.height) * 2 - 1
+                        let nextOffset = CGSize(width: x, height: y)
+                        let dx = nextOffset.width - offset.width
+                        let dy = nextOffset.height - offset.height
+                        let movedEnough = (dx * dx + dy * dy) > 0.0004
+
+                        guard movedEnough || !isHovering else { return }
                         
                         // BUTTERY SMOOTH: Higher response for fluid tracking, smoother damping
                         withAnimation(.interactiveSpring(response: 0.15, dampingFraction: 0.7, blendDuration: 0.1)) {
-                            offset = CGSize(width: x, height: y)
+                            offset = nextOffset
                             isHovering = true
                         }
                         

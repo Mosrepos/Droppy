@@ -54,7 +54,7 @@ struct FolderPreviewPopover: View {
             
             self.contents = Array(sorted.prefix(maxItems).map { url in
                 let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                let icon = NSWorkspace.shared.icon(forFile: url.path)
+                let icon = ThumbnailCache.shared.cachedIcon(forPath: url.path)
                 return FolderItem(
                     id: url.path,
                     url: url,
@@ -77,7 +77,7 @@ struct FolderPreviewPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack(spacing: 6) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: folderURL.path))
+                Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: folderURL.path))
                     .resizable()
                     .frame(width: 20, height: 20)
                 
@@ -484,7 +484,7 @@ class FolderItemNSView: NSView {
         // Create drag items
         let draggingItems = urls.compactMap { url -> NSDraggingItem? in
             let item = NSDraggingItem(pasteboardWriter: url as NSURL)
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            let icon = ThumbnailCache.shared.cachedIcon(forPath: url.path)
             icon.size = NSSize(width: 32, height: 32)
             item.setDraggingFrame(NSRect(x: 0, y: 0, width: 32, height: 32), contents: icon)
             return item
@@ -509,7 +509,7 @@ struct DragPreviewView: View {
     var body: some View {
         HStack(spacing: 4) {
             if let first = items.first {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: first.path))
+                Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: first.path))
                     .resizable()
                     .frame(width: 32, height: 32)
             }

@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import LinkPresentation
+import ImageIO
 
 struct RichLinkMetadata: Codable {
     var title: String?
@@ -26,11 +27,13 @@ class LinkPreviewService {
     private let metadataCache = NSCache<NSString, CachedMetadata>()
     private let imageCache = NSCache<NSString, NSImage>()
     private var pendingRequests: [String: Task<RichLinkMetadata?, Never>] = [:]
+    private let pendingRequestsLock = NSLock()
     
     private init() {
         // Limit caches to prevent unbounded growth
         metadataCache.countLimit = 50  // ~50 URLs cached
         imageCache.countLimit = 30     // Images are larger, keep fewer
+        imageCache.totalCostLimit = 20 * 1024 * 1024
     }
     
     // MARK: - Public API
@@ -45,7 +48,7 @@ class LinkPreviewService {
         }
         
         // Check if there's already a pending request
-        if let pendingTask = pendingRequests[urlString] {
+        if let pendingTask = pendingRequest(for: urlString) {
             return await pendingTask.value
         }
         
@@ -82,15 +85,11 @@ class LinkPreviewService {
                     }
                 }
                 
-                _ = await MainActor.run {
-                    self.metadataCache.setObject(CachedMetadata(rich), forKey: cacheKey)
-                    self.pendingRequests.removeValue(forKey: urlString)
-                }
+                self.metadataCache.setObject(CachedMetadata(rich), forKey: cacheKey)
+                self.removePendingRequest(for: urlString)
                 return rich
             } catch {
-                _ = await MainActor.run {
-                    self.pendingRequests.removeValue(forKey: urlString)
-                }
+                self.removePendingRequest(for: urlString)
                 print("LinkPreview Error: \(error.localizedDescription)")
                 
                 // Fallback: Just return basic info
@@ -98,7 +97,7 @@ class LinkPreviewService {
             }
         }
         
-        pendingRequests[urlString] = task
+        setPendingRequest(task, for: urlString)
         return await task.value
     }
     
@@ -142,10 +141,8 @@ class LinkPreviewService {
             
             // Try to create image from data
             // For AVIF/WEBP, we might need to rely on native support if available
-            if let image = NSImage(data: data) {
-                _ = await MainActor.run {
-                    self.imageCache.setObject(image, forKey: cacheKey)
-                }
+            if let image = decodePreviewImage(from: data) {
+                imageCache.setObject(image, forKey: cacheKey, cost: estimatedCost(for: image))
                 return image
             }
         } catch {
@@ -165,5 +162,50 @@ class LinkPreviewService {
     func clearCache() {
         metadataCache.removeAllObjects()
         imageCache.removeAllObjects()
+    }
+
+    private func decodePreviewImage(from data: Data) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return NSImage(data: data)
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 900
+        ]
+
+        if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+            return NSImage(
+                cgImage: cgImage,
+                size: NSSize(width: cgImage.width, height: cgImage.height)
+            )
+        }
+
+        return NSImage(data: data)
+    }
+
+    private func estimatedCost(for image: NSImage) -> Int {
+        let width = Int(max(image.size.width, 1))
+        let height = Int(max(image.size.height, 1))
+        return max(width * height * 4, 1)
+    }
+
+    private func pendingRequest(for key: String) -> Task<RichLinkMetadata?, Never>? {
+        pendingRequestsLock.lock()
+        defer { pendingRequestsLock.unlock() }
+        return pendingRequests[key]
+    }
+
+    private func setPendingRequest(_ task: Task<RichLinkMetadata?, Never>, for key: String) {
+        pendingRequestsLock.lock()
+        defer { pendingRequestsLock.unlock() }
+        pendingRequests[key] = task
+    }
+
+    private func removePendingRequest(for key: String) {
+        pendingRequestsLock.lock()
+        defer { pendingRequestsLock.unlock() }
+        pendingRequests.removeValue(forKey: key)
     }
 }

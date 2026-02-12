@@ -280,7 +280,7 @@ struct ReorderableItemRow: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: item.url.path))
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 20, height: 20)
@@ -323,7 +323,7 @@ struct ReorderableGridItem: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } else {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                    Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: item.url.path))
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 20, height: 20)

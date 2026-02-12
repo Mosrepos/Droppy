@@ -456,6 +456,7 @@ struct MediaPlayerPreview: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
                 withAnimation(DroppyAnimation.state) {
                     isPlaying.toggle()
@@ -672,6 +673,7 @@ struct BatteryHUDPreview: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .onAppear {
+            animationTimer?.invalidate()
             // Animate charging state and battery level
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) {
@@ -756,6 +758,7 @@ struct CapsLockHUDPreview: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .onAppear {
+            animationTimer?.invalidate()
             // Animate ON/OFF state
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) {
@@ -910,6 +913,7 @@ struct LockScreenHUDPreview: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) {
                     isLocked.toggle()
@@ -983,6 +987,7 @@ struct FocusModeHUDPreview: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) {
                     isFocusOn.toggle()
@@ -1560,6 +1565,7 @@ struct VolumeHUDIcon: View {
                 .droppyTextShadow()
         }
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) {
                     showBrightness.toggle()
@@ -1618,6 +1624,7 @@ struct BatteryHUDIcon: View {
             .frame(width: 24, height: 18)
         }
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 withAnimation {
                     isCharging.toggle()
@@ -1674,6 +1681,7 @@ struct CapsLockHUDIcon: View {
                 .droppyTextShadow()
         }
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) { isOn.toggle() }
             }
@@ -1759,6 +1767,7 @@ struct LockScreenHUDIcon: View {
                 .droppyTextShadow()
         }
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) { isLocked.toggle() }
             }
@@ -1812,6 +1821,7 @@ struct FocusModeHUDIcon: View {
                 .droppyTextShadow()
         }
         .onAppear {
+            animationTimer?.invalidate()
             animationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 withAnimation(DroppyAnimation.transition) { isOn.toggle() }
             }
@@ -1974,6 +1984,7 @@ struct TerminalHUDIcon: View {
                 .droppyTextShadow()
         }
         .onAppear {
+            animationTimer?.invalidate()
             if isEnabled {
                 animationTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
                     withAnimation(.easeInOut(duration: 0.3)) {

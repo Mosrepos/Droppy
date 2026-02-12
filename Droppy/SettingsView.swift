@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.enablePowerFolders) private var enablePowerFolders = PreferenceDefault.enablePowerFolders
     @AppStorage(AppPreferenceKey.enableQuickActions) private var enableQuickActions = PreferenceDefault.enableQuickActions
     @AppStorage(AppPreferenceKey.quickActionsMailApp) private var quickActionsMailApp = PreferenceDefault.quickActionsMailApp
+    @AppStorage(AppPreferenceKey.quickActionsCloudProvider) private var quickActionsCloudProvider = PreferenceDefault.quickActionsCloudProvider
     @AppStorage(AppPreferenceKey.basketAutoHideDelay) private var basketAutoHideDelay = PreferenceDefault.basketAutoHideDelay
     @AppStorage(AppPreferenceKey.instantBasketOnDrag) private var instantBasketOnDrag = PreferenceDefault.instantBasketOnDrag
     @AppStorage(AppPreferenceKey.instantBasketDelay) private var instantBasketDelay = PreferenceDefault.instantBasketDelay
@@ -63,6 +64,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
     @AppStorage(AppPreferenceKey.enableMouseSwipeMediaSwitch) private var enableMouseSwipeMediaSwitch = PreferenceDefault.enableMouseSwipeMediaSwitch
     @AppStorage(AppPreferenceKey.mouseSwipeMediaSwitchModifier) private var mouseSwipeMediaSwitchModifier = PreferenceDefault.mouseSwipeMediaSwitchModifier
+    @AppStorage(AppPreferenceKey.showExternalMouseSwitchButton) private var showExternalMouseSwitchButton = PreferenceDefault.showExternalMouseSwitchButton
     @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
     @AppStorage(AppPreferenceKey.debounceMediaChanges) private var debounceMediaChanges = PreferenceDefault.debounceMediaChanges
     @AppStorage(AppPreferenceKey.enableMediaAlbumArtGlow) private var enableMediaAlbumArtGlow = PreferenceDefault.enableMediaAlbumArtGlow
@@ -894,11 +896,48 @@ struct SettingsView: View {
                 Text("External Displays")
             }
             
-            // MARK: Shared Features
+            Section {
+                Toggle(isOn: $hidePhysicalNotch) {
+                    VStack(alignment: .leading) {
+                        Text("Hide Physical Notch")
+                        Text("Draw a black bar to hide the notch and reclaim menu bar space in Notch mode")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: hidePhysicalNotch) { _, newValue in
+                    if newValue {
+                        HideNotchManager.shared.enable()
+                    } else {
+                        HideNotchManager.shared.disable()
+                    }
+                }
+
+                if hidePhysicalNotch && !externalScreens.isEmpty {
+                    Toggle(isOn: $hidePhysicalNotchOnExternals) {
+                        VStack(alignment: .leading) {
+                            Text("Include External Displays")
+                            Text("Also apply the black bar to external screens in Notch mode")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.leading, 20)
+                    .onChange(of: hidePhysicalNotchOnExternals) { _, _ in
+                        HideNotchManager.shared.refreshWindows()
+                    }
+                }
+            } header: {
+                Text("Physical Notch")
+            } footer: {
+                Text("Only applies while Droppy is using Notch style, not Dynamic Island style.")
+            }
+
+            // MARK: File Handling
             Section {
                 nativePickerRow(
-                    title: "Feature Toggles",
-                    subtitle: "Enable shared behavior used by both shelf and basket"
+                    title: "File Actions",
+                    subtitle: "Shared behavior for files dropped into Shelf and Basket"
                 ) {
                     VStack(spacing: 6) {
                         SettingsSegmentButtonWithContent(
@@ -911,7 +950,7 @@ struct SettingsView: View {
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundStyle(enableAutoClean ? Color.blue : AdaptiveColors.overlayAuto(0.5))
                         }
-                        
+
                         HStack(spacing: 4) {
                             AutoCleanInfoButton()
                             Text("Auto-Remove")
@@ -920,7 +959,7 @@ struct SettingsView: View {
                         }
                         .frame(width: 108)
                     }
-                    
+
                     VStack(spacing: 6) {
                         SettingsSegmentButtonWithContent(
                             label: "Power Folders",
@@ -933,7 +972,7 @@ struct SettingsView: View {
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundStyle(enablePowerFolders ? Color.blue : AdaptiveColors.overlayAuto(0.5))
                         }
-                        
+
                         HStack(spacing: 4) {
                             PowerFoldersInfoButton()
                             Text("Power Folders")
@@ -942,12 +981,13 @@ struct SettingsView: View {
                         }
                         .frame(width: 122)
                     }
-                    
+
                     VStack(spacing: 6) {
                         SettingsSegmentButtonWithContent(
-                            label: "Protection",
+                            label: "Protect Originals",
                             isSelected: alwaysCopyOnDrag,
                             showsLabel: false,
+                            tileWidth: 122,
                             action: {
                                 if alwaysCopyOnDrag {
                                     showProtectOriginalsWarning = true
@@ -960,36 +1000,42 @@ struct SettingsView: View {
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundStyle(alwaysCopyOnDrag ? Color.blue : AdaptiveColors.overlayAuto(0.5))
                         }
-                        
+
                         HStack(spacing: 4) {
                             AlwaysCopyInfoButton()
-                            Text("Protection")
+                            Text("Protect Originals")
                                 .font(.system(size: 11, weight: alwaysCopyOnDrag ? .bold : .semibold, design: .rounded))
                                 .foregroundStyle(alwaysCopyOnDrag ? .primary : .secondary)
                         }
-                        .frame(width: 108)
+                        .frame(width: 122)
                     }
                     .sheet(isPresented: $showProtectOriginalsWarning) {
                         ProtectOriginalsWarningSheet(alwaysCopyOnDrag: $alwaysCopyOnDrag)
                     }
                 }
-                
+            } header: {
+                Text("File Handling")
+            } footer: {
+                Text("These settings apply to both Notch Shelf and Floating Basket.")
+            }
+
+            quickActionsSharedSection
+
+            // MARK: Automation
+            Section {
                 Toggle(isOn: $ocrAutoCopyExtractedText) {
                     VStack(alignment: .leading) {
                         Text("Auto-Copy OCR Text")
-                        Text("Skip OCR result window and copy recognized text instantly")
+                        Text("Skip the OCR result window and copy recognized text instantly")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                // Smart Export & Tracked Folders (keep as custom rows)
                 SmartExportSettingsRow()
                 TrackedFoldersSettingsRow()
             } header: {
-                Text("Shared Features")
-            } footer: {
-                Text("These features apply to both Notch Shelf and Floating Basket.")
+                Text("Automation")
             }
         }
     }
@@ -1099,8 +1145,8 @@ struct SettingsView: View {
 
                     Toggle(isOn: $showMediaShelfSwitchBadge) {
                         VStack(alignment: .leading) {
-                            Text("Media/Shelf Switch Badge")
-                            Text("Show the top-left badge button to switch between media and shelf views")
+                            Text("Media/Shelf Switch Badge (Legacy)")
+                            Text("Reserved setting. Current builds use swipe/hover switching and do not show this top-left button.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1338,74 +1384,98 @@ struct SettingsView: View {
                     Text("Multi-Basket")
                 }
 
-                Section {
-                    HStack(spacing: 8) {
-                        QuickActionsInfoButton()
-                        Toggle(isOn: $enableQuickActions) {
-                            VStack(alignment: .leading) {
-                                HStack(alignment: .center, spacing: 6) {
-                                    Text("Quick Actions")
-                                    Text("advanced")
-                                        .font(.system(size: 9, weight: .medium))
-                                        .foregroundStyle(AdaptiveColors.secondaryTextAuto)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(AdaptiveColors.overlayAuto(0.08)))
-                                        .overlay(Capsule().stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1))
-                                }
-                                Text("Show quick action drop buttons under Shelf and Basket (AirDrop, Messages, Mail)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+            }
+        }
+    }
+    
+    private var quickActionsSharedSection: some View {
+        Section {
+            HStack(spacing: 8) {
+                QuickActionsInfoButton()
+                Toggle(isOn: $enableQuickActions) {
+                    VStack(alignment: .leading) {
+                        HStack(alignment: .center, spacing: 6) {
+                            Text("Quick Actions")
+                            Text("advanced")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(AdaptiveColors.secondaryTextAuto)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(AdaptiveColors.overlayAuto(0.08)))
+                                .overlay(Capsule().stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1))
                         }
-                        .onChange(of: enableQuickActions) { _, newValue in
-                            if newValue {
-                                showQuickActionsWarning = true
-                            }
-                        }
-                        .sheet(isPresented: $showQuickActionsWarning) {
-                            QuickActionsInfoSheet(enableQuickActions: $enableQuickActions)
-                        }
+                        Text("Show quick action drop buttons under Shelf and Basket (AirDrop, Messages, Mail)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-
-                    if enableQuickActions {
-                        nativePickerRow(
-                            title: "Mail App",
-                            subtitle: "Choose which app opens for the Mail quick action"
-                        ) {
-                            SettingsSegmentButton(
-                                icon: QuickActionsMailApp.systemDefault.icon,
-                                label: QuickActionsMailApp.systemDefault.title,
-                                isSelected: quickActionsMailApp == QuickActionsMailApp.systemDefault.rawValue,
-                                action: { quickActionsMailApp = QuickActionsMailApp.systemDefault.rawValue }
-                            )
-
-                            SettingsSegmentButton(
-                                icon: QuickActionsMailApp.appleMail.icon,
-                                label: QuickActionsMailApp.appleMail.title,
-                                isSelected: quickActionsMailApp == QuickActionsMailApp.appleMail.rawValue,
-                                action: { quickActionsMailApp = QuickActionsMailApp.appleMail.rawValue }
-                            )
-
-                            SettingsSegmentButton(
-                                icon: QuickActionsMailApp.outlook.icon,
-                                label: QuickActionsMailApp.outlook.title,
-                                isSelected: quickActionsMailApp == QuickActionsMailApp.outlook.rawValue,
-                                action: { quickActionsMailApp = QuickActionsMailApp.outlook.rawValue }
-                            )
-                        }
-
-                        if quickActionsMailApp == QuickActionsMailApp.outlook.rawValue &&
-                            !MailHelper.isMailClientInstalled(.outlook) {
-                            Text("Outlook is not installed. Droppy will fall back to the system Mail action.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                }
+                .onChange(of: enableQuickActions) { _, newValue in
+                    if newValue {
+                        showQuickActionsWarning = true
                     }
-                } header: {
-                    Text("Quick Actions")
+                }
+                .sheet(isPresented: $showQuickActionsWarning) {
+                    QuickActionsInfoSheet(enableQuickActions: $enableQuickActions)
                 }
             }
+
+            if enableQuickActions {
+                nativePickerRow(
+                    title: "Cloud Action",
+                    subtitle: "Choose how the cloud quick action uploads and shares files"
+                ) {
+                    SettingsSegmentButton(
+                        icon: QuickActionsCloudProvider.droppyQuickshare.icon,
+                        label: QuickActionsCloudProvider.droppyQuickshare.title,
+                        isSelected: quickActionsCloudProvider == QuickActionsCloudProvider.droppyQuickshare.rawValue,
+                        action: { quickActionsCloudProvider = QuickActionsCloudProvider.droppyQuickshare.rawValue }
+                    )
+
+                    SettingsSegmentButton(
+                        icon: QuickActionsCloudProvider.iCloudDrive.icon,
+                        label: QuickActionsCloudProvider.iCloudDrive.title,
+                        isSelected: quickActionsCloudProvider == QuickActionsCloudProvider.iCloudDrive.rawValue,
+                        action: { selectICloudDriveCloudAction() }
+                    )
+                }
+
+                nativePickerRow(
+                    title: "Mail App",
+                    subtitle: "Choose which app opens for the Mail quick action"
+                ) {
+                    SettingsSegmentButton(
+                        icon: QuickActionsMailApp.systemDefault.icon,
+                        label: QuickActionsMailApp.systemDefault.title,
+                        isSelected: quickActionsMailApp == QuickActionsMailApp.systemDefault.rawValue,
+                        action: { quickActionsMailApp = QuickActionsMailApp.systemDefault.rawValue }
+                    )
+
+                    SettingsSegmentButton(
+                        icon: QuickActionsMailApp.appleMail.icon,
+                        label: QuickActionsMailApp.appleMail.title,
+                        isSelected: quickActionsMailApp == QuickActionsMailApp.appleMail.rawValue,
+                        action: { quickActionsMailApp = QuickActionsMailApp.appleMail.rawValue }
+                    )
+
+                    SettingsSegmentButton(
+                        icon: QuickActionsMailApp.outlook.icon,
+                        label: QuickActionsMailApp.outlook.title,
+                        isSelected: quickActionsMailApp == QuickActionsMailApp.outlook.rawValue,
+                        action: { quickActionsMailApp = QuickActionsMailApp.outlook.rawValue }
+                    )
+                }
+
+                if quickActionsMailApp == QuickActionsMailApp.outlook.rawValue &&
+                    !MailHelper.isMailClientInstalled(.outlook) {
+                    Text("Outlook is not installed. Droppy will fall back to the system Mail action.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Quick Actions")
+        } footer: {
+            Text("Shared setting: applies to both Notch Shelf and Floating Basket.")
         }
     }
     
@@ -1414,27 +1484,6 @@ struct SettingsView: View {
     private var accessibilitySettings: some View {
         Group {
             Section {
-                Toggle(isOn: $showClipboardButton) {
-                    VStack(alignment: .leading) {
-                        Text("Clipboard in Menu")
-                        Text("Adds \"Open Clipboard\" to right-click menu on notch/island")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Toggle(isOn: $hideNotchFromScreenshots) {
-                    VStack(alignment: .leading) {
-                        Text("Hide from Screenshots")
-                        Text("Exclude the notch area from screenshots and screen recordings")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: hideNotchFromScreenshots) { _, newValue in
-                    NotchWindowController.shared.updateScreenshotVisibility()
-                }
-                
                 Toggle(isOn: $enableRightClickHide) {
                     VStack(alignment: .leading) {
                         Text("Right-Click to Hide")
@@ -1444,77 +1493,36 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Hide Physical Notch - only makes sense in Notch mode, not Dynamic Island
-                Toggle(isOn: $hidePhysicalNotch) {
-                    VStack(alignment: .leading) {
-                        HStack(spacing: 6) {
-                            Text("Hide Physical Notch")
-                            Text("new")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.droppyAccent))
-                        }
-                        Text("Draw a black bar to hide the notch, allowing menu bar icons to use that space. Only applies in Notch mode.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: hidePhysicalNotch) { _, newValue in
-                    if newValue {
-                        HideNotchManager.shared.enable()
-                    } else {
-                        HideNotchManager.shared.disable()
-                    }
-                }
-                
-                if hidePhysicalNotch && !externalScreens.isEmpty {
-                    Toggle(isOn: $hidePhysicalNotchOnExternals) {
-                        VStack(alignment: .leading) {
-                            Text("Include External Displays")
-                            Text("Also draw black bar on external monitors in Notch mode")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.leading, 20)
-                    .onChange(of: hidePhysicalNotchOnExternals) { _, _ in
-                        HideNotchManager.shared.refreshWindows()
-                    }
-                }
-                
                 Toggle(isOn: $enableHapticFeedback) {
                     VStack(alignment: .leading) {
                         Text("Haptic Feedback")
-                        Text("Get tactile feedback when dropping files")
+                        Text("Get tactile feedback when dropping files or triggering actions")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-
-                Toggle(isOn: $disableAnalytics) {
-                    VStack(alignment: .leading) {
-                        Text("Skip All Analytics")
-                        Text("Disable usage analytics and hide extension install/download stats")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: disableAnalytics) { _, isDisabled in
-                    if isDisabled {
-                        downloadCount = nil
-                    } else {
-                        Task {
-                            if let count = try? await AnalyticsService.shared.fetchDownloadCount() {
-                                downloadCount = count
-                            }
-                        }
-                    }
-                }
-                
             } header: {
-                Text("Accessibility")
+                Text("Interaction")
+            } footer: {
+                Text("Controls for pointer interaction and tactile feedback.")
+            }
+
+            Section {
+                Toggle(isOn: $hideNotchFromScreenshots) {
+                    VStack(alignment: .leading) {
+                        Text("Hide from Screenshots")
+                        Text("Exclude the notch area from screenshots and screen recordings")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: hideNotchFromScreenshots) { _, _ in
+                    NotchWindowController.shared.updateScreenshotVisibility()
+                }
+            } header: {
+                Text("Screen Capture")
+            } footer: {
+                Text("Privacy and visual capture behavior for the notch area.")
             }
         }
     }
@@ -2103,6 +2111,15 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Mouse Swipe Gesture")
                                 Text("Use a mouse wheel gesture to switch between Media and Shelf")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Toggle(isOn: $showExternalMouseSwitchButton) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("External Mouse Switch Button")
+                                Text("Show a left floating Media/Shelf toggle when an external mouse is connected")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -2844,6 +2861,17 @@ struct SettingsView: View {
         enableRealAudioVisualizer = false
         enableGradientVisualizer = true
     }
+
+    private func selectICloudDriveCloudAction() {
+        guard quickActionsCloudProvider != QuickActionsCloudProvider.iCloudDrive.rawValue else { return }
+
+        let isReady = QuickActionsCloudShare.ensureICloudDriveAccessReady(showErrors: true)
+        if isReady {
+            quickActionsCloudProvider = QuickActionsCloudProvider.iCloudDrive.rawValue
+        } else {
+            quickActionsCloudProvider = QuickActionsCloudProvider.droppyQuickshare.rawValue
+        }
+    }
     
     private var integrationsSettings: some View {
         ExtensionsShopView()
@@ -3187,6 +3215,32 @@ struct SettingsView: View {
             } header: {
                 Text("Links")
             }
+
+            Section {
+                Toggle(isOn: $disableAnalytics) {
+                    VStack(alignment: .leading) {
+                        Text("Skip All Analytics")
+                        Text("Disable usage analytics and hide extension install/download stats")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: disableAnalytics) { _, isDisabled in
+                    if isDisabled {
+                        downloadCount = nil
+                    } else {
+                        Task {
+                            if let count = try? await AnalyticsService.shared.fetchDownloadCount() {
+                                downloadCount = count
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text("Analytics are optional and can be disabled at any time.")
+            }
             
             // MARK: Reset
             Section {
@@ -3463,7 +3517,7 @@ struct SettingsView: View {
                     // Check for Accessibility Permissions using centralized manager
                     if !PermissionManager.shared.isAccessibilityGranted {
                         // Only prompt if not already trusted
-                        PermissionManager.shared.requestAccessibility()
+                        PermissionManager.shared.requestAccessibility(context: .userInitiated)
                         print("Prompting for Accessibility permissions")
                     }
                     
@@ -3475,6 +3529,17 @@ struct SettingsView: View {
                     ClipboardWindowController.shared.close()
                 }
             }
+
+            Toggle(isOn: $showClipboardButton) {
+                VStack(alignment: .leading) {
+                    Text("Show in Shelf Context Menu")
+                    Text("Adds \"Open Clipboard\" to right-click menu on notch/island")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.leading, 28)
+            .disabled(!enableClipboard)
             
             if enableClipboard {
                 ClipboardPreview()
@@ -3651,7 +3716,7 @@ struct SettingsView: View {
                 HStack(spacing: 12) {
                     // App icon
                     if let appPath = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                        Image(nsImage: NSWorkspace.shared.icon(forFile: appPath.path))
+                        Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: appPath.path))
                             .resizable()
                             .frame(width: 24, height: 24)
                             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
@@ -5602,7 +5667,7 @@ private struct MediaSourceAppRow: View {
         HStack(spacing: 10) {
             // App icon
             if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+                Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: appURL.path))
                     .resizable()
                     .frame(width: 24, height: 24)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
@@ -5806,7 +5871,7 @@ struct AutofadeAppRuleRow: View {
         HStack(spacing: 10) {
             // App icon
             if let iconPath = rule.appIconPath {
-                let icon = NSWorkspace.shared.icon(forFile: iconPath)
+                let icon = ThumbnailCache.shared.cachedIcon(forPath: iconPath)
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 24, height: 24)
