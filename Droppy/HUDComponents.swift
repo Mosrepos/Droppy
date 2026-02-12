@@ -436,23 +436,33 @@ struct MiniAudioVisualizerBars: View {
     var color: Color = .white
     var secondaryColor: Color? = nil  // For gradient mode
     var gradientMode: Bool = false    // Enable gradient across bars
+    var barCount: Int = 5
+    var barWidth: CGFloat = 2.3
+    var spacing: CGFloat = 1.5
+    var height: CGFloat = 16
     
     @StateObject private var audioAnalyzer = MiniAudioVisualizerState()
+    @AppStorage(AppPreferenceKey.enableRealAudioVisualizer) private var enableRealAudioVisualizer = PreferenceDefault.enableRealAudioVisualizer
     
     var body: some View {
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * spacing
+
         AudioSpectrumView(
             isPlaying: isPlaying,
-            barCount: 5,
-            barWidth: 2.3,
-            spacing: 1.5,
-            height: 16,
+            barCount: barCount,
+            barWidth: barWidth,
+            spacing: spacing,
+            height: height,
             color: color,
             secondaryColor: secondaryColor,
             gradientMode: gradientMode,
             audioLevel: audioAnalyzer.audioLevel
         )
-        .frame(width: 5 * 2.3 + 4 * 1.5, height: 16)
-        .onAppear { audioAnalyzer.startObserving() }
+        .frame(width: totalWidth, height: height)
+        .onAppear { audioAnalyzer.startObserving(enableRealAudioVisualizer: enableRealAudioVisualizer) }
+        .onChange(of: enableRealAudioVisualizer) { _, newValue in
+            audioAnalyzer.updateObservation(enableRealAudioVisualizer: newValue)
+        }
         .onDisappear { audioAnalyzer.stopObserving() }
     }
 }
@@ -462,28 +472,51 @@ struct MiniAudioVisualizerBars: View {
 private class MiniAudioVisualizerState: ObservableObject {
     @Published var audioLevel: CGFloat? = nil
     private var cancellable: AnyCancellable?
-    
-    func startObserving() {
-        if #available(macOS 13.0, *) {
-            let analyzer = SystemAudioAnalyzer.shared
-            analyzer.addObserver()
-            
-            // Combine both audioLevel and isActive to properly react when capture becomes active
-            cancellable = analyzer.$audioLevel
-                .combineLatest(analyzer.$isActive)
-                .receive(on: RunLoop.main)
-                .sink { [weak self] (level, isActive) in
-                    self?.audioLevel = isActive ? level : nil
-                }
-        }
+    private var isObservingAnalyzer = false
+
+    func startObserving(enableRealAudioVisualizer: Bool) {
+        updateObservation(enableRealAudioVisualizer: enableRealAudioVisualizer)
     }
-    
+
+    func updateObservation(enableRealAudioVisualizer: Bool) {
+        guard enableRealAudioVisualizer else {
+            stopRealAudioObservation()
+            audioLevel = nil
+            return
+        }
+
+        guard !isObservingAnalyzer else { return }
+        guard #available(macOS 13.0, *) else {
+            audioLevel = nil
+            return
+        }
+
+        let analyzer = SystemAudioAnalyzer.shared
+        analyzer.addObserver()
+        isObservingAnalyzer = true
+
+        // Combine both audioLevel and isActive to properly react when capture becomes active
+        cancellable = analyzer.$audioLevel
+            .combineLatest(analyzer.$isActive)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] (level, isActive) in
+                self?.audioLevel = isActive ? level : nil
+            }
+    }
+
     func stopObserving() {
-        if #available(macOS 13.0, *) {
-            SystemAudioAnalyzer.shared.removeObserver()
+        stopRealAudioObservation()
+        audioLevel = nil
+    }
+
+    private func stopRealAudioObservation() {
+        if isObservingAnalyzer {
+            if #available(macOS 13.0, *) {
+                SystemAudioAnalyzer.shared.removeObserver()
+            }
+            isObservingAnalyzer = false
         }
         cancellable = nil
-        audioLevel = nil
     }
 }
 

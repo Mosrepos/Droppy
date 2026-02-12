@@ -321,6 +321,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppPreferenceKey.enableNotchShelf: PreferenceDefault.enableNotchShelf,
             AppPreferenceKey.enableHUDReplacement: PreferenceDefault.enableHUDReplacement,
             AppPreferenceKey.showMediaPlayer: PreferenceDefault.showMediaPlayer,
+            AppPreferenceKey.enableRealAudioVisualizer: PreferenceDefault.enableRealAudioVisualizer,
+            AppPreferenceKey.enableGradientVisualizer: PreferenceDefault.enableGradientVisualizer,
             AppPreferenceKey.enableClipboard: PreferenceDefault.enableClipboard,
             AppPreferenceKey.enableMultiBasket: PreferenceDefault.enableMultiBasket,
             AppPreferenceKey.quickActionsMailApp: PreferenceDefault.quickActionsMailApp,
@@ -343,6 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppPreferenceKey.windowSnapBringToFrontWhenHandling: PreferenceDefault.windowSnapBringToFrontWhenHandling,
             AppPreferenceKey.windowSnapResizeMode: PreferenceDefault.windowSnapResizeMode,
         ])
+        Self.normalizeVisualizerPreferencesIfNeeded()
         
         
         // Crash detection: Check if last session crashed and offer to report
@@ -664,6 +667,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     // MARK: - LaunchServices Registration (Fix #123)
+
+    /// Keep visualizer preferences in a valid single-selection state.
+    /// Issue #210: exactly one mode must stay enabled at all times.
+    private static func normalizeVisualizerPreferencesIfNeeded() {
+        let defaults = UserDefaults.standard
+        let realAudioEnabled = defaults.preference(
+            AppPreferenceKey.enableRealAudioVisualizer,
+            default: PreferenceDefault.enableRealAudioVisualizer
+        )
+        let gradientEnabled = defaults.preference(
+            AppPreferenceKey.enableGradientVisualizer,
+            default: PreferenceDefault.enableGradientVisualizer
+        )
+
+        if realAudioEnabled && gradientEnabled {
+            defaults.set(false, forKey: AppPreferenceKey.enableGradientVisualizer)
+        } else if !realAudioEnabled && !gradientEnabled {
+            defaults.set(true, forKey: AppPreferenceKey.enableGradientVisualizer)
+        }
+    }
     
     /// Key for tracking if LaunchServices registration has been performed
     private static let launchServicesRegisteredKey = "didRegisterWithLaunchServices"

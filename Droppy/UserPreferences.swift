@@ -244,7 +244,7 @@ enum PreferenceDefault {
     static let autofadeDisplayRulesEnabled = false  // Display-specific rules disabled by default
     static let debounceMediaChanges = false
     static let enableRealAudioVisualizer = false  // Opt-in: requires Screen Recording
-    static let enableGradientVisualizer = false   // Opt-in: gradient colors across visualizer bars
+    static let enableGradientVisualizer = true    // Keep one visualizer mode enabled by default
 
     // MARK: - Media Source Filter
     static let mediaSourceFilterEnabled = false  // Off by default: show all media sources

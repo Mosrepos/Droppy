@@ -2433,16 +2433,15 @@ struct NotchShelfView: View {
             
             // PERFORMANCE: Use cached visualizer color (computed once per track change)
             
-            // Use AudioSpectrumView which works for both states
-            AudioSpectrumView(
+            MiniAudioVisualizerBars(
                 isPlaying: musicManager.isPlaying,
+                color: musicManager.visualizerColor,  // PERFORMANCE: Cached, not recomputed
+                secondaryColor: enableGradientVisualizer ? musicManager.visualizerSecondaryColor : nil,
+                gradientMode: enableGradientVisualizer,
                 barCount: isExpandedOnThisScreen ? expandedBarCount : collapsedBarCount,
                 barWidth: isExpandedOnThisScreen ? expandedBarWidth : collapsedBarWidth,
                 spacing: isExpandedOnThisScreen ? expandedBarSpacing : collapsedBarSpacing,
-                height: currentHeight,
-                color: musicManager.visualizerColor,  // PERFORMANCE: Cached, not recomputed
-                secondaryColor: enableGradientVisualizer ? musicManager.visualizerSecondaryColor : nil,
-                gradientMode: enableGradientVisualizer
+                height: currentHeight
             )
             .frame(width: currentWidth, height: currentHeight)
             .offset(x: currentXOffset, y: currentYOffset)

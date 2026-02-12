@@ -2143,12 +2143,7 @@ struct SettingsView: View {
                                 label: "Real Audio",
                                 isSelected: enableRealAudioVisualizer
                             ) {
-                                enableRealAudioVisualizer.toggle()
-                                if enableRealAudioVisualizer {
-                                    Task {
-                                        await SystemAudioAnalyzer.shared.requestPermission()
-                                    }
-                                }
+                                selectRealAudioVisualizerMode()
                             } content: {
                                 VisualizerPreviewMono(isSelected: enableRealAudioVisualizer)
                             }
@@ -2157,10 +2152,13 @@ struct SettingsView: View {
                                 label: "Gradient",
                                 isSelected: enableGradientVisualizer
                             ) {
-                                enableGradientVisualizer.toggle()
+                                selectGradientVisualizerMode()
                             } content: {
                                 VisualizerPreviewGradient(isSelected: enableGradientVisualizer)
                             }
+                        }
+                        .onAppear {
+                            normalizeVisualizerModeIfNeeded()
                         }
                         
                         nativePickerRow(
@@ -2811,6 +2809,30 @@ struct SettingsView: View {
                 Text("Focus")
             }
         }
+    }
+
+    private func normalizeVisualizerModeIfNeeded() {
+        if enableRealAudioVisualizer && enableGradientVisualizer {
+            enableGradientVisualizer = false
+        } else if !enableRealAudioVisualizer && !enableGradientVisualizer {
+            enableGradientVisualizer = true
+        }
+    }
+
+    private func selectRealAudioVisualizerMode() {
+        guard !(enableRealAudioVisualizer && !enableGradientVisualizer) else { return }
+        enableRealAudioVisualizer = true
+        enableGradientVisualizer = false
+
+        Task {
+            await SystemAudioAnalyzer.shared.requestPermission()
+        }
+    }
+
+    private func selectGradientVisualizerMode() {
+        guard !(!enableRealAudioVisualizer && enableGradientVisualizer) else { return }
+        enableRealAudioVisualizer = false
+        enableGradientVisualizer = true
     }
     
     private var integrationsSettings: some View {

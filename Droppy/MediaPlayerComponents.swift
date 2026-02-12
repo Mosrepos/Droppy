@@ -323,6 +323,7 @@ struct AudioVisualizerBars: View {
     var gradientMode: Bool = false    // Enable gradient across bars
     
     @StateObject private var audioAnalyzer = AudioVisualizerState()
+    @AppStorage(AppPreferenceKey.enableRealAudioVisualizer) private var enableRealAudioVisualizer = PreferenceDefault.enableRealAudioVisualizer
     
     var body: some View {
         AudioSpectrumView(
@@ -337,7 +338,10 @@ struct AudioVisualizerBars: View {
             audioLevel: audioAnalyzer.audioLevel
         )
         .frame(width: 5 * 2.1 + 4 * 1.7, height: 18)
-        .onAppear { audioAnalyzer.startObserving() }
+        .onAppear { audioAnalyzer.startObserving(enableRealAudioVisualizer: enableRealAudioVisualizer) }
+        .onChange(of: enableRealAudioVisualizer) { _, newValue in
+            audioAnalyzer.updateObservation(enableRealAudioVisualizer: newValue)
+        }
         .onDisappear { audioAnalyzer.stopObserving() }
     }
 }
@@ -348,43 +352,51 @@ struct AudioVisualizerBars: View {
 private class AudioVisualizerState: ObservableObject {
     @Published var audioLevel: CGFloat? = nil
     private var cancellable: AnyCancellable?
-    
-    /// Whether real audio visualizer is enabled (opt-in for Screen Recording permission)
-    private var enableRealAudioVisualizer: Bool {
-        UserDefaults.standard.bool(forKey: "enableRealAudioVisualizer")
+    private var isObservingAnalyzer = false
+
+    func startObserving(enableRealAudioVisualizer: Bool) {
+        updateObservation(enableRealAudioVisualizer: enableRealAudioVisualizer)
     }
-    
-    func startObserving() {
-        // Only use real audio capture if explicitly enabled by user
-        // This requires Screen Recording permission which we don't want to request by default
+
+    func updateObservation(enableRealAudioVisualizer: Bool) {
         guard enableRealAudioVisualizer else {
-            audioLevel = nil  // Will use simulation fallback in AudioSpectrumView
+            stopRealAudioObservation()
+            audioLevel = nil
             return
         }
-        
-        if #available(macOS 13.0, *) {
-            let analyzer = SystemAudioAnalyzer.shared
-            analyzer.addObserver()
-            
-            // Combine both audioLevel and isActive to properly react when capture becomes active
-            cancellable = analyzer.$audioLevel
-                .combineLatest(analyzer.$isActive)
-                .receive(on: RunLoop.main)
-                .sink { [weak self] (level, isActive) in
-                    self?.audioLevel = isActive ? level : nil
-                }
+
+        guard !isObservingAnalyzer else { return }
+        guard #available(macOS 13.0, *) else {
+            audioLevel = nil
+            return
         }
+
+        let analyzer = SystemAudioAnalyzer.shared
+        analyzer.addObserver()
+        isObservingAnalyzer = true
+
+        // Combine both audioLevel and isActive to properly react when capture becomes active
+        cancellable = analyzer.$audioLevel
+            .combineLatest(analyzer.$isActive)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] (level, isActive) in
+                self?.audioLevel = isActive ? level : nil
+            }
     }
-    
+
     func stopObserving() {
-        // Only remove observer if we actually added one
-        if enableRealAudioVisualizer {
+        stopRealAudioObservation()
+        audioLevel = nil
+    }
+
+    private func stopRealAudioObservation() {
+        if isObservingAnalyzer {
             if #available(macOS 13.0, *) {
                 SystemAudioAnalyzer.shared.removeObserver()
             }
+            isObservingAnalyzer = false
         }
         cancellable = nil
-        audioLevel = nil
     }
 }
 
