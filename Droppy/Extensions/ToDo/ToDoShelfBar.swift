@@ -9,6 +9,66 @@
 import SwiftUI
 import AppKit
 
+private enum ToDoShelfFormatters {
+    static let parseTimeFormatters: [DateFormatter] = {
+        ["HH:mm", "H:mm", "HHmm", "Hmm", "H", "h:mm a", "h:mma", "ha"].map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .autoupdatingCurrent
+            formatter.dateFormat = format
+            return formatter
+        }
+    }()
+
+    static let shortTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("jm")
+        return formatter
+    }()
+
+    static let dueDateWithTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM jm")
+        return formatter
+    }()
+
+    static let dueDateWithoutYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM")
+        return formatter
+    }()
+
+    static let dueDateWithYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")
+        return formatter
+    }()
+
+    static let fullDueDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy jm")
+        return formatter
+    }()
+
+    static let fullDueDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy")
+        return formatter
+    }()
+}
+
 private struct TimelineSectionOffsetPreferenceKey: PreferenceKey {
     static var defaultValue: [Date: CGFloat] = [:]
 
@@ -614,9 +674,11 @@ struct ToDoShelfBar: View {
 
                 Button {
                     HapticFeedback.tap()
-                    selectedStripDayStart = dayStart
+                    withAnimation(DroppyAnimation.smoothContent) {
+                        selectedStripDayStart = dayStart
+                        timelineScrollTargetDay = dayStart
+                    }
                     ensureSelectedDayVisibleInStrip()
-                    timelineScrollTargetDay = dayStart
                 } label: {
                     HStack(spacing: 6) {
                         Text(day, format: .dateTime.weekday(.abbreviated))
@@ -961,6 +1023,8 @@ struct ToDoShelfBar: View {
                             lineWidth: 1
                         )
                 )
+                .id(item.id)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "sidebar.right")
@@ -982,8 +1046,11 @@ struct ToDoShelfBar: View {
                             lineWidth: 1
                         )
                 )
+                .id("todo.timeline.detail.empty")
+                .transition(.opacity.combined(with: .move(edge: .leading)))
             }
         }
+        .animation(DroppyAnimation.smooth(duration: 0.18), value: selectedTimelineItem?.id)
     }
 
     private func priorityChip(_ priority: ToDoPriority, title: String, item: ToDoItem) -> some View {
@@ -1678,12 +1745,7 @@ private struct ToDoDueDatePopoverContentLocal: View {
             .replacingOccurrences(of: ".", with: ":")
             .uppercased()
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone.current
-
-        for format in ["HH:mm", "H:mm", "HHmm", "Hmm", "H", "h:mm a", "h:mma", "ha"] {
-            formatter.dateFormat = format
+        for formatter in ToDoShelfFormatters.parseTimeFormatters {
             if let date = formatter.date(from: normalized) {
                 let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
                 if let hour = comps.hour, let minute = comps.minute {
@@ -1695,19 +1757,11 @@ private struct ToDoDueDatePopoverContentLocal: View {
     }
 
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
-        formatter.setLocalizedDateFormatFromTemplate("jm")
-        return formatter.string(from: date)
+        ToDoShelfFormatters.shortTimeFormatter.string(from: date)
     }
 
     private var timePlaceholder: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
-        formatter.setLocalizedDateFormatFromTemplate("jm")
-        return formatter.string(from: Date())
+        ToDoShelfFormatters.shortTimeFormatter.string(from: Date())
     }
 }
 
@@ -1727,10 +1781,12 @@ private struct ShelfTimelineRow: View {
     let onSelect: () -> Void
     let onToggleCompletion: () -> Void
     let onDelete: () -> Void
+    private static var colorCache: [String: Color] = [:]
     @State private var isShowingInfoPopover = false
     @State private var isEditing = false
     @State private var editText = ""
     @State private var editDueDate: Date?
+    @State private var isPressPulse = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1761,6 +1817,8 @@ private struct ShelfTimelineRow: View {
                             ? calendarTint.opacity(0.95)
                             : (useAdaptiveForegrounds ? AdaptiveColors.primaryTextAuto.opacity(0.95) : .white.opacity(0.92))
                     )
+                    .contentTransition(.interpolate)
+                    .animation(DroppyAnimation.state, value: item.title)
 
                 HStack(spacing: 5) {
                     Text(timeLabel)
@@ -1806,11 +1864,30 @@ private struct ShelfTimelineRow: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(rowBorderColor, lineWidth: 1)
         )
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(Color.blue.opacity(0.9))
+                .frame(width: 2.5, height: isSelected ? 18 : 2.5)
+                .offset(x: -9)
+                .opacity(isSelected ? 0.9 : 0.0)
+                .animation(DroppyAnimation.smooth(duration: 0.2), value: isSelected)
+        }
         .onTapGesture {
             onSelect()
+            withAnimation(DroppyAnimation.smooth(duration: 0.1)) {
+                isPressPulse = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
+                withAnimation(DroppyAnimation.smooth(duration: 0.1)) {
+                    isPressPulse = false
+                }
+            }
         }
         .allowsHitTesting(!isCompleting)
+        .scaleEffect(isPressPulse ? 0.985 : 1.0, anchor: .center)
         .animation(DroppyAnimation.smooth(duration: 0.18), value: isCompleting)
+        .animation(DroppyAnimation.smooth(duration: 0.2), value: isSelected)
+        .animation(DroppyAnimation.smooth(duration: 0.12), value: isPressPulse)
         .modifier(
             CompactTimelineDetailsModifier(
                 enabled: allowCompactDetailsPopover,
@@ -2022,6 +2099,7 @@ private struct TaskRow: View {
     let manager: ToDoManager
     let reminderListOptions: [ToDoReminderListOption]
     let useAdaptiveForegrounds: Bool
+    private static var colorCache: [String: Color] = [:]
     @State private var isHovering = false
     @State private var isShowingInfoPopover = false
     @State private var isEditing = false
@@ -2492,11 +2570,16 @@ private struct TaskRow: View {
     private func colorFromHex(_ hex: String?) -> Color? {
         guard let hex else { return nil }
         let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        if let cached = Self.colorCache[trimmed] {
+            return cached
+        }
         guard trimmed.count == 6, let value = Int(trimmed, radix: 16) else { return nil }
         let red = Double((value >> 16) & 0xFF) / 255.0
         let green = Double((value >> 8) & 0xFF) / 255.0
         let blue = Double(value & 0xFF) / 255.0
-        return Color(red: red, green: green, blue: blue)
+        let color = Color(red: red, green: green, blue: blue)
+        Self.colorCache[trimmed] = color
+        return color
     }
 
     private func dueDateHasTime(_ date: Date) -> Bool {
@@ -2506,29 +2589,21 @@ private struct TaskRow: View {
 
     private func formattedDueDateText(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
         if dueDateHasTime(date) {
-            formatter.setLocalizedDateFormatFromTemplate("d MMM jm")
+            return ToDoShelfFormatters.dueDateWithTimeFormatter.string(from: date)
         } else if calendar.component(.year, from: date) == calendar.component(.year, from: Date()) {
-            formatter.setLocalizedDateFormatFromTemplate("d MMM")
+            return ToDoShelfFormatters.dueDateWithoutYearFormatter.string(from: date)
         } else {
-            formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")
+            return ToDoShelfFormatters.dueDateWithYearFormatter.string(from: date)
         }
-        return formatter.string(from: date)
     }
 
     private func formattedFullDueDateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
         if dueDateHasTime(date) {
-            formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy jm")
+            return ToDoShelfFormatters.fullDueDateTimeFormatter.string(from: date)
         } else {
-            formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy")
+            return ToDoShelfFormatters.fullDueDateFormatter.string(from: date)
         }
-        return formatter.string(from: date)
     }
 
     private var isCalendarEvent: Bool {
@@ -2859,13 +2934,19 @@ private extension ToDoShelfBar {
         let dayOffset = weeks * 7
 
         if let shiftedStart = calendar.date(byAdding: .day, value: dayOffset, to: stripWindowStartDay) {
-            stripWindowStartDay = calendar.startOfDay(for: shiftedStart)
+            withAnimation(DroppyAnimation.smoothContent) {
+                stripWindowStartDay = calendar.startOfDay(for: shiftedStart)
+            }
         }
 
         let shiftedSelected = calendar.date(byAdding: .day, value: dayOffset, to: selectedStripDayStart) ?? stripWindowStartDay
-        selectedStripDayStart = calendar.startOfDay(for: shiftedSelected)
+        withAnimation(DroppyAnimation.smoothContent) {
+            selectedStripDayStart = calendar.startOfDay(for: shiftedSelected)
+        }
         timelineScrollTargetItemID = nil
-        timelineScrollTargetDay = selectedStripDayStart
+        withAnimation(DroppyAnimation.smoothContent) {
+            timelineScrollTargetDay = selectedStripDayStart
+        }
         HapticFeedback.tap()
     }
 
@@ -2885,17 +2966,18 @@ private extension ToDoShelfBar {
         }
 
         let nextItem = timelineVisibleItems[nextIndex]
-        selectedTimelineItemID = nextItem.id
-
         let dayStart = timelineDayStart(for: nextItem)
-        selectedStripDayStart = dayStart
+        withAnimation(DroppyAnimation.smoothContent) {
+            selectedTimelineItemID = nextItem.id
+            selectedStripDayStart = dayStart
+            timelineScrollTargetDay = dayStart
+            timelineScrollTargetItemID = TimelineRowRenderID(
+                id: nextItem.id,
+                isCompleted: nextItem.isCompleted,
+                priority: nextItem.priority
+            )
+        }
         ensureSelectedDayVisibleInStrip()
-        timelineScrollTargetDay = dayStart
-        timelineScrollTargetItemID = TimelineRowRenderID(
-            id: nextItem.id,
-            isCompleted: nextItem.isCompleted,
-            priority: nextItem.priority
-        )
     }
 
     func commitPendingDetailTitleEdit() {

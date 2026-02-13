@@ -43,8 +43,6 @@ enum AppPreferenceKey {
     
     // MARK: - Media Player
     static let showMediaPlayer = "showMediaPlayer"
-    static let enableMouseSwipeMediaSwitch = "enableMouseSwipeMediaSwitch"  // Allow mouse wheel gesture for media/shelf switch
-    static let mouseSwipeMediaSwitchModifier = "mouseSwipeMediaSwitchModifier"  // "option", "shift", "control"
     static let showExternalMouseSwitchButton = "showExternalMouseSwitchButton"  // Show floating shelf/media switch when external mouse is connected
     static let autoFadeMediaHUD = "autoFadeMediaHUD"
     static let autofadeDefaultDelay = "autofadeDefaultDelay"  // Default delay in seconds
@@ -239,8 +237,6 @@ enum PreferenceDefault {
     
     // MARK: - Media Player
     static let showMediaPlayer = true
-    static let enableMouseSwipeMediaSwitch = false
-    static let mouseSwipeMediaSwitchModifier = "option"
     static let showExternalMouseSwitchButton = true
     static let autoFadeMediaHUD = false
     static let autofadeDefaultDelay: Double = 5.0  // 5 seconds default

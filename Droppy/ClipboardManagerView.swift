@@ -18,6 +18,28 @@ class QuickLookDataSource: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDel
     }
 }
 
+/// Avoids SwiftUI's VideoPlayer metadata path by hosting AVPlayerView directly.
+private struct SafeVideoPreview: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        return view
+    }
+
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player !== player {
+            nsView.player = player
+        }
+    }
+
+    static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
+        nsView.player?.pause()
+        nsView.player = nil
+    }
+}
+
 struct ClipboardManagerView: View {
     @ObservedObject var manager = ClipboardManager.shared
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
@@ -1845,7 +1867,7 @@ struct ClipboardPreviewView: View {
                             // Check if this is a video file
                             if isVideoFile, let player = videoPlayer {
                                 // Video Player View
-                                VideoPlayer(player: player)
+                                SafeVideoPreview(player: player)
                                     .aspectRatio(16/9, contentMode: .fit)
                                     .frame(maxHeight: 280)
                                     .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))

@@ -40,7 +40,7 @@ enum QuickActionType: String, CaseIterable {
         case .airdrop: return "AirDrop"
         case .messages: return "Messages"
         case .mail: return "Mail"
-        case .quickshare: return QuickActionsCloudProvider.selected.title
+        case .quickshare: return QuickActionsCloudProvider.selected.quickActionTitle
         }
     }
     

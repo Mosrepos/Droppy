@@ -7,6 +7,65 @@
 
 import SwiftUI
 
+private enum ToDoViewFormatters {
+    static let parseTimeFormatters: [DateFormatter] = {
+        ["HH:mm", "H:mm", "HHmm", "Hmm", "H", "h:mm a", "h:mma", "ha"].map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .autoupdatingCurrent
+            formatter.dateFormat = format
+            return formatter
+        }
+    }()
+
+    static let shortTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("jm")
+        return formatter
+    }()
+
+    static let dueDateWithTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM jm")
+        return formatter
+    }()
+
+    static let dueDateWithoutYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM")
+        return formatter
+    }()
+
+    static let dueDateWithYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")
+        return formatter
+    }()
+
+    static let fullDueDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy jm")
+        return formatter
+    }()
+
+    static let fullDueDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy")
+        return formatter
+    }()
+}
 
 struct ToDoView: View {
     @State private var manager = ToDoManager.shared
@@ -185,6 +244,8 @@ struct ToDoView: View {
                                     .font(.system(size: 11, weight: .semibold))
                                 Text("Upcoming Events")
                                     .font(.system(size: 11, weight: .semibold))
+                                    .contentTransition(.interpolate)
+                                    .animation(.smooth(duration: 0.22), value: upcomingCalendarItems.count)
                                 Spacer(minLength: 0)
                             }
                             .foregroundStyle(AdaptiveColors.secondaryTextAuto.opacity(0.85))
@@ -596,12 +657,7 @@ private struct ToDoDueDatePopoverContentView: View {
             .replacingOccurrences(of: ".", with: ":")
             .uppercased()
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone.current
-
-        for format in ["HH:mm", "H:mm", "HHmm", "Hmm", "H", "h:mm a", "h:mma", "ha"] {
-            formatter.dateFormat = format
+        for formatter in ToDoViewFormatters.parseTimeFormatters {
             if let date = formatter.date(from: normalized) {
                 let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
                 if let hour = comps.hour, let minute = comps.minute {
@@ -613,19 +669,11 @@ private struct ToDoDueDatePopoverContentView: View {
     }
 
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
-        formatter.setLocalizedDateFormatFromTemplate("jm")
-        return formatter.string(from: date)
+        ToDoViewFormatters.shortTimeFormatter.string(from: date)
     }
 
     private var timePlaceholder: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
-        formatter.setLocalizedDateFormatFromTemplate("jm")
-        return formatter.string(from: Date())
+        ToDoViewFormatters.shortTimeFormatter.string(from: Date())
     }
 }
 
@@ -633,6 +681,7 @@ struct ToDoRow: View {
     let item: ToDoItem
     let manager: ToDoManager
     let reminderListOptions: [ToDoReminderListOption]
+    private static var colorCache: [String: Color] = [:]
     @State private var isHovering = false
     @State private var isShowingInfoPopover = false
     @State private var isEditing = false
@@ -682,6 +731,8 @@ struct ToDoRow: View {
                 )
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentTransition(.interpolate)
+                .animation(.smooth(duration: 0.22), value: item.title)
             
             // Stats / Controls
             HStack(spacing: 8) {
@@ -716,6 +767,8 @@ struct ToDoRow: View {
                         Text(formattedDueDateText(dueDate))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
+                            .contentTransition(.interpolate)
+                            .animation(.smooth(duration: 0.22), value: dueDate.timeIntervalSinceReferenceDate)
                     }
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(
@@ -970,11 +1023,16 @@ struct ToDoRow: View {
     private func colorFromHex(_ hex: String?) -> Color? {
         guard let hex else { return nil }
         let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        if let cached = Self.colorCache[trimmed] {
+            return cached
+        }
         guard trimmed.count == 6, let value = Int(trimmed, radix: 16) else { return nil }
         let red = Double((value >> 16) & 0xFF) / 255.0
         let green = Double((value >> 8) & 0xFF) / 255.0
         let blue = Double(value & 0xFF) / 255.0
-        return Color(red: red, green: green, blue: blue)
+        let color = Color(red: red, green: green, blue: blue)
+        Self.colorCache[trimmed] = color
+        return color
     }
 
     private func dueDateHasTime(_ date: Date) -> Bool {
@@ -984,17 +1042,13 @@ struct ToDoRow: View {
 
     private func formattedDueDateText(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
         if dueDateHasTime(date) {
-            formatter.setLocalizedDateFormatFromTemplate("d MMM jm")
+            return ToDoViewFormatters.dueDateWithTimeFormatter.string(from: date)
         } else if calendar.component(.year, from: date) == calendar.component(.year, from: Date()) {
-            formatter.setLocalizedDateFormatFromTemplate("d MMM")
+            return ToDoViewFormatters.dueDateWithoutYearFormatter.string(from: date)
         } else {
-            formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")
+            return ToDoViewFormatters.dueDateWithYearFormatter.string(from: date)
         }
-        return formatter.string(from: date)
     }
 
     private var infoPopoverContent: some View {
@@ -1016,6 +1070,8 @@ struct ToDoRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AdaptiveColors.primaryTextAuto)
                 .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.interpolate)
+                .animation(.smooth(duration: 0.22), value: item.title)
 
             infoDetailRow(icon: "square.stack.3d.up", label: "Source", value: sourceDetailsLabel)
 
@@ -1053,6 +1109,7 @@ struct ToDoRow: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.95))
                 .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.interpolate)
             Spacer(minLength: 0)
         }
     }
@@ -1073,15 +1130,11 @@ struct ToDoRow: View {
     }
 
     private func formattedFullDueDateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.timeZone = TimeZone.current
         if dueDateHasTime(date) {
-            formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy jm")
+            return ToDoViewFormatters.fullDueDateTimeFormatter.string(from: date)
         } else {
-            formatter.setLocalizedDateFormatFromTemplate("EEE d MMM yyyy")
+            return ToDoViewFormatters.fullDueDateFormatter.string(from: date)
         }
-        return formatter.string(from: date)
     }
 
     private var isCalendarEvent: Bool {

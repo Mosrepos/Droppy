@@ -71,7 +71,7 @@ struct QuickshareSettingsContent: View {
                         Text("No shared files yet")
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary.opacity(0.6))
-                        Text("Share files via the basket's Quickshare action")
+                        Text("Share files via the basket's Quickshare action (powered by Droppy Quickshare)")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -110,7 +110,7 @@ struct QuickshareSettingsContent: View {
             // MARK: - About Section
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Share screenshots, recordings, and files instantly with short, expiring links. No account required.")
+                    Text("This extension powers the Quickshare action. Share screenshots, recordings, and files instantly with short, expiring links. No account required.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     

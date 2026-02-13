@@ -2272,44 +2272,6 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Debounce rapid repeated media/shelf toggles from a single swipe burst.
     private var lastMediaSwipeToggleAt: Date = .distantPast
 
-    private enum MouseSwipeModifier: String {
-        case option
-        case shift
-        case control
-
-        var flags: NSEvent.ModifierFlags {
-            switch self {
-            case .option: return .option
-            case .shift: return .shift
-            case .control: return .control
-            }
-        }
-    }
-
-    private func mouseSwipeModifier() -> MouseSwipeModifier {
-        let rawValue = UserDefaults.standard.preference(
-            AppPreferenceKey.mouseSwipeMediaSwitchModifier,
-            default: PreferenceDefault.mouseSwipeMediaSwitchModifier
-        )
-        return MouseSwipeModifier(rawValue: rawValue) ?? .option
-    }
-
-    private func mouseGestureDeltaX(for event: NSEvent) -> CGFloat? {
-        let isEnabled = UserDefaults.standard.preference(
-            AppPreferenceKey.enableMouseSwipeMediaSwitch,
-            default: PreferenceDefault.enableMouseSwipeMediaSwitch
-        )
-        guard isEnabled else { return nil }
-
-        let allowedFlags: NSEvent.ModifierFlags = [.option, .shift, .control]
-        let activeModifiers = event.modifierFlags.intersection(allowedFlags)
-        guard activeModifiers.contains(mouseSwipeModifier().flags) else { return nil }
-
-        // For regular mouse wheels, map vertical wheel motion to horizontal swipe intent.
-        guard abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX) else { return nil }
-        return -event.scrollingDeltaY
-    }
-    
     /// Handles scroll wheel events for 2-finger horizontal swipe media HUD toggle
     /// Swipe left = show media HUD, Swipe right = hide media HUD
     /// Works both when collapsed (hover state) and when expanded (shelf view)
@@ -2332,14 +2294,9 @@ final class NotchWindowController: NSObject, ObservableObject {
         lastScrollTime = Date()
         
         let trackpadHorizontalSwipe = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) * 1.5
-        let mappedMouseGestureDelta = mouseGestureDeltaX(for: event)
-        let usingMappedMouseGesture = mappedMouseGestureDelta != nil
+        guard trackpadHorizontalSwipe else { return }
 
-        // Allow either native horizontal swipe input or configured mouse-gesture mapping.
-        guard trackpadHorizontalSwipe || usingMappedMouseGesture else { return }
-
-        // Accumulate horizontal intent from the active input path.
-        accumulatedScrollX += mappedMouseGestureDelta ?? event.scrollingDeltaX
+        accumulatedScrollX += event.scrollingDeltaX
         
         let mouseLocation = NSEvent.mouseLocation
         
@@ -2377,6 +2334,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         // Require accumulated intent to exceed threshold before triggering.
         // Mouse wheel gestures are less granular than trackpad swipes, so use a lower threshold.
+        let usingMappedMouseGesture = !event.hasPreciseScrollingDeltas
         let threshold: CGFloat = usingMappedMouseGesture ? 4 : 30
         
         // Determine current effective state for media visibility

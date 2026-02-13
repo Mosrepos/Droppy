@@ -62,8 +62,6 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.cameraPreferredDeviceID) private var cameraPreferredDeviceID = PreferenceDefault.cameraPreferredDeviceID
     @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
     @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
-    @AppStorage(AppPreferenceKey.enableMouseSwipeMediaSwitch) private var enableMouseSwipeMediaSwitch = PreferenceDefault.enableMouseSwipeMediaSwitch
-    @AppStorage(AppPreferenceKey.mouseSwipeMediaSwitchModifier) private var mouseSwipeMediaSwitchModifier = PreferenceDefault.mouseSwipeMediaSwitchModifier
     @AppStorage(AppPreferenceKey.showExternalMouseSwitchButton) private var showExternalMouseSwitchButton = PreferenceDefault.showExternalMouseSwitchButton
     @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
     @AppStorage(AppPreferenceKey.debounceMediaChanges) private var debounceMediaChanges = PreferenceDefault.debounceMediaChanges
@@ -1422,7 +1420,7 @@ struct SettingsView: View {
             if enableQuickActions {
                 nativePickerRow(
                     title: "Cloud Action",
-                    subtitle: "Choose how the cloud quick action uploads and shares files"
+                    subtitle: "Choose which provider powers Quickshare (Droppy Quickshare extension or iCloud Drive)"
                 ) {
                     SettingsSegmentButton(
                         icon: QuickActionsCloudProvider.droppyQuickshare.icon,
@@ -2107,49 +2105,12 @@ struct SettingsView: View {
                         // Advanced Auto-Fade settings (Issue #79)
                         AdvancedAutofadeSettingsRow()
 
-                        Toggle(isOn: $enableMouseSwipeMediaSwitch) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Mouse Swipe Gesture")
-                                Text("Use a mouse wheel gesture to switch between Media and Shelf")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
                         Toggle(isOn: $showExternalMouseSwitchButton) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("External Mouse Switch Button")
                                 Text("Show a left floating Media/Shelf toggle when an external mouse is connected")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        if enableMouseSwipeMediaSwitch {
-                            nativePickerRow(
-                                title: "Mouse Gesture Setup",
-                                subtitle: "Hold a modifier and scroll over the notch area"
-                            ) {
-                                SettingsSegmentButton(
-                                    icon: "option",
-                                    label: "Option",
-                                    isSelected: mouseSwipeMediaSwitchModifier == "option",
-                                    action: { mouseSwipeMediaSwitchModifier = "option" }
-                                )
-
-                                SettingsSegmentButton(
-                                    icon: "shift",
-                                    label: "Shift",
-                                    isSelected: mouseSwipeMediaSwitchModifier == "shift",
-                                    action: { mouseSwipeMediaSwitchModifier = "shift" }
-                                )
-
-                                SettingsSegmentButton(
-                                    icon: "control",
-                                    label: "Control",
-                                    isSelected: mouseSwipeMediaSwitchModifier == "control",
-                                    action: { mouseSwipeMediaSwitchModifier = "control" }
-                                )
                             }
                         }
                         
@@ -5214,7 +5175,7 @@ struct QuickActionsInfoButton: View {
                         .foregroundStyle(.secondary)
                     
                     VStack(alignment: .leading, spacing: 6) {
-                        Label("Drag files onto AirDrop, Messages, Mail, or Quickshare", systemImage: "bolt.fill")
+                        Label("Drag files onto AirDrop, Messages, Mail, or Quickshare (Droppy Quickshare)", systemImage: "bolt.fill")
                         Label("Choose your preferred app for the Mail quick action", systemImage: "envelope.badge")
                         Label("Also enables Select All and Add All tools in Basket", systemImage: "doc.on.doc")
                     }
@@ -5265,7 +5226,7 @@ struct QuickActionsInfoSheet: View {
                             .foregroundStyle(.blue)
                             .font(.system(size: 14))
                             .frame(width: 22)
-                        Text("Shows quick action drop targets under Shelf and Basket (AirDrop, Messages, Mail, Quickshare)")
+                        Text("Shows quick action drop targets under Shelf and Basket (AirDrop, Messages, Mail, Quickshare via Droppy Quickshare)")
                             .font(.system(size: 12))
                             .foregroundStyle(.primary.opacity(0.85))
                     }

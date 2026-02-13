@@ -16,7 +16,16 @@ enum QuickActionsCloudProvider: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Provider label shown in Settings.
     var title: String {
+        switch self {
+        case .droppyQuickshare: return "Droppy Quickshare"
+        case .iCloudDrive: return "iCloud Drive"
+        }
+    }
+
+    /// Action label shown in quick-action buttons.
+    var quickActionTitle: String {
         switch self {
         case .droppyQuickshare: return "Quickshare"
         case .iCloudDrive: return "iCloud Drive"
@@ -33,7 +42,7 @@ enum QuickActionsCloudProvider: String, CaseIterable, Identifiable {
     var quickActionDescription: String {
         switch self {
         case .droppyQuickshare:
-            return "Upload to cloud and copy shareable link"
+            return "Upload via Droppy Quickshare and copy a shareable link"
         case .iCloudDrive:
             return "Upload to iCloud Drive and share a link"
         }

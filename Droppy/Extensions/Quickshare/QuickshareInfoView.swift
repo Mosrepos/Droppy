@@ -173,7 +173,7 @@ struct QuickshareInfoView: View {
                     )
             }
             
-            Text("Quickly upload and share files via 0x0.st")
+            Text("This extension powers the Quickshare action (0x0.st)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

@@ -90,12 +90,9 @@ final class ThumbnailCache {
             NSHomeDirectory()
         ]
         
-        let group = DispatchGroup()
-        
         for path in warmupPaths {
-            group.enter()
-            Task(priority: .userInitiated) {
-                defer { group.leave() }
+            Task(priority: .utility) { [weak self] in
+                guard let self else { return }
                 let url = URL(fileURLWithPath: path)
                 let request = QLThumbnailGenerator.Request(
                     fileAt: url,
@@ -111,7 +108,6 @@ final class ThumbnailCache {
                 }
             }
         }
-        _ = group.wait(timeout: .now() + 5.0)
     }
     
     /// Forces an NSImage to be rendered to GPU, triggering Metal shader compilation

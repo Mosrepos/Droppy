@@ -86,13 +86,20 @@ final class ToDoManager {
             // Keep sorted view data in sync during the same mutation transaction
             // so insert/remove transitions animate reliably.
             sortedItemsCache = nil
+            itemPartitionCache = nil
         }
     }
     var isVisible: Bool = false
     var isShelfListExpanded: Bool = false
     var isInteractingWithPopover: Bool = false
     var isEditingText: Bool = false
-    var availableReminderLists: [ToDoReminderListOption] = []
+    var availableReminderLists: [ToDoReminderListOption] = [] {
+        didSet {
+            reminderListSearchIndex = availableReminderLists.map { option in
+                (option: option, normalizedTitle: Self.normalizeSearchToken(option.title))
+            }
+        }
+    }
     var selectedReminderListIDs: Set<String> = []
     var availableCalendarLists: [ToDoReminderListOption] = []
     var selectedCalendarListIDs: Set<String> = []
@@ -140,6 +147,10 @@ final class ToDoManager {
     private var persistenceWorkItem: DispatchWorkItem?
     private let persistenceQueue = DispatchQueue(label: "app.getdroppy.todo.persistence", qos: .utility)
     private var sortedItemsCache: [ToDoItem]?
+    private var itemPartitionCache: ItemPartitionCache?
+    private var reminderListSearchIndex: [(option: ToDoReminderListOption, normalizedTitle: String)] = []
+    private var isRefreshingReminderLists = false
+    private var isRefreshingCalendarLists = false
     private let remindersSelectedListsKey = AppPreferenceKey.todoSyncRemindersListIDs
     private let calendarSelectedListsKey = AppPreferenceKey.todoSyncCalendarListIDs
     private let dueSoonLeadTimes: [TimeInterval] = [15 * 60, 60]
@@ -357,14 +368,26 @@ final class ToDoManager {
     }
 
     func refreshReminderListsNow() {
-        Task {
+        guard !isRefreshingReminderLists else { return }
+        isRefreshingReminderLists = true
+        Task { [weak self] in
+            guard let self else { return }
             await refreshReminderLists()
+            await MainActor.run {
+                self.isRefreshingReminderLists = false
+            }
         }
     }
 
     func refreshCalendarListsNow() {
-        Task {
+        guard !isRefreshingCalendarLists else { return }
+        isRefreshingCalendarLists = true
+        Task { [weak self] in
+            guard let self else { return }
             await refreshCalendarLists()
+            await MainActor.run {
+                self.isRefreshingCalendarLists = false
+            }
         }
     }
 
@@ -379,14 +402,14 @@ final class ToDoManager {
         }
 
         let normalizedQuery = Self.normalizeSearchToken(trimmed)
-        let prefixMatches = availableReminderLists.filter {
-            Self.normalizeSearchToken($0.title).hasPrefix(normalizedQuery)
+        let prefixMatches = reminderListSearchIndex.compactMap { entry in
+            entry.normalizedTitle.hasPrefix(normalizedQuery) ? entry.option : nil
         }
         if !prefixMatches.isEmpty {
             return prefixMatches
         }
-        return availableReminderLists.filter {
-            Self.normalizeSearchToken($0.title).contains(normalizedQuery)
+        return reminderListSearchIndex.compactMap { entry in
+            entry.normalizedTitle.contains(normalizedQuery) ? entry.option : nil
         }
     }
 
@@ -395,19 +418,17 @@ final class ToDoManager {
         guard !trimmed.isEmpty else { return nil }
 
         let normalizedQuery = Self.normalizeSearchToken(trimmed)
-        if let exact = availableReminderLists.first(where: {
-            Self.normalizeSearchToken($0.title) == normalizedQuery
+        if let exact = reminderListSearchIndex.first(where: {
+            $0.normalizedTitle == normalizedQuery
         }) {
-            return exact
+            return exact.option
         }
-        if let prefix = availableReminderLists.first(where: {
-            Self.normalizeSearchToken($0.title).hasPrefix(normalizedQuery)
+        if let prefix = reminderListSearchIndex.first(where: {
+            $0.normalizedTitle.hasPrefix(normalizedQuery)
         }) {
-            return prefix
+            return prefix.option
         }
-        return availableReminderLists.first(where: {
-            Self.normalizeSearchToken($0.title).contains(normalizedQuery)
-        })
+        return reminderListSearchIndex.first(where: { $0.normalizedTitle.contains(normalizedQuery) })?.option
     }
 
     func toggleReminderListSelection(_ listID: String) {
@@ -946,7 +967,6 @@ final class ToDoManager {
         let allCalendars = readStore.calendars(for: .event)
         let selectedIDs = selectedCalendarListIDs
         let calendars = allCalendars.filter { selectedIDs.contains($0.calendarIdentifier) }
-        print("ToDoManager: Calendar fetch calendars count = \(calendars.count)")
         guard !calendars.isEmpty else { return [] }
 
         let now = Date()
@@ -976,15 +996,17 @@ final class ToDoManager {
                 listColorHex: Self.hexColor(from: event.calendar.cgColor)
             )
         }
-        print("ToDoManager: Calendar fetch produced \(payloads.count) upcoming events")
         return payloads
     }
 
     private func applyExternalSync(reminderPayloads: [ExternalTaskPayload], calendarPayloads: [ExternalTaskPayload]) {
         let remindersEnabled = isRemindersSyncEnabled
         let calendarEnabled = isCalendarSyncEnabled
+        let now = Date()
+        var didMutateItems = false
 
         var payloadByKey: [String: ExternalTaskPayload] = [:]
+        payloadByKey.reserveCapacity(reminderPayloads.count + calendarPayloads.count)
         for payload in (reminderPayloads + calendarPayloads) {
             payloadByKey["\(payload.source.rawValue)::\(payload.identifier)"] = payload
         }
@@ -996,13 +1018,44 @@ final class ToDoManager {
 
             let key = "\(source.rawValue)::\(externalID)"
             if let payload = payloadByKey.removeValue(forKey: key) {
-                items[index].title = payload.title
-                items[index].dueDate = payload.dueDate
-                items[index].isCompleted = payload.isCompleted
-                items[index].completedAt = payload.isCompleted ? (items[index].completedAt ?? Date()) : nil
-                items[index].externalListIdentifier = payload.listIdentifier
-                items[index].externalListTitle = payload.listTitle
-                items[index].externalListColorHex = payload.listColorHex
+                var current = items[index]
+                var changed = false
+
+                if current.title != payload.title {
+                    current.title = payload.title
+                    changed = true
+                }
+                if current.dueDate != payload.dueDate {
+                    current.dueDate = payload.dueDate
+                    changed = true
+                }
+                if current.isCompleted != payload.isCompleted {
+                    current.isCompleted = payload.isCompleted
+                    changed = true
+                }
+
+                let nextCompletedAt = payload.isCompleted ? (current.completedAt ?? now) : nil
+                if current.completedAt != nextCompletedAt {
+                    current.completedAt = nextCompletedAt
+                    changed = true
+                }
+                if current.externalListIdentifier != payload.listIdentifier {
+                    current.externalListIdentifier = payload.listIdentifier
+                    changed = true
+                }
+                if current.externalListTitle != payload.listTitle {
+                    current.externalListTitle = payload.listTitle
+                    changed = true
+                }
+                if current.externalListColorHex != payload.listColorHex {
+                    current.externalListColorHex = payload.listColorHex
+                    changed = true
+                }
+
+                if changed {
+                    items[index] = current
+                    didMutateItems = true
+                }
             }
         }
 
@@ -1016,15 +1069,17 @@ final class ToDoManager {
                 externalListIdentifier: payload.listIdentifier,
                 externalListTitle: payload.listTitle,
                 externalListColorHex: payload.listColorHex,
-                createdAt: Date(),
-                completedAt: payload.isCompleted ? Date() : nil,
+                createdAt: now,
+                completedAt: payload.isCompleted ? now : nil,
                 isCompleted: payload.isCompleted
             )
             items.insert(item, at: 0)
+            didMutateItems = true
         }
 
         // Remove stale external items from enabled sources when they no longer exist upstream.
         let activeKeys = Set((reminderPayloads + calendarPayloads).map { "\($0.source.rawValue)::\($0.identifier)" })
+        let beforePruneCount = items.count
         items.removeAll { item in
             guard let source = item.externalSource, let externalID = item.externalIdentifier else { return false }
             let sourceEnabled = (source == .reminders && remindersEnabled) || (source == .calendar && calendarEnabled)
@@ -1032,22 +1087,33 @@ final class ToDoManager {
             let key = "\(source.rawValue)::\(externalID)"
             return !activeKeys.contains(key)
         }
+        if items.count != beforePruneCount {
+            didMutateItems = true
+        }
 
         if !remindersEnabled {
-            removeExternalItems(for: .reminders)
+            didMutateItems = removeExternalItems(for: .reminders, persist: false) || didMutateItems
         }
         if !calendarEnabled {
-            removeExternalItems(for: .calendar)
+            didMutateItems = removeExternalItems(for: .calendar, persist: false) || didMutateItems
         }
 
-        saveItems()
+        if didMutateItems {
+            saveItems()
+        }
     }
 
-    private func removeExternalItems(for source: ToDoExternalSource) {
+    @discardableResult
+    private func removeExternalItems(for source: ToDoExternalSource, persist: Bool = true) -> Bool {
+        let beforeCount = items.count
         withAnimation(.smooth) {
             items.removeAll { $0.externalSource == source }
         }
-        saveItems()
+        let changed = items.count != beforeCount
+        if changed && persist {
+            saveItems()
+        }
+        return changed
     }
 
     private struct ExternalTaskPayload {
@@ -1530,6 +1596,7 @@ final class ToDoManager {
             return sortedItemsCache
         }
 
+        let now = Date()
         let sorted = items.sorted {
             // Always put completed items at the bottom
             if $0.isCompleted != $1.isCompleted {
@@ -1538,7 +1605,7 @@ final class ToDoManager {
             
             // If both are completed, sort by completion date (newest first)
             if $0.isCompleted {
-                return ($0.completedAt ?? Date()) > ($1.completedAt ?? Date())
+                return ($0.completedAt ?? now) > ($1.completedAt ?? now)
             }
             
 
@@ -1575,26 +1642,32 @@ final class ToDoManager {
     }
 
     var upcomingCalendarItems: [ToDoItem] {
-        sortedItems.filter { $0.externalSource == .calendar && !$0.isCompleted }
+        partitionedItems.upcomingCalendarItems
     }
 
     var overviewTaskItems: [ToDoItem] {
-        sortedItems.filter { !($0.externalSource == .calendar && !$0.isCompleted) }
+        partitionedItems.overviewTaskItems
     }
 
     var shelfTimelineItemCount: Int {
-        let activeItems = sortedItems.filter { !$0.isCompleted }
-        let calendarItems = activeItems.filter { $0.externalSource == .calendar }
-        let taskItems = activeItems.filter { $0.externalSource != .calendar }
+        var calendarItemsCount = 0
+        var taskItemsCount = 0
+        for item in sortedItems where !item.isCompleted {
+            if item.externalSource == .calendar {
+                calendarItemsCount += 1
+            } else {
+                taskItemsCount += 1
+            }
+        }
 
         if isCalendarSyncEnabled {
             // Keep a combined shelf whenever there are visible task/reminder items.
-            if !taskItems.isEmpty {
-                return calendarItems.count + taskItems.count
+            if taskItemsCount > 0 {
+                return calendarItemsCount + taskItemsCount
             }
-            return calendarItems.count
+            return calendarItemsCount
         }
-        return taskItems.count
+        return taskItemsCount
     }
     
     private func rank(_ p: ToDoPriority) -> Int {
@@ -1603,6 +1676,38 @@ final class ToDoManager {
         case .medium: return 2
         case .normal: return 1
         }
+    }
+
+    private struct ItemPartitionCache {
+        let upcomingCalendarItems: [ToDoItem]
+        let overviewTaskItems: [ToDoItem]
+    }
+
+    private var partitionedItems: ItemPartitionCache {
+        if let itemPartitionCache {
+            return itemPartitionCache
+        }
+
+        let sourceItems = sortedItems
+        var upcoming: [ToDoItem] = []
+        var overview: [ToDoItem] = []
+        upcoming.reserveCapacity(sourceItems.count)
+        overview.reserveCapacity(sourceItems.count)
+
+        for item in sourceItems {
+            if item.externalSource == .calendar && !item.isCompleted {
+                upcoming.append(item)
+            } else {
+                overview.append(item)
+            }
+        }
+
+        let cache = ItemPartitionCache(
+            upcomingCalendarItems: upcoming,
+            overviewTaskItems: overview
+        )
+        itemPartitionCache = cache
+        return cache
     }
 
     private func syncExternalTitle(for item: ToDoItem) {
