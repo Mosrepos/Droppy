@@ -14,9 +14,13 @@ final class VoiceTranscribeMenuBar {
     static let shared = VoiceTranscribeMenuBar()
     
     private var statusItem: NSStatusItem?
-    private var menu: NSMenu?
+    private var activeMenu: NSMenu?
     private var isRecording = false
     private var isInvisiRecording = false // Invisi-record mode (no window)
+    private lazy var idleMenu: NSMenu = makeIdleMenu()
+    private lazy var recordingMenu: NSMenu = makeRecordingMenu()
+    private lazy var idleIconImage: NSImage? = configuredIcon(named: "VoiceTranscribeMenuBarIcon")
+    private lazy var recordingIconImage: NSImage? = configuredIcon(named: "VoiceTranscribeRecordingIcon")
     
     private init() {}
     
@@ -58,69 +62,71 @@ final class VoiceTranscribeMenuBar {
         }
         
         updateIcon()
-        setupMenu()
+        updateMenuForState()
         
         print("VoiceTranscribe: Menu bar item shown")
     }
     
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
-        
-        let iconName = isRecording ? "VoiceTranscribeRecordingIcon" : "VoiceTranscribeMenuBarIcon"
-        let image = NSImage(named: iconName)
-        image?.size = NSSize(width: 22, height: 22)
-        image?.isTemplate = true
-        button.image = image
+        button.image = isRecording ? recordingIconImage : idleIconImage
     }
     
     private func removeStatusItem() {
         guard let item = statusItem else { return }
         NSStatusBar.system.removeStatusItem(item)
         statusItem = nil
-        menu = nil
+        activeMenu = nil
         
         print("VoiceTranscribe: Menu bar item hidden")
     }
     
-    private func setupMenu() {
-        menu = NSMenu()
-        updateMenuForState()
-    }
-    
     private func updateMenuForState() {
-        guard let menu = menu else { return }
-        menu.removeAllItems()
-        
-        if isRecording {
-            // Recording state menu
-            let stopItem = NSMenuItem(title: "Stop Recording", action: #selector(stopRecording), keyEquivalent: "")
-            stopItem.target = self
-            stopItem.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
-            menu.addItem(stopItem)
-        } else {
-            // Idle state menu
-            let recordItem = NSMenuItem(title: "Quick Record", action: #selector(startQuickRecord), keyEquivalent: "")
-            recordItem.target = self
-            recordItem.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
-            menu.addItem(recordItem)
-            
-            let invisiItem = NSMenuItem(title: "Invisi-record", action: #selector(startInvisiRecord), keyEquivalent: "")
-            invisiItem.target = self
-            invisiItem.image = NSImage(systemSymbolName: "eye.slash.circle", accessibilityDescription: nil)
-            menu.addItem(invisiItem)
-            
-            let uploadItem = NSMenuItem(title: "Upload Audio File...", action: #selector(uploadAudioFile), keyEquivalent: "")
-            uploadItem.target = self
-            uploadItem.image = NSImage(systemSymbolName: "doc.badge.plus", accessibilityDescription: nil)
-            menu.addItem(uploadItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let settingsItem = NSMenuItem(title: "Voice Transcribe Settings...", action: #selector(openSettings), keyEquivalent: "")
-            settingsItem.target = self
-            settingsItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
-            menu.addItem(settingsItem)
-        }
+        activeMenu = isRecording ? recordingMenu : idleMenu
+    }
+
+    private func makeIdleMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let recordItem = NSMenuItem(title: "Quick Record", action: #selector(startQuickRecord), keyEquivalent: "")
+        recordItem.target = self
+        recordItem.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+        menu.addItem(recordItem)
+
+        let invisiItem = NSMenuItem(title: "Invisi-record", action: #selector(startInvisiRecord), keyEquivalent: "")
+        invisiItem.target = self
+        invisiItem.image = NSImage(systemSymbolName: "eye.slash.circle", accessibilityDescription: nil)
+        menu.addItem(invisiItem)
+
+        let uploadItem = NSMenuItem(title: "Upload Audio File...", action: #selector(uploadAudioFile), keyEquivalent: "")
+        uploadItem.target = self
+        uploadItem.image = NSImage(systemSymbolName: "doc.badge.plus", accessibilityDescription: nil)
+        menu.addItem(uploadItem)
+
+        menu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: "Voice Transcribe Settings...", action: #selector(openSettings), keyEquivalent: "")
+        settingsItem.target = self
+        settingsItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
+        menu.addItem(settingsItem)
+
+        return menu
+    }
+
+    private func makeRecordingMenu() -> NSMenu {
+        let menu = NSMenu()
+        let stopItem = NSMenuItem(title: "Stop Recording", action: #selector(stopRecording), keyEquivalent: "")
+        stopItem.target = self
+        stopItem.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
+        menu.addItem(stopItem)
+        return menu
+    }
+
+    private func configuredIcon(named name: String) -> NSImage? {
+        guard let image = NSImage(named: name) else { return nil }
+        image.size = NSSize(width: 22, height: 22)
+        image.isTemplate = true
+        return image
     }
     
     // MARK: - Actions
@@ -131,7 +137,7 @@ final class VoiceTranscribeMenuBar {
             stopRecording()
         } else {
             // Pop up directly without using deprecated NSStatusItem.popUpMenu.
-            if let menu = menu, let button = statusItem?.button {
+            if let menu = activeMenu, let button = statusItem?.button {
                 menu.popUp(positioning: nil, at: NSPoint(x: button.bounds.midX, y: button.bounds.maxY), in: button)
             }
         }

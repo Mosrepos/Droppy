@@ -394,40 +394,9 @@ final class ControlItem {
             case .hideItems: iconSet.visibleSymbol
             case .showItems: iconSet.hiddenSymbol
             }
-            
-            // Create the base image
-            var image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Toggle Menu Bar")
-            
-            // Apply gradient if enabled
-            if manager?.useGradientIcon == true, let baseImage = image {
-                // Use the original image size to prevent distortion
-                let size = baseImage.size
-                let gradientImage = NSImage(size: size, flipped: false) { bounds in
-                    // Draw gradient background masked by the symbol
-                    guard let cgImage = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return false }
-                    guard let context = NSGraphicsContext.current?.cgContext else { return false }
-                    
-                    // Create grayscale gradient (light to dark, top to bottom)
-                    let lightGray = NSColor(white: 0.7, alpha: 1.0).cgColor
-                    let darkGray = NSColor(white: 0.3, alpha: 1.0).cgColor
-                    let colors = [lightGray, darkGray] as CFArray
-                    guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) else { return false }
-                    
-                    // Clip to the symbol shape
-                    context.clip(to: bounds, mask: cgImage)
-                    
-                    // Draw gradient from top to bottom
-                    context.drawLinearGradient(gradient, start: CGPoint(x: bounds.midX, y: bounds.maxY), end: CGPoint(x: bounds.midX, y: 0), options: [])
-                    
-                    return true
-                }
-                gradientImage.isTemplate = false
-                image = gradientImage
-            }
-            
-            button.image = image
-            
-            print("[MenuBarManager] Updated main item appearance: \(iconName)")
+            button.image =
+                manager?.toggleIconImage(for: state)
+                ?? NSImage(systemSymbolName: iconName, accessibilityDescription: "Toggle Menu Bar")
             
         case .hidden:
             guard manager?.showChevronSeparator == true else {
@@ -680,6 +649,7 @@ final class MenuBarManager: ObservableObject {
     @Published var iconSet: MBMIconSet {
         didSet { 
             UserDefaults.standard.set(iconSet.rawValue, forKey: "MenuBarManager_IconSet")
+            toggleIconCache.removeAll()
             updateIconAppearance()
         }
     }
@@ -688,6 +658,7 @@ final class MenuBarManager: ObservableObject {
     @Published var useGradientIcon: Bool {
         didSet {
             UserDefaults.standard.set(useGradientIcon, forKey: "MenuBarManager_UseGradientIcon")
+            toggleIconCache.removeAll()
             updateIconAppearance()
         }
     }
@@ -730,6 +701,9 @@ final class MenuBarManager: ObservableObject {
     
     /// Whether currently applying spacing changes
     @Published var isApplyingSpacing: Bool = false
+
+    /// Cache for rendered toggle icons so hover/show-hide doesn't redraw every transition.
+    private var toggleIconCache: [String: NSImage] = [:]
     
     /// Default spacing value used by macOS
     private let defaultSpacingValue = 16
@@ -798,6 +772,61 @@ final class MenuBarManager: ObservableObject {
             try process.run()
             process.waitUntilExit()
         }.value
+    }
+
+    /// Returns the visible toggle icon image for the provided state.
+    func toggleIconImage(for state: HidingState) -> NSImage? {
+        let symbolName = switch state {
+        case .hideItems: iconSet.visibleSymbol
+        case .showItems: iconSet.hiddenSymbol
+        }
+        let cacheKey = "\(symbolName)|\(useGradientIcon)"
+
+        if let cachedImage = toggleIconCache[cacheKey] {
+            return cachedImage
+        }
+
+        guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Toggle Menu Bar") else {
+            return nil
+        }
+
+        if !useGradientIcon {
+            baseImage.isTemplate = true
+            toggleIconCache[cacheKey] = baseImage
+            return baseImage
+        }
+
+        guard let cgImage = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            baseImage.isTemplate = true
+            toggleIconCache[cacheKey] = baseImage
+            return baseImage
+        }
+
+        let gradientImage = NSImage(size: baseImage.size, flipped: false) { bounds in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let lightGray = NSColor(white: 0.7, alpha: 1.0).cgColor
+            let darkGray = NSColor(white: 0.3, alpha: 1.0).cgColor
+            let colors = [lightGray, darkGray] as CFArray
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: colors,
+                locations: [0, 1]
+            ) else {
+                return false
+            }
+
+            context.clip(to: bounds, mask: cgImage)
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: bounds.midX, y: bounds.maxY),
+                end: CGPoint(x: bounds.midX, y: bounds.minY),
+                options: []
+            )
+            return true
+        }
+        gradientImage.isTemplate = false
+        toggleIconCache[cacheKey] = gradientImage
+        return gradientImage
     }
     
     /// Mouse monitoring

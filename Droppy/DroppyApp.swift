@@ -30,7 +30,6 @@ struct DroppyMenuContent: View {
     @State private var shortcutRefreshId = UUID()
     @State private var clipboardMenuItems: [ClipboardItem] = []
     @State private var clipboardMenuTitles: [UUID: String] = [:]
-    @State private var lastObservedPasteboardChangeCount: Int = NSPasteboard.general.changeCount
     @State private var todoManager = ToDoManager.shared
     @ObservedObject private var clipboardManager = ClipboardManager.shared
     
@@ -185,7 +184,7 @@ struct DroppyMenuContent: View {
                         
                         Button(role: .destructive) {
                             clipboardManager.clearAllHistory()
-                            refreshClipboardMenuSnapshot()
+                            refreshClipboardMenuSnapshot(includePasteboardPreview: true)
                         } label: {
                             Label("Clear History", systemImage: "trash")
                         }
@@ -330,16 +329,9 @@ struct DroppyMenuContent: View {
             .onReceive(clipboardManager.$history) { _ in
                 refreshClipboardMenuSnapshot()
             }
-            .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-                refreshClipboardMenuSnapshotIfNeeded()
-            }
             }
             .onAppear {
-                refreshClipboardMenuSnapshotIfNeeded(force: true)
-                if shouldShowUpcomingMenu &&
-                    (todoManager.isRemindersSyncEnabled || todoManager.isCalendarSyncEnabled) {
-                    todoManager.syncExternalSourcesNow(minimumInterval: 0)
-                }
+                refreshClipboardMenuSnapshot(includePasteboardPreview: true)
             }
         }
     }
@@ -373,11 +365,11 @@ struct DroppyMenuContent: View {
         }
     }
 
-    private func refreshClipboardMenuSnapshot() {
-        clipboardManager.refreshFromPasteboardIfNeeded()
-
+    private func refreshClipboardMenuSnapshot(includePasteboardPreview: Bool = false) {
         var items = Array(clipboardManager.history.prefix(15))
-        if items.isEmpty, let previewItem = clipboardManager.currentPasteboardPreviewItem() {
+        if includePasteboardPreview,
+           items.isEmpty,
+           let previewItem = clipboardManager.currentPasteboardPreviewItem() {
             items = [previewItem]
         }
         clipboardMenuItems = items
@@ -388,16 +380,6 @@ struct DroppyMenuContent: View {
             titles[item.id] = item.title
         }
         clipboardMenuTitles = titles
-    }
-
-    private func refreshClipboardMenuSnapshotIfNeeded(force: Bool = false) {
-        let currentChangeCount = NSPasteboard.general.changeCount
-        guard force || currentChangeCount != lastObservedPasteboardChangeCount || clipboardMenuItems.isEmpty else {
-            return
-        }
-
-        lastObservedPasteboardChangeCount = currentChangeCount
-        refreshClipboardMenuSnapshot()
     }
 
     private func clipboardMenuTitle(for item: ClipboardItem) -> String {
