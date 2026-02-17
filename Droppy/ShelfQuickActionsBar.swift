@@ -140,7 +140,7 @@ struct ShelfQuickActionButton: View {
         ) {
             Circle()
                 // Transparent mode: use material, Dark mode: pure black
-                .fill(useTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+                .droppyTransparentFill(useTransparent, fallback: Color.black)
                 .frame(width: size, height: size)
                 .overlay(
                     Circle()

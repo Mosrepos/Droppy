@@ -57,15 +57,19 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.dynamicIslandHeightOffset) private var dynamicIslandHeightOffset = PreferenceDefault.dynamicIslandHeightOffset
     @AppStorage(AppPreferenceKey.notchWidthOffset) private var notchWidthOffset = PreferenceDefault.notchWidthOffset
     @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
-    @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
     @AppStorage(AppPreferenceKey.enableQuickActions) private var enableQuickActions = PreferenceDefault.enableQuickActions
     @AppStorage(AppPreferenceKey.enableRightClickHide) private var enableRightClickHide = PreferenceDefault.enableRightClickHide
     @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
-    @AppStorage(AppPreferenceKey.enableGradientVisualizer) private var enableGradientVisualizer = PreferenceDefault.enableGradientVisualizer
-    @AppStorage(AppPreferenceKey.enableMediaAlbumArtGlow) private var enableMediaAlbumArtGlow = PreferenceDefault.enableMediaAlbumArtGlow
-    @AppStorage(AppPreferenceKey.cameraInstalled) private var cameraInstalled = PreferenceDefault.cameraInstalled
-    @AppStorage(AppPreferenceKey.cameraEnabled) private var cameraEnabled = PreferenceDefault.cameraEnabled
-    @AppStorage(AppPreferenceKey.todoShelfSplitViewEnabled) private var todoShelfSplitViewEnabled = PreferenceDefault.todoShelfSplitViewEnabled
+    // PERF: These properties are read-only in conditional checks, not bound to UI controls.
+    // Using direct UserDefaults reads avoids reactive view invalidation.
+    private var enableGradientVisualizer: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableGradientVisualizer, default: PreferenceDefault.enableGradientVisualizer) }
+    private var enableMediaAlbumArtGlow: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableMediaAlbumArtGlow, default: PreferenceDefault.enableMediaAlbumArtGlow) }
+    private var todoShelfSplitViewEnabled: Bool { UserDefaults.standard.preference(AppPreferenceKey.todoShelfSplitViewEnabled, default: PreferenceDefault.todoShelfSplitViewEnabled) }
+    private var enableAutoClean: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableAutoClean, default: PreferenceDefault.enableAutoClean) }
+    private var cameraInstalled: Bool { UserDefaults.standard.preference(AppPreferenceKey.cameraInstalled, default: PreferenceDefault.cameraInstalled) }
+    private var cameraEnabled: Bool { UserDefaults.standard.preference(AppPreferenceKey.cameraEnabled, default: PreferenceDefault.cameraEnabled) }
+    private var caffeineInstalled: Bool { UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) }
+    private var terminalNotchEnabled: Bool { UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled) }
 
     
     // HUD State - Use @ObservedObject for singletons (they manage their own lifecycle)
@@ -103,7 +107,7 @@ struct NotchShelfView: View {
     @State private var isMediaStable = false  // Only show media HUD after debounce delay
     
     // Idle face preference
-    @AppStorage(AppPreferenceKey.enableIdleFace) private var enableIdleFace = PreferenceDefault.enableIdleFace
+    private var enableIdleFace: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableIdleFace, default: PreferenceDefault.enableIdleFace) }
     
     
     /// Animation state for the border dash
@@ -120,7 +124,7 @@ struct NotchShelfView: View {
     @State private var shelfScrollView: NSScrollView?
     @State private var shelfScrollViewportFrame: CGRect = .zero
     @State private var shelfAutoScrollVelocity: CGFloat = 0
-    private let shelfAutoScrollTicker = Timer.publish(every: 1.0 / 90.0, on: .main, in: .common).autoconnect()
+    @State private var shelfAutoScrollCancellable: AnyCancellable?
     
     // Global rename state
     @State private var renamingItemId: UUID?
@@ -468,13 +472,12 @@ struct NotchShelfView: View {
     private let mediaPlayerWidth: CGFloat = 450
 
     private var isTerminalViewVisible: Bool {
-        let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
-        return terminalManager.isInstalled && terminalEnabled && terminalManager.isVisible
+        return terminalManager.isInstalled && terminalNotchEnabled && terminalManager.isVisible
     }
 
     private var caffeineExtensionEnabled: Bool {
-        UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) &&
-        UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
+        caffeineInstalled &&
+        caffeineEnabled
     }
 
     private var isCaffeineViewVisible: Bool {
@@ -1187,11 +1190,9 @@ struct NotchShelfView: View {
             // REGULAR BUTTONS: Show otherwise (terminal/caffeine/close buttons)
             // SMOOTH MORPH: Uses spring animation for seamless transition
             // Check both installed AND enabled for each extension
-            let caffeineInstalled = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled)
-            let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
-            let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
+            // PERF: Use computed properties instead of inline UserDefaults reads
             let caffeineShouldShow = caffeineInstalled && caffeineEnabled
-            let terminalShouldShow = terminalManager.isInstalled && terminalEnabled
+            let terminalShouldShow = terminalManager.isInstalled && terminalNotchEnabled
             let cameraShouldShow = canShowCameraFloatingButton
             if enableNotchShelf && isExpandedOnThisScreen {
                 // FLOATING BUTTONS: ZStack enables smooth crossfade between button states
@@ -1253,10 +1254,9 @@ struct NotchShelfView: View {
                                             todoManager.isShelfListExpanded = false
                                         }
                                     }
-                                    notchController.forceRecalculateAllWindowSizes()
-                                    DispatchQueue.main.async {
-                                        notchController.forceRecalculateAllWindowSizes()
-                                    }
+                                    // SMOOTH: Don't call forceRecalculate synchronously here.
+                                    // setupStateObservation detects the state change and routes
+                                    // through the transition guard automatically.
                                 }) {
                                     Image(systemName: "eyes")
                                 }
@@ -1282,10 +1282,9 @@ struct NotchShelfView: View {
                                             todoManager.isShelfListExpanded = false
                                         }
                                     }
-                                    notchController.forceRecalculateAllWindowSizes()
-                                    DispatchQueue.main.async {
-                                        notchController.forceRecalculateAllWindowSizes()
-                                    }
+                                    // SMOOTH: Don't call forceRecalculate synchronously here.
+                                    // setupStateObservation detects the state change and routes
+                                    // through the transition guard automatically.
                                 }) {
                                     Image(systemName: "camera.fill")
                                 }
@@ -1334,10 +1333,9 @@ struct NotchShelfView: View {
                                             todoManager.isShelfListExpanded = false
                                         }
                                     }
-                                    notchController.forceRecalculateAllWindowSizes()
-                                    DispatchQueue.main.async {
-                                        notchController.forceRecalculateAllWindowSizes()
-                                    }
+                                    // SMOOTH: Don't call forceRecalculate synchronously here.
+                                    // setupStateObservation detects the state change and routes
+                                    // through the transition guard automatically.
                                 }) {
                                     Image(systemName: terminalManager.isVisible ? "xmark" : "terminal")
                                 }
@@ -1348,6 +1346,8 @@ struct NotchShelfView: View {
                             // Close button (only in sticky mode AND when terminal is not visible)
                             if !autoCollapseShelf && !terminalManager.isVisible {
                                 Button(action: {
+                                    // SMOOTH: Activate transition guard before collapse animation
+                                    notchController.beginExpandCollapseTransition()
                                     withAnimation(displayExpandCloseAnimation) {
                                         state.expandedDisplayID = nil
                                         state.hoveringDisplayID = nil
@@ -1430,12 +1430,11 @@ struct NotchShelfView: View {
                 // Defer to next runloop so SwiftUI settles its new height before frame sync.
                 if oldCount != newCount {
                     DispatchQueue.main.async {
-                        guard isExpandedOnThisScreen, !state.isDropTargeted, !dragMonitor.isDragging else { return }
+                        guard isExpandedOnThisScreen,
+                              !state.isDropTargeted,
+                              !dragMonitor.isDragging,
+                              !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
                         notchController.forceRecalculateAllWindowSizes()
-                        DispatchQueue.main.async {
-                            guard isExpandedOnThisScreen, !state.isDropTargeted, !dragMonitor.isDragging else { return }
-                            notchController.forceRecalculateAllWindowSizes()
-                        }
                     }
                 }
             }
@@ -1608,7 +1607,6 @@ struct NotchShelfView: View {
                     // Record dismissal to defer collapse until geometry is stable.
                     lastPopoverDismissedAt = Date()
                     if !state.isDropTargeted && !dragMonitor.isDragging {
-                        notchController.forceRecalculateAllWindowSizes()
                         DispatchQueue.main.async {
                             guard !state.isDropTargeted && !dragMonitor.isDragging else { return }
                             notchController.forceRecalculateAllWindowSizes()
@@ -1627,7 +1625,10 @@ struct NotchShelfView: View {
                 // Defer to next runloop so SwiftUI width/height settles before frame sync.
                 // This avoids the brief off-position jump on close/open transitions.
                 DispatchQueue.main.async {
-                    guard isExpandedOnThisScreen, !state.isDropTargeted, !dragMonitor.isDragging else { return }
+                    guard isExpandedOnThisScreen,
+                          !state.isDropTargeted,
+                          !dragMonitor.isDragging,
+                          !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
                     notchController.forceRecalculateAllWindowSizes()
                 }
             }
@@ -1672,13 +1673,23 @@ struct NotchShelfView: View {
                 NotchWindowController.shared.forceRecalculateAllWindowSizes()
             }
             .onChange(of: isTerminalViewVisible) { _, _ in
-                notchController.forceRecalculateAllWindowSizes()
+                // SMOOTH: Skip during transitions — setupStateObservation handles sizing
+                guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
+                DispatchQueue.main.async {
+                    notchController.forceRecalculateAllWindowSizes()
+                }
             }
             .onChange(of: isCameraViewVisible) { _, _ in
-                notchController.forceRecalculateAllWindowSizes()
+                guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
+                DispatchQueue.main.async {
+                    notchController.forceRecalculateAllWindowSizes()
+                }
             }
             .onChange(of: isCaffeineViewVisible) { _, _ in
-                notchController.forceRecalculateAllWindowSizes()
+                guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
+                DispatchQueue.main.async {
+                    notchController.forceRecalculateAllWindowSizes()
+                }
             }
             .onChange(of: canShowCameraFloatingButton) { _, canShow in
                 guard !canShow && showCameraView else { return }
@@ -1805,7 +1816,7 @@ struct NotchShelfView: View {
             musicManager.isMediaHUDHidden = !showMedia
         }
 
-        notchController.forceRecalculateAllWindowSizes()
+        // SMOOTH: Single deferred recalculate — avoid double sync+async
         DispatchQueue.main.async {
             notchController.forceRecalculateAllWindowSizes()
         }
@@ -1854,6 +1865,8 @@ struct NotchShelfView: View {
             guard !notchController.hasActiveContextMenu() else { return }
             
             notchShelfDebugLog("⏳ AUTO-SHRINK COLLAPSING SHELF!")
+            // SMOOTH: Activate transition guard before collapse animation
+            notchController.beginExpandCollapseTransition()
             withAnimation(displayExpandCloseAnimation) {
                 state.expandedDisplayID = nil  // Collapse shelf on all screens
                 state.hoveringDisplayID = nil  // Reset hover state to go directly to regular notch
@@ -2554,11 +2567,9 @@ struct NotchShelfView: View {
     private var shouldShowExpandedMediaPlayerForMorphing: Bool {
         guard isExpandedOnThisScreen && enableNotchShelf else { return false }
         // TERMINOTCH: Don't show morphing overlays when terminal is visible (and enabled)
-        let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
-        guard !(terminalManager.isInstalled && terminalEnabled && terminalManager.isVisible) else { return false }
+        guard !(terminalManager.isInstalled && terminalNotchEnabled && terminalManager.isVisible) else { return false }
         // HIGH ALERT: Don't show morphing overlays when caffeine view is visible (and enabled)
-        let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
-        let caffeineShouldShow = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) && caffeineEnabled
+        let caffeineShouldShow = caffeineInstalled && caffeineEnabled
         guard !(showCaffeineView && caffeineShouldShow) else { return false }
         guard !isCameraViewVisible else { return false }
         let dragMonitor = DragMonitor.shared
@@ -2589,7 +2600,7 @@ struct NotchShelfView: View {
             // Dynamic Island shape (pill)
             // When transparent DI is enabled, use glass material instead of gray
             DynamicIslandShape(cornerRadius: 50)
-                .fill(shouldUseDynamicIslandTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(dynamicIslandGray))
+                .droppyTransparentFill(shouldUseDynamicIslandTransparent, fallback: dynamicIslandGray)
                 .opacity(isDynamicIslandMode ? 1 : 0)
                 .scaleEffect(isDynamicIslandMode ? 1 : 0.85)
             
@@ -2597,7 +2608,7 @@ struct NotchShelfView: View {
             // Built-in: always black (physical notch is black)
             // External: can be transparent when transparency setting is enabled
             NotchShape(bottomRadius: isExpandedOnThisScreen ? 40 : (hudIsVisible ? 18 : 16))
-                .fill(shouldUseExternalNotchTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+                .droppyTransparentFill(shouldUseExternalNotchTransparent, fallback: Color.black)
                 .opacity(isDynamicIslandMode ? 0 : 1)
                 .scaleEffect(isDynamicIslandMode ? 0.85 : 1)
         }
@@ -2624,7 +2635,7 @@ struct NotchShelfView: View {
                 // Shadow visible when expanded OR hovering (premium depth effect)
                 let showShadow = isExpandedOnThisScreen || isHoveringOnThisScreen
                 NotchShape(bottomRadius: isExpandedOnThisScreen ? 40 : (hudIsVisible ? 18 : 16))
-                    .fill(shouldUseExternalNotchTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+                    .droppyTransparentFill(shouldUseExternalNotchTransparent, fallback: Color.black)
                     .shadow(
                         // PREMIUM EXACT: .black.opacity(0.7) radius 6
                         color: showShadow ? Color.black.opacity(0.7) : .clear,
@@ -2911,7 +2922,7 @@ struct NotchShelfView: View {
     // In transparent DI mode OR external notch transparent mode, indicators use glass material.
     private var indicatorBackground: some View {
         RoundedRectangle(cornerRadius: DroppyRadius.lx, style: .continuous)
-            .fill(shouldUseFloatingButtonTransparent ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+            .droppyTransparentFill(shouldUseFloatingButtonTransparent, fallback: Color.black)
             .overlay(
                 RoundedRectangle(cornerRadius: DroppyRadius.lx, style: .continuous)
                     .stroke(
@@ -3145,7 +3156,7 @@ struct NotchShelfView: View {
             // Opaque background to hide content underneath
             // Must match shelf background style
             if shouldUseFloatingButtonTransparent {
-                Rectangle().fill(.ultraThinMaterial)
+                Rectangle().droppyGlassFill()
             } else {
                 Rectangle().fill(Color.black)
             }
@@ -3401,8 +3412,15 @@ struct NotchShelfView: View {
                     }
             }
         )
-        .onReceive(shelfAutoScrollTicker) { _ in
-            performShelfAutoScrollTick()
+        .onChange(of: shelfAutoScrollVelocity) { _, newVelocity in
+            if newVelocity != 0 && shelfAutoScrollCancellable == nil {
+                shelfAutoScrollCancellable = Timer.publish(every: 1.0 / 90.0, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { _ in performShelfAutoScrollTick() }
+            } else if newVelocity == 0 {
+                shelfAutoScrollCancellable?.cancel()
+                shelfAutoScrollCancellable = nil
+            }
         }
         // Listen for marquee drags without stealing child item drags.
         .simultaneousGesture(shelfSelectionGesture, including: .all)
@@ -3427,6 +3445,9 @@ private struct ShelfScrollViewResolver: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        // SMOOTH: Skip NSView hierarchy walk during expand/collapse animations.
+        // The scroll view doesn't need re-resolving during the 0.45s transition.
+        guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
         DispatchQueue.main.async {
             resolveScrollView(from: nsView)
         }

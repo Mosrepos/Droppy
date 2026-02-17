@@ -898,7 +898,7 @@ struct ProgressSlider: View {
             ZStack(alignment: .leading) {
                 // Track background - concave glass well (matches LiquidSlider)
                 Capsule()
-                    .fill(.ultraThinMaterial)
+                    .droppyGlassFill()
                     .overlay(
                         Capsule()
                             .fill(AdaptiveColors.overlayAuto(0.05))

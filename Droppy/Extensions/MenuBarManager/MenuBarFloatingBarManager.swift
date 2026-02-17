@@ -70,7 +70,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
     private let panelController = MenuBarFloatingPanelController()
     private let maskController = MenuBarMaskController()
     private let defaultsKey = "MenuBarManager_FloatingBarConfig"
-    private let iconCacheDefaultsKey = "MenuBarManager_FloatingBarIconCacheV5"
+    private let iconCacheDefaultsKey = "MenuBarManager_FloatingBarIconCacheV7"
 
     private var rescanTimer: Timer?
     private var currentRescanInterval: TimeInterval = 0
@@ -84,6 +84,8 @@ final class MenuBarFloatingBarManager: ObservableObject {
     private var persistedIconCacheKeys = Set<String>()
     private var itemRegistryByID = [String: MenuBarFloatingItemSnapshot]()
     private var moveInProgressItemIDs = Set<String>()
+    private var pendingPlacementByID = [String: MenuBarFloatingPlacement]()
+    private var queuedPlacementRequest: (target: MenuBarFloatingPlacement, item: MenuBarFloatingItemSnapshot)?
     private var isRelocationInProgress = false
     private var isManualPreviewRequested = false
     private var isHandlingPanelPress = false
@@ -94,10 +96,14 @@ final class MenuBarFloatingBarManager: ObservableObject {
     private var wasLockedVisibleBeforeMenuInteraction = false
     private var lastOrderFixAttempt = Date.distantPast
     private var isLoadingConfiguration = false
+    private var stateCancellable: AnyCancellable?
     private var lastKnownHiddenSeparatorOriginX: CGFloat?
     private var lastKnownHiddenSeparatorRightEdgeX: CGFloat?
     private var lastKnownAlwaysHiddenSeparatorOriginX: CGFloat?
     private var lastKnownAlwaysHiddenSeparatorRightEdgeX: CGFloat?
+    private var relocationSettleDelayMs: UInt64 = 125
+    private let minRelocationSettleDelayMs: UInt64 = 70
+    private let maxRelocationSettleDelayMs: UInt64 = 320
 
     private var shouldEnableAlwaysHiddenSection: Bool {
         isFeatureEnabled && !alwaysHiddenItemIDs.isEmpty
@@ -144,7 +150,11 @@ final class MenuBarFloatingBarManager: ObservableObject {
         isHandlingPanelPress = false
         isRelocationInProgress = false
         moveInProgressItemIDs.removeAll()
+        pendingPlacementByID.removeAll()
+        queuedPlacementRequest = nil
         MenuBarManager.shared.setAlwaysHiddenSectionEnabled(false)
+        stateCancellable?.cancel()
+        stateCancellable = nil
         teardownObservers()
         rescanTimer?.invalidate()
         rescanTimer = nil
@@ -179,14 +189,19 @@ final class MenuBarFloatingBarManager: ObservableObject {
             return
         }
 
-        // Runtime rescans avoid capture churn; settings/explicit refresh capture real icons.
+        // Runtime rescans avoid capture churn; explicit refresh captures real icons.
         // Bootstrap capture once when cache is empty so first-run quality is correct.
         let shouldBootstrapCapture =
             PermissionManager.shared.isScreenRecordingGranted
             && !alwaysHiddenItemIDs.isEmpty
             && iconCacheByID.isEmpty
+        let shouldCaptureForSettingsBootstrap =
+            PermissionManager.shared.isScreenRecordingGranted
+            && isInSettingsInspectionMode
+            && iconCacheByID.isEmpty
+            && !isRelocationInProgress
         let includeIcons = PermissionManager.shared.isScreenRecordingGranted
-            && (isInSettingsInspectionMode || isManualPreviewRequested || refreshIcons || shouldBootstrapCapture)
+            && (refreshIcons || shouldBootstrapCapture || shouldCaptureForSettingsBootstrap)
         let ownerHints = refreshIcons ? nil : preferredOwnerBundleIDsForRescan()
         let rawItems = scanner.scan(includeIcons: includeIcons, preferredOwnerBundleIDs: ownerHints)
         let resolvedItems = rawItems.map { item in
@@ -199,6 +214,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
             }
             return MenuBarFloatingItemSnapshot(
                 id: item.id,
+                windowID: item.windowID,
                 axElement: item.axElement,
                 quartzFrame: item.quartzFrame,
                 appKitFrame: item.appKitFrame,
@@ -228,6 +244,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         scannedItems = resolvedItems
         updateRegistry(with: resolvedItems)
         refreshSeparatorCaches()
+        attemptControlItemOrderFixIfNeeded()
         applyPanel()
     }
 
@@ -320,6 +337,13 @@ final class MenuBarFloatingBarManager: ObservableObject {
     }
 
     func placement(for item: MenuBarFloatingItemSnapshot) -> MenuBarFloatingPlacement {
+        if let pendingPlacement = pendingPlacementByID[item.id] {
+            if pendingPlacement == .floating, !isFeatureEnabled {
+                return .hidden
+            }
+            return pendingPlacement
+        }
+
         if alwaysHiddenItemIDs.contains(item.id), isFeatureEnabled {
             return .floating
         } else if alwaysHiddenItemIDs.contains(item.id) {
@@ -336,17 +360,14 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         let midpoint = resolved.quartzFrame.midX
         let margin = max(4, resolved.quartzFrame.width * 0.22)
-        let alwaysHiddenSectionEnabled = MenuBarManager.shared.isSectionEnabled(.alwaysHidden)
-        let alwaysHiddenRightEdgeX = alwaysHiddenSeparatorRightEdgeX()
 
         if midpoint > (hiddenRightEdgeX + margin) {
             return .visible
         }
-        if alwaysHiddenSectionEnabled,
-           let alwaysHiddenRightEdgeX,
-           midpoint < (alwaysHiddenRightEdgeX - margin) {
-            return .floating
-        }
+        // Items not in alwaysHiddenItemIDs should never be classified as
+        // .floating based on position alone — that membership check (above)
+        // is the single source of truth. Position-only classification treats
+        // everything left of the hidden separator as .hidden.
         if midpoint < (hiddenOriginX - margin) {
             return .hidden
         }
@@ -384,8 +405,10 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
         let currentPlacement = placement(for: item)
         guard targetPlacement != currentPlacement else { return }
-        guard !isRelocationInProgress else { return }
-        guard !moveInProgressItemIDs.contains(item.id) else { return }
+        if isRelocationInProgress || moveInProgressItemIDs.contains(item.id) {
+            queuedPlacementRequest = (targetPlacement, item)
+            return
+        }
 
         var trackedItem = item
 
@@ -393,6 +416,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
             if let capturedIcon = captureAndCacheIconForItemIfNeeded(item) {
                 trackedItem = MenuBarFloatingItemSnapshot(
                     id: item.id,
+                    windowID: item.windowID,
                     axElement: item.axElement,
                     quartzFrame: item.quartzFrame,
                     appKitFrame: item.appKitFrame,
@@ -418,16 +442,26 @@ final class MenuBarFloatingBarManager: ObservableObject {
         } else {
             alwaysHiddenItemIDs.remove(item.id)
         }
+        pendingPlacementByID[item.id] = targetPlacement
 
         isRelocationInProgress = true
         moveInProgressItemIDs.insert(item.id)
 
         Task { @MainActor [weak self] in
             guard let strongSelf = self else { return }
+            var moved = false
             defer {
                 strongSelf.moveInProgressItemIDs.remove(item.id)
                 strongSelf.isRelocationInProgress = false
-                strongSelf.rescan()
+                strongSelf.rescan(force: true)
+                strongSelf.pendingPlacementByID.removeValue(forKey: item.id)
+                strongSelf.pendingPlacementByID = strongSelf.pendingPlacementByID.filter { key, _ in
+                    strongSelf.moveInProgressItemIDs.contains(key)
+                }
+                if let queued = strongSelf.queuedPlacementRequest {
+                    strongSelf.queuedPlacementRequest = nil
+                    strongSelf.setPlacement(queued.target, for: queued.item)
+                }
             }
 
             let target: RelocationTarget = switch targetPlacement {
@@ -435,24 +469,16 @@ final class MenuBarFloatingBarManager: ObservableObject {
             case .hidden: .hidden
             case .visible: .visible
             }
-            let moved = await strongSelf.relocateItem(itemID: item.id, fallback: trackedItem, to: target)
+            moved = await strongSelf.relocateItem(itemID: item.id, fallback: trackedItem, to: target)
 
             if !moved {
                 strongSelf.alwaysHiddenItemIDs = previousAlwaysHidden
+                strongSelf.pendingPlacementByID.removeValue(forKey: item.id)
             }
         }
     }
 
     private func captureAndCacheIconForItemIfNeeded(_ item: MenuBarFloatingItemSnapshot) -> NSImage? {
-        if PermissionManager.shared.isScreenRecordingGranted,
-           let scannedItem = scanForItemWithIcons(item),
-           let icon = scannedItem.icon {
-            var keys = iconCacheKeys(for: item)
-            keys.append(contentsOf: iconCacheKeys(for: scannedItem))
-            cacheIcon(icon, for: keys, overwrite: true)
-            return icon
-        }
-
         if let existing = cachedIcon(for: item) {
             return existing
         }
@@ -463,50 +489,6 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
 
         return nil
-    }
-
-    private func scanForItemWithIcons(_ target: MenuBarFloatingItemSnapshot) -> MenuBarFloatingItemSnapshot? {
-        let ownerHints = Set([target.ownerBundleID])
-        let scanned = scanner.scan(includeIcons: true, preferredOwnerBundleIDs: ownerHints)
-        guard !scanned.isEmpty else { return nil }
-
-        if let axIdentifier = target.axIdentifier,
-           let byIdentifier = scanned.first(where: {
-               $0.ownerBundleID == target.ownerBundleID && $0.axIdentifier == axIdentifier
-           }) {
-            return byIdentifier
-        }
-
-        if let statusItemIndex = target.statusItemIndex,
-           let byIndex = scanned.first(where: {
-               $0.ownerBundleID == target.ownerBundleID && $0.statusItemIndex == statusItemIndex
-           }) {
-            return byIndex
-        }
-
-        let titleToken = stableTextToken(target.title)
-        if let titleToken,
-           let byTitle = scanned.first(where: {
-               $0.ownerBundleID == target.ownerBundleID && stableTextToken($0.title) == titleToken
-           }) {
-            return byTitle
-        }
-
-        let detailToken = stableTextToken(target.detail)
-        if let detailToken,
-           let byDetail = scanned.first(where: {
-               $0.ownerBundleID == target.ownerBundleID && stableTextToken($0.detail) == detailToken
-           }) {
-            return byDetail
-        }
-
-        let sameOwner = scanned.filter { $0.ownerBundleID == target.ownerBundleID }
-        guard !sameOwner.isEmpty else { return nil }
-        return sameOwner.min { lhs, rhs in
-            let lhsDistance = abs(lhs.quartzFrame.midX - target.quartzFrame.midX)
-            let rhsDistance = abs(rhs.quartzFrame.midX - target.quartzFrame.midX)
-            return lhsDistance < rhsDistance
-        }
     }
 
     private func currentlyHiddenItems() -> [MenuBarFloatingItemSnapshot] {
@@ -541,6 +523,8 @@ final class MenuBarFloatingBarManager: ObservableObject {
             panelController.hide()
             return
         }
+
+        attemptControlItemOrderFixIfNeeded()
 
         if isHandlingPanelPress {
             panelController.hide()
@@ -912,13 +896,41 @@ final class MenuBarFloatingBarManager: ObservableObject {
     }
 
     private func isCursorInInteractiveMenuBarZone() -> Bool {
-        guard let screen = NSScreen.main else { return false }
         let mouseLocation = NSEvent.mouseLocation
-        let menuBarHeight: CGFloat = 24
+        guard let screen = interactionScreen(for: mouseLocation) else { return false }
+        let menuBarHeight = effectiveMenuBarHeight(for: screen)
         let isAtTop = mouseLocation.y >= screen.frame.maxY - menuBarHeight
-        let notchExclusionWidth: CGFloat = 200
-        let isOnRightSideOfNotch = mouseLocation.x > screen.frame.midX + (notchExclusionWidth / 2)
+        let isOnRightSideOfNotch = isOnRightSideMenuBarArea(mouseLocation: mouseLocation, screen: screen)
         return isAtTop && isOnRightSideOfNotch
+    }
+
+    private func interactionScreen(for mouseLocation: CGPoint) -> NSScreen? {
+        if let hiddenFrame = MenuBarManager.shared.controlItemFrame(for: .hidden),
+           let hiddenScreen = NSScreen.screens.first(where: { $0.frame.intersects(hiddenFrame) }) {
+            return hiddenScreen
+        }
+        if let alwaysHiddenFrame = MenuBarManager.shared.controlItemFrame(for: .alwaysHidden),
+           let alwaysHiddenScreen = NSScreen.screens.first(where: { $0.frame.intersects(alwaysHiddenFrame) }) {
+            return alwaysHiddenScreen
+        }
+        return NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main
+    }
+
+    private func effectiveMenuBarHeight(for screen: NSScreen) -> CGFloat {
+        let inferredHeight = screen.frame.maxY - screen.visibleFrame.maxY
+        if inferredHeight > 0 {
+            return inferredHeight
+        }
+        return max(24, NSStatusBar.system.thickness)
+    }
+
+    private func isOnRightSideMenuBarArea(mouseLocation: CGPoint, screen: NSScreen) -> Bool {
+        let hasNotch = screen.safeAreaInsets.top > 0
+        if !hasNotch {
+            return mouseLocation.x > screen.frame.midX
+        }
+        let notchExclusionWidth: CGFloat = 200
+        return mouseLocation.x > screen.frame.midX + (notchExclusionWidth / 2)
     }
 
     private func beginMenuInteractionLock(using manager: MenuBarManager) {
@@ -1237,10 +1249,11 @@ final class MenuBarFloatingBarManager: ObservableObject {
                 continue
             }
 
-            try? await Task.sleep(for: .milliseconds(220))
-            rescan(force: true)
-
-            if let relocatedItem = verifyRelocation(itemID: itemID, fallback: fallback, target: target) {
+            if let relocatedItem = await verifyRelocationAfterDrag(
+                itemID: itemID,
+                fallback: fallback,
+                target: target
+            ) {
                 remapTrackedItemIDIfNeeded(
                     oldID: itemID,
                     newItem: relocatedItem,
@@ -1413,6 +1426,42 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
     }
 
+    private func verifyRelocationAfterDrag(
+        itemID: String,
+        fallback: MenuBarFloatingItemSnapshot,
+        target: RelocationTarget
+    ) async -> MenuBarFloatingItemSnapshot? {
+        let firstDelay = Int(max(minRelocationSettleDelayMs, min(maxRelocationSettleDelayMs, relocationSettleDelayMs)))
+        try? await Task.sleep(for: .milliseconds(firstDelay))
+        rescan(force: true)
+
+        if let relocated = verifyRelocation(itemID: itemID, fallback: fallback, target: target) {
+            tuneRelocationSettleDelay(success: true)
+            return relocated
+        }
+
+        try? await Task.sleep(for: .milliseconds(max(55, firstDelay / 2)))
+        rescan(force: true)
+        if let relocated = verifyRelocation(itemID: itemID, fallback: fallback, target: target) {
+            tuneRelocationSettleDelay(success: true)
+            return relocated
+        }
+
+        tuneRelocationSettleDelay(success: false)
+        return nil
+    }
+
+    private func tuneRelocationSettleDelay(success: Bool) {
+        if success {
+            relocationSettleDelayMs = max(
+                minRelocationSettleDelayMs,
+                UInt64(Double(relocationSettleDelayMs) * 0.88)
+            )
+            return
+        }
+        relocationSettleDelayMs = min(maxRelocationSettleDelayMs, relocationSettleDelayMs + 24)
+    }
+
     private func relocationCandidate(
         itemID: String,
         fallback: MenuBarFloatingItemSnapshot
@@ -1485,6 +1534,10 @@ final class MenuBarFloatingBarManager: ObservableObject {
             return
         }
 
+        if let pendingPlacement = pendingPlacementByID.removeValue(forKey: oldID) {
+            pendingPlacementByID[newID] = pendingPlacement
+        }
+
         if target == .alwaysHidden {
             alwaysHiddenItemIDs.remove(oldID)
             alwaysHiddenItemIDs.insert(newID)
@@ -1499,6 +1552,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         let merged = MenuBarFloatingItemSnapshot(
             id: newID,
+            windowID: newItem.windowID,
             axElement: newItem.axElement,
             quartzFrame: newItem.quartzFrame,
             appKitFrame: newItem.appKitFrame,
@@ -1640,11 +1694,22 @@ final class MenuBarFloatingBarManager: ObservableObject {
         guard isRelocationInProgress else {
             return false
         }
-        guard let source = CGEventSource(stateID: .hidSystemState) else {
+        guard start.x.isFinite, start.y.isFinite, end.x.isFinite, end.y.isFinite else {
             return false
         }
 
-        guard start.x.isFinite, start.y.isFinite, end.x.isFinite, end.y.isFinite else {
+        if postCommandDrag(from: start, to: end, sourceStateID: .hidSystemState) {
+            return true
+        }
+        return postCommandDrag(from: start, to: end, sourceStateID: .combinedSessionState)
+    }
+
+    private func postCommandDrag(
+        from start: CGPoint,
+        to end: CGPoint,
+        sourceStateID: CGEventSourceStateID
+    ) -> Bool {
+        guard let source = CGEventSource(stateID: sourceStateID) else {
             return false
         }
 
@@ -1754,8 +1819,24 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         mouseUp.flags = flags
         post(mouseUp)
+        usleep(10_000)
+        return dragEventsWereObservedRecently()
+    }
 
-        return true
+    private func dragEventsWereObservedRecently(threshold: CFTimeInterval = 0.28) -> Bool {
+        let states: [CGEventSourceStateID] = [.combinedSessionState, .hidSystemState]
+        for state in states {
+            if CGEventSource.secondsSinceLastEventType(state, eventType: .leftMouseDragged) < threshold {
+                return true
+            }
+            if CGEventSource.secondsSinceLastEventType(state, eventType: .leftMouseUp) < threshold {
+                return true
+            }
+            if CGEventSource.secondsSinceLastEventType(state, eventType: .leftMouseDown) < threshold {
+                return true
+            }
+        }
+        return false
     }
 
     private func updateRegistry(with items: [MenuBarFloatingItemSnapshot]) {
@@ -1764,6 +1845,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
             if merged.icon == nil, let cachedIcon = cachedIcon(for: item) {
                 merged = MenuBarFloatingItemSnapshot(
                     id: item.id,
+                    windowID: item.windowID,
                     axElement: item.axElement,
                     quartzFrame: item.quartzFrame,
                     appKitFrame: item.appKitFrame,
@@ -1932,6 +2014,18 @@ final class MenuBarFloatingBarManager: ObservableObject {
                 self.lastMenuTrackingEventTime = ProcessInfo.processInfo.systemUptime
             }
         })
+
+        // React instantly to hidden-section visibility changes
+        // so the floating bar appears/disappears without waiting for the rescan timer.
+        if let hiddenSection = MenuBarManager.shared.section(withName: .hidden) {
+            stateCancellable = hiddenSection.controlItem.$state
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.applyPanel()
+                    }
+                }
+        }
     }
 
     private func teardownObservers() {
@@ -1943,6 +2037,9 @@ final class MenuBarFloatingBarManager: ObservableObject {
             workspaceCenter.removeObserver(observer)
         }
         observers.removeAll()
+
+        stateCancellable?.cancel()
+        stateCancellable = nil
     }
 
     private func scheduleRescanTimer() {

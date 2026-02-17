@@ -56,7 +56,7 @@ struct FloatingBasketView: View {
     @State private var basketScrollView: NSScrollView?
     @State private var scrollViewportFrame: CGRect = .zero
     @State private var autoScrollVelocity: CGFloat = 0
-    private let autoScrollTicker = Timer.publish(every: 1.0 / 90.0, on: .main, in: .common).autoconnect()
+    @State private var autoScrollCancellable: AnyCancellable?
     
     // Global rename state
     @State private var renamingItemId: UUID?
@@ -198,8 +198,15 @@ struct FloatingBasketView: View {
             .keyboardShortcut("a", modifiers: .command)
             .opacity(0)
         }
-        .onReceive(autoScrollTicker) { _ in
-            performAutoScrollTick()
+        .onChange(of: autoScrollVelocity) { _, newVelocity in
+            if newVelocity != 0 && autoScrollCancellable == nil {
+                autoScrollCancellable = Timer.publish(every: 1.0 / 90.0, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { _ in performAutoScrollTick() }
+            } else if newVelocity == 0 {
+                autoScrollCancellable?.cancel()
+                autoScrollCancellable = nil
+            }
         }
         .onChange(of: enableQuickActions) { _, enabled in
             if !enabled {
@@ -477,7 +484,7 @@ struct FloatingBasketView: View {
     @ViewBuilder
     private var basketBackground: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+            .droppyTransparentFill(useTransparentBackground)
             .frame(width: currentWidth, height: currentHeight)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -539,7 +546,7 @@ struct FloatingBasketView: View {
             // Opaque background to hide content underneath
             // Must match basket background style (material for transparent, black for solid)
             if useTransparentBackground {
-                Rectangle().fill(.ultraThinMaterial)
+                Rectangle().droppyGlassFill()
             } else {
                 Rectangle().fill(AdaptiveColors.panelBackgroundAuto)
             }

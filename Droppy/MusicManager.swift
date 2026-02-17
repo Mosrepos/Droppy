@@ -127,7 +127,20 @@ final class MusicManager: ObservableObject {
         }
     }
     @Published private(set) var songDuration: Double = 0
-    @Published private(set) var elapsedTime: Double = 0
+    /// Elapsed time with dedup — only publishes when value changes by ≥ 0.5s
+    /// to avoid cascading 1Hz re-renders to all observers.
+    private var _elapsedTime: Double = 0
+    var elapsedTime: Double {
+        get { _elapsedTime }
+        set {
+            guard abs(newValue - _elapsedTime) >= 0.5 || _elapsedTime == 0 else {
+                _elapsedTime = newValue  // store silently for accurate reads
+                return
+            }
+            _elapsedTime = newValue
+            objectWillChange.send()
+        }
+    }
     @Published private(set) var playbackRate: Double = 1.0
     @Published private(set) var timestampDate: Date = .distantPast
     @Published private(set) var bundleIdentifier: String?
@@ -1969,7 +1982,7 @@ final class MusicManager: ObservableObject {
         if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
             print("MusicManager: Bringing running app to front: \(bundleId)")
             app.unhide()
-            let activated = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            let activated = app.activate(options: [.activateAllWindows])
             if !activated {
                 print("MusicManager: Initial activate() returned false for \(bundleId)")
             }
@@ -1982,7 +1995,7 @@ final class MusicManager: ObservableObject {
             // non-activating panels and transient focus changes.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                 app.unhide()
-                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                _ = app.activate(options: [.activateAllWindows])
             }
             return true
         }
@@ -2001,7 +2014,7 @@ final class MusicManager: ObservableObject {
             }
             if let app {
                 app.unhide()
-                _ = app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                _ = app.activate(options: [.activateAllWindows])
                 self.forceFrontmostActivation(bundleId: bundleId, appName: app.localizedName, includeReopen: true)
             }
         }

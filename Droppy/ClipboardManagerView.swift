@@ -275,7 +275,7 @@ struct ClipboardManagerView: View {
                     }
             }
         }
-        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+        .droppyTransparentBackground(useTransparentBackground)
         .frame(minWidth: 1040, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity)
         .background(pasteShortcutButton)
         .background(navigationShortcutButtons)
@@ -407,7 +407,7 @@ struct ClipboardManagerView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+            .droppyTransparentBackground(useTransparentBackground)
             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous)
@@ -736,8 +736,11 @@ struct ClipboardManagerView: View {
                                             }
                                         }
                                     },
-                                    // Force DraggableArea to update when selection changes
-                                    selectionSignature: selectedItems.contains(item.id) ? 1 : 0
+                                    // Encode selection + item status in selectionSignature
+                                    // so DraggableArea refreshes status badges without destroying the view identity.
+                                    selectionSignature: (selectedItems.contains(item.id) ? 1 : 0)
+                                        + (item.isFavorite ? 2 : 0)
+                                        + (item.isFlagged ? 4 : 0)
                                 ) {
                                     ClipboardItemRow(
                                         item: item, 
@@ -751,9 +754,9 @@ struct ClipboardManagerView: View {
                                     )
                                     .frame(width: 360)  // Fixed width to prevent text expansion
                                 }
-                                // Include selection + item status in identity so DraggableArea rows
-                                // always refresh their status badges after favorite/flag toggles.
-                                .id("\(item.id.uuidString)-\(selectedItems.contains(item.id) ? "sel" : "unsel")-\(item.isFavorite ? "fav" : "nofav")-\(item.isFlagged ? "flag" : "noflag")")
+                                // Use stable identity — the UUID never changes.
+                                // Selection/favorite/flag changes are handled by selectionSignature above.
+                                .id(item.id)
                                 .contextMenu {
                                     if selectedItems.count > 1 {
                                         // Multi-select context menu
@@ -2286,7 +2289,7 @@ struct ClipboardPreviewView: View {
                         }
                         .padding(DroppySpacing.sm)
                         .frame(minWidth: 140)
-                        .background(.ultraThinMaterial)
+                        .background { Rectangle().droppyGlassFill() }
                     }
                 }
                 
@@ -2707,7 +2710,7 @@ struct ZoomedDocumentPreviewSheet: View {
                                 .padding(DroppySpacing.sm)
                                 .background(
                                     RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous)
-                                        .fill(.ultraThinMaterial)
+                                        .droppyGlassFill()
                                 )
                             }
                             .padding(DroppySpacing.md)
@@ -3112,7 +3115,7 @@ struct StackedCardView: View {
         .frame(width: 130, height: 120)
         .background(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .droppyGlassFill()
         )
         .overlay(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
@@ -3323,7 +3326,7 @@ struct URLTypeBadge: View {
             .foregroundStyle(AdaptiveColors.primaryTextAuto)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial)
+            .background { Rectangle().droppyGlassFill() }
             .background(AdaptiveColors.overlayAuto(0.2))
             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
             .overlay(

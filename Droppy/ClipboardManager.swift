@@ -210,6 +210,7 @@ class ClipboardManager: ObservableObject {
     
     @Published var isEnabled: Bool = false {
         didSet {
+            guard oldValue != isEnabled else { return }
             UserDefaults.standard.set(isEnabled, forKey: "enableClipboardBeta")
             if isEnabled {
                 startMonitoring()
@@ -221,6 +222,7 @@ class ClipboardManager: ObservableObject {
     
     @Published var historyLimit: Int = 50 {
         didSet {
+            guard oldValue != historyLimit else { return }
             UserDefaults.standard.set(historyLimit, forKey: "clipboardHistoryLimit")
             enforceHistoryLimit()
         }
@@ -234,6 +236,7 @@ class ClipboardManager: ObservableObject {
     
     @Published var skipConcealedContent: Bool = false {
         didSet {
+            guard oldValue != skipConcealedContent else { return }
             UserDefaults.standard.set(skipConcealedContent, forKey: "skipConcealedClipboard")
         }
     }

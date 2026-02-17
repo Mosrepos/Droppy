@@ -229,7 +229,12 @@ class NotchDragContainer: NSView {
             _ = ToDoManager.shared.isCalendarSyncEnabled
         } onChange: {
             DispatchQueue.main.async { [weak self] in
-                self?.updateTrackingAreas()
+                // SMOOTH: Skip expensive tracking area rebuild during expand/collapse
+                // animations. The tracking area will be recalculated after the
+                // transition settles when the observer re-fires.
+                if !NotchWindowController.shared.isExpandCollapseTransitioning {
+                    self?.updateTrackingAreas()
+                }
                 self?.stateObservationActive = false
                 self?.setupStateObservation()  // Re-register (one-shot observation)
             }

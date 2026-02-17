@@ -543,9 +543,9 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 Group {
                     if useTransparentBackground {
-                        // Pure blur in transparent mode - fades fully to nothing
+                        // Keep the root glass surface readable without stacking another blur pass.
                         Rectangle()
-                            .fill(.ultraThinMaterial)
+                            .fill(AdaptiveColors.overlayAuto(0.06))
                     } else {
                         // Match panel tone in opaque mode to avoid a dark strip in light mode
                         AdaptiveColors.panelBackgroundAuto
@@ -567,9 +567,9 @@ struct SettingsView: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
-            // Smooth fade based on scroll position - appears earlier to catch content
-            .opacity(min(1.0, max(0.0, (200 - scrollOffset) / 60)))
-            .animation(DroppyAnimation.hoverQuick, value: scrollOffset)
+            // Only show while actually scrolling to avoid static top-edge artifacts.
+            .opacity(scrollOffset < -6 ? 1 : 0)
+            .animation(DroppyAnimation.hoverQuick, value: scrollOffset < -6)
         }
     }
 
@@ -577,7 +577,7 @@ struct SettingsView: View {
         ZStack {
             NavigationSplitView {
                 SettingsSidebar(selectedTab: $selectedTab)
-                    .background(Color.clear)
+                    .droppyTransparentBackground(useTransparentBackground)
             } detail: {
                 settingsDetail
             }
@@ -588,7 +588,7 @@ struct SettingsView: View {
         // Apply blue accent color for toggles
         .tint(.droppyAccent)
         // Apply transparent material or solid black
-        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+        .droppyTransparentBackground(useTransparentBackground)
         // CRITICAL: Always use dark color scheme to ensure text is readable
         // In both solid black and transparent material modes, we need light text
         

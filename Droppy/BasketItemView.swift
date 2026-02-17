@@ -281,7 +281,7 @@ struct BasketItemView: View {
                             // Activity indicator overlay
                             if isConverting || isCompressing || isRemovingBackground || isExtractingText || isCreatingZIP {
                                 RoundedRectangle(cornerRadius: DroppyRadius.small, style: .continuous)
-                                    .fill(.ultraThinMaterial)
+                                    .droppyGlassFill()
                                     .frame(width: 36, height: 36)
                                     .overlay(
                                         ProgressView()
@@ -423,7 +423,7 @@ struct BasketItemView: View {
                         if isShakeAnimating {
                             ZStack {
                                 RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                                    .fill(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+                                    .droppyTransparentFill(useTransparentBackground)
                                     .frame(width: 44, height: 44)
                                     .shadow(radius: 4)
                                 Image(systemName: "checkmark.shield.fill")
@@ -616,7 +616,7 @@ struct BasketItemView: View {
                     // Activity indicator overlay
                     if isConverting || isCompressing || isRemovingBackground || isExtractingText || isCreatingZIP {
                         RoundedRectangle(cornerRadius: DroppyRadius.small, style: .continuous)
-                            .fill(.ultraThinMaterial)
+                            .droppyGlassFill()
                             .frame(width: 36, height: 36)
                             .overlay(
                                 ProgressView()
@@ -749,7 +749,7 @@ struct BasketItemView: View {
                 if isShakeAnimating {
                     ZStack {
                         RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                            .fill(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+                            .droppyTransparentFill(useTransparentBackground)
                             .frame(width: 44, height: 44)
                             .shadow(radius: 4)
                         Image(systemName: "checkmark.shield.fill")

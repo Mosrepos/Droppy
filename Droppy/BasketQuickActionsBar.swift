@@ -92,7 +92,7 @@ struct BasketQuickActionsBar: View {
                 
                 // Collapsed: Zap button
                 Circle()
-                    .fill(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+                    .droppyTransparentFill(useTransparentBackground)
                     .frame(width: buttonSize, height: buttonSize)
                     .overlay(
                         Circle()
@@ -285,7 +285,7 @@ struct QuickDropActionButton: View {
             }
         ) {
             Circle()
-                .fill(useTransparent ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+                .droppyTransparentFill(useTransparent)
                 .frame(width: size, height: size)
                 .overlay(
                     // Border matches basket style exactly

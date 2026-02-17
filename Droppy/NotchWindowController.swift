@@ -189,6 +189,20 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Pending size update work items (for coalesced deferred updates)
     private var pendingSizeUpdates: [CGDirectDisplayID: DispatchWorkItem] = [:]
     
+    /// Tracks the previous expand state so setupStateObservation can detect
+    /// expand/collapse transitions and coordinate window resizing with SwiftUI animation.
+    private var previousExpandedDisplayID: CGDirectDisplayID? = nil
+    
+    /// TRANSITION GUARD: True while an expand/collapse animation is in progress.
+    /// When set, applySizeUpdate will allow window GROWTH but defer window SHRINKS
+    /// until after the SwiftUI spring animation settles. This prevents ALL code paths
+    /// (setupStateObservation, forceRecalculateAllWindowSizes, watchdog, etc.) from
+    /// calling setFrame() with a shorter height during the animation.
+    private(set) var isExpandCollapseTransitioning = false
+    
+    /// Work item to clear the transition guard after the animation settles.
+    private var expandCollapseTransitionEnd: DispatchWorkItem?
+    
     /// Last click time for debounce (prevents rapid toggle storms)
     private var lastNotchClickTime: Date = .distantPast
     
@@ -1038,6 +1052,8 @@ final class NotchWindowController: NSObject, ObservableObject {
                     guard DroppyState.shared.isExpanded(for: targetScreen.displayID) else { return }
                     
                     withAnimation(DroppyAnimation.notchState(for: targetScreen)) {
+                        // Activate transition guard BEFORE collapse animation
+                        self.beginExpandCollapseTransition()
                         DroppyState.shared.expandedDisplayID = nil
                         DroppyState.shared.setHovering(for: targetScreen.displayID, isHovering: false)
                     }
@@ -1198,6 +1214,18 @@ final class NotchWindowController: NSObject, ObservableObject {
                         return event
                     }
                     DispatchQueue.main.async {
+                        let isCurrentlyExpanded = DroppyState.shared.isExpanded(for: targetScreen.displayID)
+                        if isCurrentlyExpanded {
+                            // COLLAPSE: Activate transition guard BEFORE animation.
+                            // Window stays at expanded height while SwiftUI animates
+                            // content away, then shrinks after animation settles.
+                            self.beginExpandCollapseTransition()
+                        } else {
+                            // EXPAND: Pre-size window BEFORE animation.
+                            // Window grows to expanded height immediately so SwiftUI
+                            // content animates INTO already-available space.
+                            self.preSizeWindowForExpand(displayID: targetScreen.displayID)
+                        }
                         let animation = DroppyAnimation.notchState(for: targetScreen)
                         withAnimation(animation) {
                             DroppyState.shared.toggleShelfExpansion(for: targetScreen.displayID)
@@ -1548,6 +1576,16 @@ final class NotchWindowController: NSObject, ObservableObject {
                 
                 self.updateAllWindowsMouseEventHandling()
                 
+                // Detect expand/collapse transitions and activate the transition guard.
+                let currentExpandedID = DroppyState.shared.expandedDisplayID
+                let wasExpanded = self.previousExpandedDisplayID != nil
+                let isNowExpanded = currentExpandedID != nil
+                self.previousExpandedDisplayID = currentExpandedID
+                
+                if wasExpanded != isNowExpanded {
+                    self.beginExpandCollapseTransition()
+                }
+                
                 // CONSTRAINT CASCADE SAFETY: Skip window resize while a drag session is active.
                 // During drag, DispatchQueue.main.async runs inside AppKit's nested drag run loop.
                 // Calling window.setFrame() there triggers NSDisplayCycleFlush →
@@ -1567,6 +1605,66 @@ final class NotchWindowController: NSObject, ObservableObject {
         }
     }
     
+    /// Activates the transition guard for expand/collapse animations.
+    /// During this window (~0.45s), applySizeUpdate will allow window GROWTH but
+    /// defer window SHRINKS so setFrame doesn't race with SwiftUI's spring.
+    func beginExpandCollapseTransition() {
+        isExpandCollapseTransitioning = true
+        
+        // Cancel any previous transition end
+        expandCollapseTransitionEnd?.cancel()
+        
+        // Clear the guard after the spring animation settles.
+        // notchState spring: response ~0.34s, damping 0.9 → settling ≈ 0.42s.
+        // Use 0.45s for margin.
+        let endWork = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.isExpandCollapseTransitioning = false
+            self.expandCollapseTransitionEnd = nil
+            // Apply the correct final size now that the animation is done
+            self.forceRecalculateAllWindowSizes()
+        }
+        expandCollapseTransitionEnd = endWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: endWork)
+    }
+    
+    /// Pre-sizes the window for expansion BEFORE the SwiftUI animation starts.
+    /// This grows the window to expanded height immediately so SwiftUI content
+    /// animates INTO already-available space — eliminating the resize-animation race.
+    /// Growing into empty space has zero visual cost (the area below the notch is invisible).
+    func preSizeWindowForExpand(displayID: CGDirectDisplayID) {
+        guard let window = notchWindows[displayID],
+              let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
+        
+        // Calculate the expanded height
+        let expandedHeight = calculateCorrectWindowHeight(for: screen)
+        let currentHeight = window.frame.height
+        
+        // Only pre-size if we'd actually grow
+        guard expandedHeight > currentHeight else { return }
+        
+        // Cache the expected size
+        expectedWindowSizes[displayID] = expandedHeight
+        
+        // Grow immediately with CATransaction to suppress any implicit AppKit animations
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let expectedWidth = currentInteractionWindowWidth()
+        let expectedX = effectiveShelfCenterX(for: screen) - (expectedWidth / 2)
+        let newFrame = NSRect(
+            x: expectedX,
+            y: screen.frame.origin.y + screen.frame.height - expandedHeight,
+            width: expectedWidth,
+            height: expandedHeight
+        )
+        window.setFrame(newFrame, display: false, animate: false)
+        window.setFrameTopLeftPoint(NSPoint(x: expectedX, y: screen.frame.maxY))
+        CATransaction.commit()
+        
+        // Activate transition guard
+        beginExpandCollapseTransition()
+    }
+
     /// Dynamically resizes all notch windows to fit current shelf content
     /// ROCK-SOLID: Multi-layer protection against size reversion
     /// Layer 1: Throttle rapid updates → Layer 2: Expected size cache
@@ -1623,9 +1721,21 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Applies a size update to a window (the actual frame change)
     /// LAYER 4: Frame application + LAYER 5: Immediate validation
+    /// TRANSITION GUARD: During expand/collapse animations, only allow GROWTH.
+    /// Shrink resizes are deferred until after the animation settles.
     private func applySizeUpdate(for displayID: CGDirectDisplayID, height newHeight: CGFloat) {
         guard let window = notchWindows[displayID],
               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
+        
+        // TRANSITION GUARD: During expand/collapse animation, only allow window growth.
+        // Shrinking the window during the animation causes setFrame() to race with
+        // SwiftUI's spring interpolation, producing a visible hitch/stutter.
+        let currentHeight = window.frame.height
+        if isExpandCollapseTransitioning && newHeight < currentHeight {
+            // Window would shrink — skip. beginExpandCollapseTransition's
+            // deferred callback will apply the correct size after settling.
+            return
+        }
         
         // Update timestamp
         lastSizeUpdateTime[displayID] = Date()
@@ -1634,13 +1744,16 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         // Only resize if significantly different (avoid micro-updates)
         // Keep this coarse to prevent update-constraints feedback loops.
-        let currentHeight = window.frame.height
         let currentX = window.frame.origin.x
         let currentWidth = window.frame.width
         let needsHeightUpdate = abs(newHeight - currentHeight) > 10
         let needsXUpdate = abs(expectedX - currentX) > horizontalRecenterTolerance
         let needsWidthUpdate = abs(expectedWidth - currentWidth) > 2
         if needsHeightUpdate || needsXUpdate || needsWidthUpdate {
+            // Suppress any implicit AppKit animations during frame change
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            
             // Resize from top - keep window anchored at screen top
             let newFrame = NSRect(
                 x: expectedX,
@@ -1651,6 +1764,8 @@ final class NotchWindowController: NSObject, ObservableObject {
             window.setFrame(newFrame, display: false, animate: false)
             window.setFrameTopLeftPoint(NSPoint(x: expectedX, y: screen.frame.maxY))
             
+            CATransaction.commit()
+            
             // LAYER 5: Immediate validation - verify the frame was applied correctly
             DispatchQueue.main.async { [weak self] in
                 self?.validateSizeForWindow(displayID: displayID)
@@ -1660,6 +1775,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Validates that a window matches its expected size, self-heals if not
     private func validateSizeForWindow(displayID: CGDirectDisplayID) {
+        // Don't validate during expand/collapse transitions — the guard in applySizeUpdate
+        // intentionally defers shrinks, so validation would fight the guard.
+        guard !isExpandCollapseTransitioning else { return }
+        
         guard let window = notchWindows[displayID],
               let expectedHeight = expectedWindowSizes[displayID],
               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
@@ -1673,6 +1792,8 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         if deviation > sizeDeviationTolerance || xDeviation > horizontalRecenterTolerance || widthDeviation > 2 {
             // Size doesn't match - force correct it NOW
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             let newFrame = NSRect(
                 x: expectedX,
                 y: screen.frame.origin.y + screen.frame.height - expectedHeight,
@@ -1681,6 +1802,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             )
             window.setFrame(newFrame, display: false, animate: false)
             window.setFrameTopLeftPoint(NSPoint(x: expectedX, y: screen.frame.maxY))
+            CATransaction.commit()
         }
     }
     
@@ -2104,7 +2226,9 @@ final class NotchWindowController: NSObject, ObservableObject {
             let deviation = abs(currentHeight - correctHeight)
             
             // If size has drifted more than tolerance, force-correct it
-            if deviation > sizeDeviationTolerance {
+            // TRANSITION GUARD: Skip correction during expand/collapse animation
+            // to avoid fighting the intentional shrink-deferral.
+            if deviation > sizeDeviationTolerance && !isExpandCollapseTransitioning {
                 // Throttle log to once per minute per display
                 let now = Date()
                 if Self.lastSizeHealLogTime.map({ now.timeIntervalSince($0) > 60 }) ?? true {
@@ -2114,6 +2238,8 @@ final class NotchWindowController: NSObject, ObservableObject {
                 
                 // Update cache and force-apply correct size
                 expectedWindowSizes[displayID] = correctHeight
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
                 let newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: screen.frame.origin.y + screen.frame.height - correctHeight,
@@ -2122,6 +2248,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                 )
                 window.setFrame(newFrame, display: false, animate: false)
                 window.setFrameTopLeftPoint(NSPoint(x: window.frame.origin.x, y: screen.frame.maxY))
+                CATransaction.commit()
             }
         }
     }

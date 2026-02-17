@@ -9,13 +9,10 @@ let sharingServicesCacheTTL: TimeInterval = 60
 /// Apple recommends NSSharingServicePicker.standardShareMenuItem but that doesn't work
 /// with SwiftUI context menus which require explicit ForEach over services.
 /// This wrapper isolates the API call to one location.
-///
-/// The deprecation warning is suppressed using nonisolated(unsafe) function pointer storage.
-private nonisolated(unsafe) let _getSharingServices: ([Any]) -> [NSSharingService] = {
-    // This closure captures the deprecated API at initialization time,
-    // suppressing the warning at call sites
-    NSSharingService.sharingServices(forItems:)
-}()
+@available(macOS, deprecated: 13.0, message: "No alternative for SwiftUI context menus")
+private func _getSharingServices(_ items: [Any]) -> [NSSharingService] {
+    NSSharingService.sharingServices(forItems: items)
+}
 
 /// Get sharing services for items with caching. Uses deprecated API but no alternative exists for context menus.
 func sharingServicesForItems(_ items: [Any]) -> [NSSharingService] {
