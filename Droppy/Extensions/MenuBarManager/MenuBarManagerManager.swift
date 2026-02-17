@@ -583,6 +583,8 @@ enum MBMIconSet: String, CaseIterable, Identifiable {
     case arrow = "arrow"
     case square = "square"
     case diamond = "diamond"
+    case umbrella = "umbrella"
+    case sunglasses = "sunglasses"
     
     var id: String { rawValue }
     
@@ -596,6 +598,8 @@ enum MBMIconSet: String, CaseIterable, Identifiable {
         case .arrow: return "Arrow"
         case .square: return "Square"
         case .diamond: return "Diamond"
+        case .umbrella: return "Umbrella"
+        case .sunglasses: return "Sunglasses"
         }
     }
     
@@ -609,6 +613,8 @@ enum MBMIconSet: String, CaseIterable, Identifiable {
         case .arrow: return "arrowtriangle.right.fill"
         case .square: return "square.fill"
         case .diamond: return "diamond.fill"
+        case .umbrella: return "umbrella.fill"
+        case .sunglasses: return "sunglasses"
         }
     }
     
@@ -622,6 +628,8 @@ enum MBMIconSet: String, CaseIterable, Identifiable {
         case .arrow: return "arrowtriangle.left.fill"
         case .square: return "square"
         case .diamond: return "diamond"
+        case .umbrella: return "umbrella"
+        case .sunglasses: return "sunglasses"
         }
     }
 }
@@ -1653,6 +1661,12 @@ final class MenuBarManager: ObservableObject {
     
     /// Enables the menu bar manager.
     func enable() {
+        // Support direct callers that don't flip the published toggle first.
+        if !isEnabled {
+            isEnabled = true
+            return
+        }
+
         // Clear both legacy and unified removed flags
         UserDefaults.standard.set(false, forKey: "MenuBarManager_Removed")
         ExtensionType.menuBarManager.setRemoved(false)
@@ -1673,6 +1687,12 @@ final class MenuBarManager: ObservableObject {
     
     /// Disables the menu bar manager.
     func disable() {
+        // Support direct callers that don't flip the published toggle first.
+        if isEnabled {
+            isEnabled = false
+            return
+        }
+
         cancelAutoHide()
         cancelPendingHoverHide()
         resetMenuWindowDetectionState()

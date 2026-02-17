@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import Darwin
 
 /// Main application entry point for Droppy
 @main
@@ -24,6 +25,32 @@ struct DroppyApp: App {
     }
 }
 
+enum MemoryRecoveryCoordinator {
+    private static var lastReclaimDate: Date = .distantPast
+    private static let minimumReclaimInterval: TimeInterval = 1.5
+
+    static func reclaimTransientMemory(forceAllocatorTrim: Bool = false) {
+        let now = Date()
+        if !forceAllocatorTrim,
+           now.timeIntervalSince(lastReclaimDate) < minimumReclaimInterval {
+            return
+        }
+
+        lastReclaimDate = now
+        ThumbnailCache.shared.clearTransientPreviews()
+        LinkPreviewService.shared.clearCache(cancelPending: true)
+        ExtensionIconCache.shared.clearCache()
+        DroppedItem.clearAvailableAppsCache()
+        clearSharingServicesCache()
+        MenuBarFloatingFallbackIconProvider.clearCache()
+        URLCache.shared.removeAllCachedResponses()
+
+        if forceAllocatorTrim {
+            _ = malloc_zone_pressure_relief(nil, 0)
+        }
+    }
+}
+
 /// Menu content with Element Capture (shows configured shortcut)
 struct DroppyMenuContent: View {
     // Track shortcut changes via notification
@@ -36,6 +63,7 @@ struct DroppyMenuContent: View {
     
     // Check if shelf is enabled (to conditionally show hide/show option)
     @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
+    @AppStorage(AppPreferenceKey.showIdleNotchOnExternalDisplays) private var showIdleNotchOnExternalDisplays = PreferenceDefault.showIdleNotchOnExternalDisplays
     
     // Check if Quickshare menu bar is enabled
     // Check if Quickshare menu bar is enabled
@@ -74,7 +102,7 @@ struct DroppyMenuContent: View {
             Button {
                 LicenseWindowController.shared.show()
             } label: {
-                Label("Activate License...", systemImage: "key.fill")
+                Label("Activate License…", systemImage: "key.fill")
             }
             
             if licenseManager.canStartTrial {
@@ -122,13 +150,14 @@ struct DroppyMenuContent: View {
                 Button {
                     LicenseWindowController.shared.show()
                 } label: {
-                    Label("Activate License...", systemImage: "key.fill")
+                    Label("Activate License…", systemImage: "key.fill")
                 }
                 Divider()
             }
 
-            // Show/Hide Notch or Dynamic Island toggle (only when shelf is enabled)
-            if enableNotchShelf {
+            // Show/Hide Notch or Dynamic Island toggle
+            // Also available when idle surface is kept visible without shelf interactions.
+            if enableNotchShelf || showIdleNotchOnExternalDisplays {
                 if notchController.isTemporarilyHidden {
                     Button {
                         notchController.setTemporarilyHidden(false)
@@ -149,7 +178,7 @@ struct DroppyMenuContent: View {
             Button {
                 UpdateChecker.shared.checkAndNotify()
             } label: {
-                Label("Check for Updates...", systemImage: "arrow.clockwise")
+                Label("Check for Updates…", systemImage: "arrow.clockwise")
             }
             
             Divider()
@@ -192,7 +221,7 @@ struct DroppyMenuContent: View {
                     Button {
                         ClipboardWindowController.shared.show()
                     } label: {
-                        Label("Manage...", systemImage: "list.bullet.rectangle")
+                        Label("Manage…", systemImage: "list.bullet.rectangle")
                     }
                     
                 } label: {
@@ -289,7 +318,7 @@ struct DroppyMenuContent: View {
                     Button {
                         SettingsWindowController.shared.showSettings(openingExtension: .windowSnap)
                     } label: {
-                        Label("Configure Window Snap...", systemImage: "keyboard")
+                        Label("Configure Window Snap…", systemImage: "keyboard")
                     }
                 } label: {
                     Label("Window Snap", systemImage: "rectangle.split.2x1")
@@ -301,7 +330,7 @@ struct DroppyMenuContent: View {
             Button {
                 SettingsWindowController.shared.showSettings()
             } label: {
-                Label("Settings...", systemImage: "gear")
+                Label("Settings…", systemImage: "gear")
             }
             .keyboardShortcut(",", modifiers: .command)
             
@@ -378,7 +407,7 @@ struct DroppyMenuContent: View {
     private func upcomingTitle(for item: ToDoItem) -> String {
         let baseTitle: String
         if item.title.count > 52 {
-            baseTitle = String(item.title.prefix(49)) + "..."
+            baseTitle = String(item.title.prefix(49)) + "…"
         } else {
             baseTitle = item.title
         }
@@ -441,6 +470,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var didStartLicensedFeatures = false
     private var didStartBackgroundUpdates = false
     private var isRetryingTerminateAfterClosingSheets = false
+    private var backgroundMemoryReclaimWorkItem: DispatchWorkItem?
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+
+    private func reclaimIdleMemory() {
+        MemoryRecoveryCoordinator.reclaimTransientMemory(forceAllocatorTrim: false)
+    }
+
+    private func startMemoryPressureMonitoring() {
+        guard memoryPressureSource == nil else { return }
+
+        let source = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        source.setEventHandler {
+            DispatchQueue.main.async {
+                MemoryRecoveryCoordinator.reclaimTransientMemory(forceAllocatorTrim: true)
+            }
+        }
+        source.resume()
+        memoryPressureSource = source
+    }
+
+    private func stopMemoryPressureMonitoring() {
+        memoryPressureSource?.setEventHandler {}
+        memoryPressureSource?.cancel()
+        memoryPressureSource = nil
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // FIX #123: Force LaunchServices re-registration on first launch
@@ -452,13 +509,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // This ensures UserDefaults returns correct defaults for missing keys (fixes #110)
         UserDefaults.standard.register(defaults: [
             AppPreferenceKey.showInMenuBar: PreferenceDefault.showInMenuBar,
+            AppPreferenceKey.showInDock: PreferenceDefault.showInDock,
             AppPreferenceKey.showQuickshareInMenuBar: PreferenceDefault.showQuickshareInMenuBar,
             AppPreferenceKey.todoShowUpcomingInMenuBar: PreferenceDefault.todoShowUpcomingInMenuBar,
             AppPreferenceKey.quickshareRequireUploadConfirmation: PreferenceDefault.quickshareRequireUploadConfirmation,
             AppPreferenceKey.enableNotchShelf: PreferenceDefault.enableNotchShelf,
+            AppPreferenceKey.showIdleNotchOnExternalDisplays: PreferenceDefault.showIdleNotchOnExternalDisplays,
             AppPreferenceKey.enableHUDReplacement: PreferenceDefault.enableHUDReplacement,
             AppPreferenceKey.enableVolumeHUDReplacement: PreferenceDefault.enableVolumeHUDReplacement,
             AppPreferenceKey.enableBrightnessHUDReplacement: PreferenceDefault.enableBrightnessHUDReplacement,
+            AppPreferenceKey.enableVolumeKeyFeedbackSound: PreferenceDefault.enableVolumeKeyFeedbackSound,
             AppPreferenceKey.enableBetterDisplayCompatibility: PreferenceDefault.enableBetterDisplayCompatibility,
             AppPreferenceKey.showMediaPlayer: PreferenceDefault.showMediaPlayer,
             AppPreferenceKey.enableMediaAlbumArtGlow: PreferenceDefault.enableMediaAlbumArtGlow,
@@ -507,9 +567,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
-        
-        // Set as accessory app (no dock icon)
-        NSApp.setActivationPolicy(.accessory)
+        // Apply Dock visibility preference (hidden by default).
+        AppVisibilityManager.applyDockVisibilityFromPreferences()
         
         // Register Finder Services (right-click menu integration)
         // Note: User must manually enable in System Settings > Keyboard > Keyboard Shortcuts > Services
@@ -542,6 +601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start analytics (anonymous launch tracking)
         AnalyticsService.shared.logAppLaunch()
 
+        startMemoryPressureMonitoring()
         configureLicenseFlow()
     }
 
@@ -623,6 +683,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let enableNotch = UserDefaults.standard.bool(forKey: "enableNotchShelf")
             let notchIsSet = UserDefaults.standard.object(forKey: "enableNotchShelf") != nil
             let notchShelfEnabled = enableNotch || !notchIsSet  // Default true
+            let keepIdleNotchVisible = UserDefaults.standard.preference(
+                AppPreferenceKey.showIdleNotchOnExternalDisplays,
+                default: PreferenceDefault.showIdleNotchOnExternalDisplays
+            )
 
             let hudEnabled = MediaKeyInterceptor.shouldRunForCurrentPreferences()
 
@@ -631,7 +695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 : UserDefaults.standard.bool(forKey: "showMediaPlayer")
 
             // Create notch window if ANY of these features are enabled
-            if notchShelfEnabled || hudEnabled || mediaEnabled {
+            if notchShelfEnabled || keepIdleNotchVisible || hudEnabled || mediaEnabled {
                 NotchWindowController.shared.setupNotchWindow()
             }
 
@@ -718,7 +782,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("🔐 DEBUG: AXIsProcessTrusted()=\(axTrusted) cache=\(cacheValue) isGranted=\(isGranted)")
 
             if needsAccessibility && !isGranted {
-                print("🔐 Droppy: Accessibility needed for enabled features - prompting...")
+                print("🔐 Droppy: Accessibility needed for enabled features - prompting…")
                 PermissionManager.shared.requestAccessibility(context: .automatic)
             } else {
                 print("🔐 DEBUG: NOT prompting - needsAccessibility=\(needsAccessibility) isGranted=\(isGranted)")
@@ -756,6 +820,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidBecomeActive(_ notification: Notification) {
+        backgroundMemoryReclaimWorkItem?.cancel()
+        backgroundMemoryReclaimWorkItem = nil
+
         let licenseManager = LicenseManager.shared
         if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
             LicenseWindowController.shared.show()
@@ -770,8 +837,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PermissionManager.shared.startPollingForAccessibility()
         }
     }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        backgroundMemoryReclaimWorkItem?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard !FloatingBasketWindowController.isAnyBasketVisible else { return }
+            guard !DroppyState.shared.isFileOperationInProgress,
+                  !DroppyState.shared.isSharingInProgress else { return }
+            self.reclaimIdleMemory()
+        }
+
+        backgroundMemoryReclaimWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0, execute: work)
+    }
     
     func applicationWillTerminate(_ notification: Notification) {
+        stopMemoryPressureMonitoring()
+        backgroundMemoryReclaimWorkItem?.cancel()
+        backgroundMemoryReclaimWorkItem = nil
+
         // Mark clean exit (no crash prompt on next launch)
         CrashReporter.shared.markCleanExit()
         

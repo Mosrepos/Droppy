@@ -8,6 +8,24 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import ScreenCaptureKit
+
+private final class MenuBarCaptureBox: @unchecked Sendable {
+    private let lock = NSLock()
+    nonisolated(unsafe) private var storage = [(CGWindowID, CGImage, CGRect)]()
+
+    nonisolated func append(_ capture: (CGWindowID, CGImage, CGRect)) {
+        lock.lock()
+        storage.append(capture)
+        lock.unlock()
+    }
+
+    nonisolated func snapshot() -> [(CGWindowID, CGImage, CGRect)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
 
 final class MenuBarFloatingScanner {
     enum Owner: String, CaseIterable {
@@ -29,10 +47,10 @@ final class MenuBarFloatingScanner {
         let icon: NSImage?
     }
 
-    private let excludedTitles: Set<String> = [
-        "DroppyMBM_Icon",
-        "DroppyMBM_Hidden",
-        "DroppyMBM_AlwaysHidden",
+    private let excludedControlItemTokens: Set<String> = [
+        "droppymbm_icon",
+        "droppymbm_hidden",
+        "droppymbm_alwayshidden",
     ]
     private var ownerHasMenuBarRoots = [String: Bool]()
     private var cachedRunningBundleIDs = [String]()
@@ -40,6 +58,11 @@ final class MenuBarFloatingScanner {
     private var lastFullOwnerDiscoveryTimestamp: TimeInterval = 0
     private let runningBundleCacheInterval: TimeInterval = 2.0
     private let fullOwnerDiscoveryInterval: TimeInterval = 30.0
+
+    private static func validatedAXUIElement(_ rawValue: AnyObject) -> AXUIElement {
+        // Safe because callers gate with CFGetTypeID(rawValue) == AXUIElementGetTypeID().
+        unsafeBitCast(rawValue, to: AXUIElement.self)
+    }
 
     func scan(includeIcons: Bool, preferredOwnerBundleIDs: Set<String>? = nil) -> [MenuBarFloatingItemSnapshot] {
         var candidates = [Candidate]()
@@ -143,14 +166,14 @@ final class MenuBarFloatingScanner {
                 }
 
                 let title = normalizeText(MenuBarAXTools.copyString(element, kAXTitleAttribute as CFString))
-                if let title, excludedTitles.contains(title) {
-                    continue
-                }
 
                 let description = normalizeText(MenuBarAXTools.copyString(element, kAXDescriptionAttribute as CFString))
                 let help = normalizeText(MenuBarAXTools.copyString(element, kAXHelpAttribute as CFString))
                 let detail = description ?? help
                 let identifier = normalizeText(MenuBarAXTools.copyString(element, kAXIdentifierAttribute as CFString))
+                if isExcludedControlItem(title: title, detail: detail, identifier: identifier) {
+                    continue
+                }
 
                 // Match this AX item to its window ID via frame overlap.
                 let matchedWindowID = findWindowID(for: quartzFrame, in: menuBarWindowMap)
@@ -193,7 +216,8 @@ final class MenuBarFloatingScanner {
     private func menuBarRoots(for appElement: AXUIElement, ownerBundleID: String) -> [AXUIElement] {
         if let raw = MenuBarAXTools.copyAttribute(appElement, "AXExtrasMenuBar" as CFString),
            CFGetTypeID(raw) == AXUIElementGetTypeID() {
-            return [unsafeDowncast(raw, to: AXUIElement.self)]
+            let element = Self.validatedAXUIElement(raw)
+            return [element]
         }
 
         let isOwnAppBundle = Bundle.main.bundleIdentifier == ownerBundleID
@@ -207,7 +231,8 @@ final class MenuBarFloatingScanner {
 
         if let raw = MenuBarAXTools.copyAttribute(appElement, kAXMenuBarAttribute as CFString),
            CFGetTypeID(raw) == AXUIElementGetTypeID() {
-            return [unsafeDowncast(raw, to: AXUIElement.self)]
+            let element = Self.validatedAXUIElement(raw)
+            return [element]
         }
 
         return []
@@ -293,6 +318,20 @@ final class MenuBarFloatingScanner {
             return nil
         }
         return trimmed
+    }
+
+    private func isExcludedControlItem(title: String?, detail: String?, identifier: String?) -> Bool {
+        let fields = [title, detail, identifier]
+            .compactMap { $0?.lowercased() }
+        for field in fields {
+            if excludedControlItemTokens.contains(field) {
+                return true
+            }
+            if excludedControlItemTokens.contains(where: { field.contains($0) }) {
+                return true
+            }
+        }
+        return false
     }
 
     private func leadingToken(_ value: String?) -> String? {
@@ -427,16 +466,73 @@ final class MenuBarFloatingScanner {
         return bestID
     }
 
+    // MARK: - Icon Capture
+
     /// Batch-captures all menu bar item windows with transparent backgrounds.
-    /// Uses CGWindowListCreateImage per window with .optionIncludingWindow,
-    /// which captures only the target window content with no background bleed.
+    /// Uses CGWindowListCreateImage for predictable synchronous behavior.
     private func compositeCapture(windowMap: [CGWindowID: CGRect]) -> [CGWindowID: NSImage] {
         guard !windowMap.isEmpty else { return [:] }
+        return compositeCaptureLegacy(windowMap: windowMap)
+    }
 
+    /// ScreenCaptureKit-based capture (macOS 14.0+). Captures each window independently
+    /// with full transparency — no menu bar background, no wallpaper bleed.
+    @available(macOS 14.0, *)
+    private func compositeCaptureModern(windowMap: [CGWindowID: CGRect]) -> [CGWindowID: NSImage] {
+        let box = MenuBarCaptureBox()
+        let semaphore = DispatchSemaphore(value: 0)
+        let mapSnapshot = windowMap
+
+        // Keep priority aligned with the caller to avoid user-interactive waits on lower-QoS work.
+        Task.detached(priority: .high) {
+            defer { semaphore.signal() }
+            guard let content = try? await SCShareableContent.excludingDesktopWindows(
+                true, onScreenWindowsOnly: true
+            ) else { return }
+
+            // Build window ID → SCWindow lookup.
+            var scWindows = [CGWindowID: SCWindow]()
+            for w in content.windows {
+                scWindows[w.windowID] = w
+            }
+
+            let config = SCStreamConfiguration()
+            config.captureResolution = .best
+            config.showsCursor = false
+
+            for (wid, bounds) in mapSnapshot {
+                guard let scw = scWindows[wid] else { continue }
+                let filter = SCContentFilter(desktopIndependentWindow: scw)
+                if let img = try? await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: config
+                ) {
+                    box.append((wid, img, bounds))
+                }
+            }
+        }
+        semaphore.wait()
+
+        // Process captures synchronously (transparency/suspicious checks).
+        var results = [CGWindowID: NSImage]()
+        for (wid, cgImage, bounds) in box.snapshot() {
+            guard !isFullyTransparent(cgImage) else { continue }
+            let nsImage = NSImage(
+                cgImage: cgImage,
+                size: NSSize(width: bounds.width, height: bounds.height)
+            )
+            guard !isSuspiciousCapture(nsImage) else { continue }
+            results[wid] = nsImage
+        }
+        return results
+    }
+
+    /// Legacy capture using CGWindowListCreateImage (pre-macOS 14).
+    private func compositeCaptureLegacy(windowMap: [CGWindowID: CGRect]) -> [CGWindowID: NSImage] {
         var results = [CGWindowID: NSImage]()
         let captureOption: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
 
-        for (windowID, _) in windowMap {
+        for (windowID, bounds) in windowMap {
             guard let cgImage = CGWindowListCreateImage(
                 .null,
                 .optionIncludingWindow,
@@ -446,16 +542,9 @@ final class MenuBarFloatingScanner {
                 continue
             }
             guard !isFullyTransparent(cgImage) else { continue }
-            // Use the actual pixel dimensions from the CGImage so the NSImage
-            // reports the correct 1:1 point size on Retina displays.
-            // This avoids undersizing the icon when the window bounds are
-            // smaller than the rendered content.
-            let pixelW = CGFloat(cgImage.width)
-            let pixelH = CGFloat(cgImage.height)
-            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
             let nsImage = NSImage(
                 cgImage: cgImage,
-                size: NSSize(width: pixelW / scale, height: pixelH / scale)
+                size: NSSize(width: bounds.width, height: bounds.height)
             )
             guard !isSuspiciousCapture(nsImage) else { continue }
             results[windowID] = nsImage

@@ -61,6 +61,10 @@ enum MenuBarFloatingIconLayout {
 enum MenuBarFloatingFallbackIconProvider {
     private static var cachedIconsByKey = [String: NSImage]()
 
+    static func clearCache() {
+        cachedIconsByKey.removeAll(keepingCapacity: false)
+    }
+
     static func icon(for item: MenuBarFloatingItemSnapshot) -> NSImage? {
         let identityToken = [
             item.ownerBundleID.lowercased(),
@@ -132,6 +136,11 @@ enum MenuBarFloatingFallbackIconProvider {
 }
 
 enum MenuBarAXTools {
+    private static func validatedAXValue(_ rawValue: AnyObject) -> AXValue {
+        // Safe because callers gate with CFGetTypeID(rawValue) == AXValueGetTypeID().
+        unsafeBitCast(rawValue, to: AXValue.self)
+    }
+
     static func copyAttribute(_ element: AXUIElement, _ attribute: CFString) -> AnyObject? {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(element, attribute, &value)
@@ -154,7 +163,7 @@ enum MenuBarAXTools {
               CFGetTypeID(rawValue) == AXValueGetTypeID() else {
             return nil
         }
-        let value = rawValue as! AXValue
+        let value = validatedAXValue(rawValue)
         guard
               AXValueGetType(value) == .cgPoint else {
             return nil
@@ -169,7 +178,7 @@ enum MenuBarAXTools {
               CFGetTypeID(rawValue) == AXValueGetTypeID() else {
             return nil
         }
-        let value = rawValue as! AXValue
+        let value = validatedAXValue(rawValue)
         guard
               AXValueGetType(value) == .cgSize else {
             return nil

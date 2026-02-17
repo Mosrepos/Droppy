@@ -145,7 +145,7 @@ class BasketDragContainer: NSView {
         
         // Debug logging for Issue #62
         if result {
-            print("📡 AirDrop Zone HIT: point.x=\(Int(point.x)) zone=[\(Int(airDropLeftEdge))...\(Int(basketRightEdge))]")
+            print("📡 AirDrop Zone HIT: point.x=\(Int(point.x)) zone=[\(Int(airDropLeftEdge))…\(Int(basketRightEdge))]")
         }
         
         return result
@@ -180,7 +180,7 @@ class BasketDragContainer: NSView {
             let basketRightEdge = windowCenterX + currentBasketWidth / 2
             let airDropLeftEdge = basketRightEdge - airDropZoneWidth
             let basketLeftEdge = windowCenterX - currentBasketWidth / 2
-            print("🎯 Zone: point.x=\(Int(point.x)) basket=[\(Int(basketLeftEdge))...\(Int(airDropLeftEdge))] airdrop=[\(Int(airDropLeftEdge))...\(Int(basketRightEdge))] isAirDrop=\(isOverAirDrop) isBasket=\(isOverBasket)")
+            print("🎯 Zone: point.x=\(Int(point.x)) basket=[\(Int(basketLeftEdge))…\(Int(airDropLeftEdge))] airdrop=[\(Int(airDropLeftEdge))…\(Int(basketRightEdge))] isAirDrop=\(isOverAirDrop) isBasket=\(isOverBasket)")
             
             // Synchronous update for responsive feedback
             basketState.isAirDropZoneTargeted = isOverAirDrop
@@ -283,7 +283,7 @@ class BasketDragContainer: NSView {
             if let promiseReceivers = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver],
                !promiseReceivers.isEmpty {
                 
-                print("📡 AirDrop: Receiving file promises from Photos.app...")
+                print("📡 AirDrop: Receiving file promises from Photos.app…")
                 
                 // Create a temp location for promised files
                 let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -391,7 +391,7 @@ class BasketDragContainer: NSView {
             return handleAirDropShare(pasteboard)
         }
         
-        // Normal basket behavior below...
+        // Normal basket behavior below…
         
         // Handle Mail.app emails directly via AppleScript
         let mailTypes: [NSPasteboard.PasteboardType] = [
@@ -401,7 +401,7 @@ class BasketDragContainer: NSView {
         let isMailAppEmail = mailTypes.contains(where: { pasteboard.types?.contains($0) ?? false })
         
         if isMailAppEmail {
-            print("📧 Basket: Mail.app email detected, using AppleScript to export...")
+            print("📧 Basket: Mail.app email detected, using AppleScript to export…")
             
             Task { @MainActor in
                 let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -496,27 +496,14 @@ class BasketDragContainer: NSView {
             return true
         }
         
-        // Handle plain text drops - create a .txt file
-        if let text = pasteboard.string(forType: .string), !text.isEmpty {
-            // Create a temp directory for text files
-            let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("DroppyDrops-\(UUID().uuidString)")
-            try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true, attributes: nil)
-            
-            // Generate a timestamped filename
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-            let timestamp = formatter.string(from: Date())
-            let filename = "Text \(timestamp).txt"
-            let fileURL = dropLocation.appendingPathComponent(filename)
-            
-            do {
-                try text.write(to: fileURL, atomically: true, encoding: .utf8)
-                basketState.addItems(from: [fileURL])
-                return true
-            } catch {
-                print("Error saving text file: \(error)")
-                return false
-            }
+        // Handle text/URL drops.
+        // Web links become .webloc items; plain text remains .txt.
+        let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("DroppyDrops-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true, attributes: nil)
+        let droppedFiles = DroppyLinkSupport.createTextOrLinkFiles(from: pasteboard, in: dropLocation)
+        if !droppedFiles.isEmpty {
+            basketState.addItems(from: droppedFiles)
+            return true
         }
         
         return false

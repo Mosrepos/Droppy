@@ -10,9 +10,9 @@ import UniformTypeIdentifiers
 
 struct MenuBarManagerInfoView: View {
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
-    @StateObject private var manager = MenuBarManager.shared
-    @StateObject private var floatingBarManager = MenuBarFloatingBarManager.shared
-    @StateObject private var permissionManager = PermissionManager.shared
+    @ObservedObject private var manager = MenuBarManager.shared
+    @ObservedObject private var floatingBarManager = MenuBarFloatingBarManager.shared
+    @ObservedObject private var permissionManager = PermissionManager.shared
     @Environment(\.dismiss) private var dismiss
     
     var installCount: Int?
@@ -29,6 +29,7 @@ struct MenuBarManagerInfoView: View {
     @State private var draggingPlacementItemSnapshot: MenuBarFloatingItemSnapshot?
     @State private var mouseDownEventMonitor: Any?
     @State private var mouseUpEventMonitor: Any?
+    @State private var didEnterSettingsInspectionMode = false
 
     private var panelHeight: CGFloat {
         let availableHeight = NSScreen.main?.visibleFrame.height ?? 800
@@ -83,11 +84,11 @@ struct MenuBarManagerInfoView: View {
             ExtensionReviewsSheet(extensionType: .menuBarManager)
         }
         .onAppear {
+            didEnterSettingsInspectionMode = false
+            guard isActive else { return }
             installMouseDownEventMonitor()
             installMouseUpEventMonitor()
-            if manager.isEnabled {
-                floatingBarManager.start()
-            }
+            floatingBarManager.start()
             let hiddenSection = manager.section(withName: .hidden)
             let alwaysHiddenSection = manager.section(withName: .alwaysHidden)
             hiddenSectionWasVisibleBeforeSettings = hiddenSection?.isHidden == false
@@ -97,13 +98,7 @@ struct MenuBarManagerInfoView: View {
             manager.isLockedVisible = true
             manager.showAllSectionsForSettingsInspection()
             floatingBarManager.enterSettingsInspectionMode()
-            floatingBarManager.rescan(refreshIcons: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                let needsSecondIconPass = floatingBarManager.settingsItems.contains { $0.icon == nil }
-                if needsSecondIconPass {
-                    floatingBarManager.rescan(force: true, refreshIcons: true)
-                }
-            }
+            didEnterSettingsInspectionMode = true
         }
         .onDisappear {
             removeMouseDownEventMonitor()
@@ -111,6 +106,7 @@ struct MenuBarManagerInfoView: View {
             hoveredPlacementItemID = nil
             draggingPlacementItemID = nil
             draggingPlacementItemSnapshot = nil
+            guard didEnterSettingsInspectionMode else { return }
             floatingBarManager.exitSettingsInspectionMode()
             manager.isLockedVisible = wasLockedVisibleBeforeSettings
             let shouldEnableAlwaysHiddenOnRestore =
@@ -537,7 +533,7 @@ struct MenuBarManagerInfoView: View {
                     tileWidth: 92,
                     tileHeight: 42,
                     action: {
-                        floatingBarManager.rescan(force: true, refreshIcons: true)
+                        floatingBarManager.rescan(force: true)
                     }
                 ) {
                     Image(systemName: "arrow.clockwise")
@@ -553,7 +549,7 @@ struct MenuBarManagerInfoView: View {
                     action: {
                         floatingBarManager.isFeatureEnabled.toggle()
                         if floatingBarManager.isFeatureEnabled {
-                            floatingBarManager.rescan(force: true, refreshIcons: true)
+                            floatingBarManager.rescan(force: true)
                         }
                     }
                 ) {
@@ -690,13 +686,21 @@ struct MenuBarManagerInfoView: View {
         let canDrag = !isBlockedInVisibleLane
         let isHovered = hoveredPlacementItemID == item.id && draggingPlacementItemID == nil
         let isDragging = draggingPlacementItemID == item.id
+        let helpText: String = {
+            let base = "\(item.displayName) (\(item.ownerBundleID))"
+            if let nonHideableReason {
+                return "\(base)\n\(nonHideableReason)"
+            }
+            return base
+        }()
 
         let chip = placementItemChipContent(
             item: item,
             isDimmed: isBlockedInVisibleLane,
             showLockBadge: isBlockedInVisibleLane,
             isHovered: isHovered,
-            isDragging: isDragging
+            isDragging: isDragging,
+            helpText: helpText
         )
 
         if !canDrag {
@@ -718,7 +722,8 @@ struct MenuBarManagerInfoView: View {
         isDimmed: Bool,
         showLockBadge: Bool,
         isHovered: Bool,
-        isDragging: Bool
+        isDragging: Bool,
+        helpText: String
     ) -> some View {
         let iconSize = MenuBarFloatingIconLayout.nativeIconSize(for: item)
 
@@ -758,7 +763,7 @@ struct MenuBarManagerInfoView: View {
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .help("\(item.displayName) (\(item.ownerBundleID))")
+            .help(helpText)
             .onHover { hovering in
                 if hovering {
                     guard draggingPlacementItemID == nil else { return }
@@ -818,8 +823,11 @@ struct MenuBarManagerInfoView: View {
         hoveredPlacementItemID = nil
         activeDropPlacement = nil
 
-        if let draggedSnapshot,
-           let immediateItem = resolveDroppedPlacementItem(itemID: draggedSnapshot.id, fallback: draggedSnapshot) {
+        if let draggedSnapshot {
+            let immediateItem = resolveDroppedPlacementItem(
+                itemID: draggedSnapshot.id,
+                fallback: draggedSnapshot
+            ) ?? draggedSnapshot
             applyDroppedPlacement(immediateItem, to: placement)
             draggingPlacementItemSnapshot = nil
             return true
@@ -833,7 +841,7 @@ struct MenuBarManagerInfoView: View {
         provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let itemID = object as? String else { return }
             DispatchQueue.main.async {
-                guard let item = resolveDroppedPlacementItem(itemID: itemID, fallback: draggedSnapshot) else {
+                guard let item = resolveDroppedPlacementItem(itemID: itemID, fallback: draggedSnapshot) ?? draggedSnapshot else {
                     draggingPlacementItemSnapshot = nil
                     return
                 }
@@ -1016,11 +1024,7 @@ struct MenuBarManagerInfoView: View {
                 DisableExtensionButton(extensionType: .menuBarManager)
             } else {
                 Button {
-                    // Enable via ExtensionType and manager
-                    ExtensionType.menuBarManager.setRemoved(false)
-                    manager.isEnabled = true
-                    AnalyticsService.shared.trackExtensionActivation(extensionId: "menuBarManager")
-                    NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.menuBarManager)
+                    enableMenuBarManager()
                 } label: {
                     Text("Enable")
                 }
@@ -1028,5 +1032,16 @@ struct MenuBarManagerInfoView: View {
             }
         }
         .padding(DroppySpacing.lg)
+    }
+
+    private func enableMenuBarManager() {
+        ExtensionType.menuBarManager.setRemoved(false)
+        if manager.isEnabled {
+            manager.enable()
+        } else {
+            manager.isEnabled = true
+        }
+        AnalyticsService.shared.trackExtensionActivation(extensionId: "menuBarManager")
+        NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.menuBarManager)
     }
 }

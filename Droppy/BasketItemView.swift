@@ -115,6 +115,11 @@ struct BasketItemView: View {
         let baseWidth = listRowWidth ?? 320
         return max(120, baseWidth - 150)
     }
+
+    /// Read-through cache so first render can use preloaded previews immediately.
+    private var resolvedThumbnail: NSImage? {
+        thumbnail ?? ThumbnailCache.shared.cachedThumbnail(for: item)
+    }
     
     var body: some View {
         draggableItemContent
@@ -190,7 +195,7 @@ struct BasketItemView: View {
                 unzipFile()
                 return
             }
-            NSWorkspace.shared.open(item.url)
+            item.openFile()
         }
         
         let rightClickClosure: () -> Void = {
@@ -256,7 +261,7 @@ struct BasketItemView: View {
                         // Squircle thumbnail with activity overlay
                         ZStack {
                             Group {
-                                if let thumb = thumbnail {
+                                if let thumb = resolvedThumbnail {
                                     // QuickLook preview thumbnail
                                     Image(nsImage: thumb)
                                         .resizable()
@@ -334,23 +339,23 @@ struct BasketItemView: View {
                             
                             // Status text or file size (use white text on blue selection)
                             if isConverting {
-                                Text("Converting...")
+                                Text("Converting…")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .orange.opacity(0.8))
                             } else if isCompressing {
-                                Text("Compressing...")
+                                Text("Compressing…")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .blue.opacity(0.8))
                             } else if isRemovingBackground {
-                                Text("Removing BG...")
+                                Text("Removing BG…")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .purple.opacity(0.8))
                             } else if isExtractingText {
-                                Text("Extracting text...")
+                                Text("Extracting text…")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .green.opacity(0.8))
                             } else if isCreatingZIP {
-                                Text("Creating ZIP...")
+                                Text("Creating ZIP…")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .cyan.opacity(0.8))
                             } else if item.isDirectory {
@@ -591,7 +596,7 @@ struct BasketItemView: View {
                 // Squircle thumbnail with activity overlay
                 ZStack {
                     Group {
-                        if let thumb = thumbnail {
+                        if let thumb = resolvedThumbnail {
                             // QuickLook preview thumbnail
                             Image(nsImage: thumb)
                                 .resizable()
@@ -660,23 +665,23 @@ struct BasketItemView: View {
                     )
                     
                     if isConverting {
-                        Text("Converting...")
+                        Text("Converting…")
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .orange.opacity(0.8))
                     } else if isCompressing {
-                        Text("Compressing...")
+                        Text("Compressing…")
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .blue.opacity(0.8))
                     } else if isRemovingBackground {
-                        Text("Removing BG...")
+                        Text("Removing BG…")
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .purple.opacity(0.8))
                     } else if isExtractingText {
-                        Text("Extracting text...")
+                        Text("Extracting text…")
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .green.opacity(0.8))
                     } else if isCreatingZIP {
-                        Text("Creating ZIP...")
+                        Text("Creating ZIP…")
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .cyan.opacity(0.8))
                     } else if item.isDirectory {
@@ -730,7 +735,7 @@ struct BasketItemView: View {
                 item: item,
                 state: state,
                 onRemove: onRemove,
-                thumbnail: thumbnail,
+                thumbnail: resolvedThumbnail,
                 isHovering: isHovering,
                 isConverting: isConverting,
                 isExtractingText: isExtractingText,
@@ -778,7 +783,7 @@ struct BasketItemView: View {
             Label("Open", systemImage: "arrow.up.forward.square")
         }
         
-        // Move To...
+        // Move To…
         Menu {
             // Saved Destinations
             ForEach(DestinationManager.shared.destinations) { dest in
@@ -796,10 +801,10 @@ struct BasketItemView: View {
             Button {
                 chooseDestinationAndMove()
             } label: {
-                Label("Choose Folder...", systemImage: "folder.badge.plus")
+                Label("Choose Folder…", systemImage: "folder.badge.plus")
             }
         } label: {
-            Label("Move to...", systemImage: "arrow.right.doc.on.clipboard")
+            Label("Move to…", systemImage: "arrow.right.doc.on.clipboard")
         }
         
         // Open With submenu
@@ -818,7 +823,7 @@ struct BasketItemView: View {
                     }
                 }
             } label: {
-                Label("Open With...", systemImage: "square.and.arrow.up.on.square")
+                Label("Open With…", systemImage: "square.and.arrow.up.on.square")
             }
         }
         
@@ -826,7 +831,7 @@ struct BasketItemView: View {
         Menu {
             ForEach(cachedSharingServices, id: \.title) { service in
                 Button {
-                    service.perform(withItems: [item.url])
+                    service.perform(withItems: [item.preferredShareURL])
                 } label: {
                     Label {
                         Text(service.title)
@@ -887,9 +892,9 @@ struct BasketItemView: View {
                 }
             } label: {
                 if state.selectedBasketItems.count > 1 && state.selectedBasketItems.contains(item.id) {
-                    Label("Convert All (\(state.selectedBasketItems.count))...", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Convert All (\(state.selectedBasketItems.count))…", systemImage: "arrow.triangle.2.circlepath")
                 } else {
-                    Label("Convert to...", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Convert to…", systemImage: "arrow.triangle.2.circlepath")
                 }
             }
         }
@@ -957,7 +962,7 @@ struct BasketItemView: View {
                         }
                     }
                     if !isMultiSelect && (showImageTargetSize || showVideoTargetSize) {
-                        Button("Target Size...") {
+                        Button("Target Size…") {
                             compressFile(mode: nil)
                         }
                     }
@@ -1084,7 +1089,7 @@ struct BasketItemView: View {
 
     private func refreshContextMenuCache() {
         cachedAvailableApps = item.getAvailableApplications()
-        cachedSharingServices = sharingServicesForItems([item.url])
+        cachedSharingServices = sharingServicesForItems([item.preferredShareURL])
     }
     
     // MARK: - Actions
@@ -1162,7 +1167,13 @@ struct BasketItemView: View {
             : state.basketItems.filter { state.selectedBasketItems.contains($0.id) }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.writeObjects(itemsToCopy.map { $0.url as NSURL })
+        let shareURLs = itemsToCopy.map(\.preferredShareURL)
+        pasteboard.writeObjects(shareURLs as [NSURL])
+        if shareURLs.count == 1, let onlyURL = shareURLs.first, !onlyURL.isFileURL {
+            let absolute = onlyURL.absoluteString
+            pasteboard.setString(absolute, forType: .URL)
+            pasteboard.setString(absolute, forType: .string)
+        }
     }
     
     private func removeSelectedItems() {
@@ -1378,8 +1389,7 @@ struct BasketItemView: View {
             }
             
             if let compressedURL = await FileCompressor.shared.compress(url: item.url, mode: mode) {
-                // Mark compressed file as temporary for cleanup when removed
-                let newItem = DroppedItem(url: compressedURL, isTemporary: true)
+                let newItem = DroppedItem(url: compressedURL, isTemporary: isTemporaryOutputURL(compressedURL))
                 
                 // Smart Export: auto-save to folder if enabled
                 _ = await MainActor.run {
@@ -1434,8 +1444,7 @@ struct BasketItemView: View {
         Task {
             do {
                 let outputURL = try await item.removeBackground()
-                // Mark as temporary for cleanup when removed
-                let newItem = DroppedItem(url: outputURL, isTemporary: true)
+                let newItem = DroppedItem(url: outputURL, isTemporary: isTemporaryOutputURL(outputURL))
                 
                 await MainActor.run {
                     isRemovingBackground = false
@@ -1512,7 +1521,7 @@ struct BasketItemView: View {
         Task {
             for selectedItem in selectedItems {
                 if let compressedURL = await FileCompressor.shared.compress(url: selectedItem.url, mode: mode) {
-                    let newItem = DroppedItem(url: compressedURL, isTemporary: true)
+                    let newItem = DroppedItem(url: compressedURL, isTemporary: isTemporaryOutputURL(compressedURL))
                     
                     // Smart Export: auto-save to folder if enabled
                     _ = await MainActor.run {
@@ -1675,7 +1684,7 @@ struct BasketItemView: View {
             for selectedItem in imagesToProcess {
                 do {
                     let outputURL = try await selectedItem.removeBackground()
-                    let newItem = DroppedItem(url: outputURL, isTemporary: true)
+                    let newItem = DroppedItem(url: outputURL, isTemporary: isTemporaryOutputURL(outputURL))
                     await MainActor.run {
                         // End processing for old item, replace with new
                         state.endProcessing(for: selectedItem.id)
@@ -1699,6 +1708,11 @@ struct BasketItemView: View {
                 state.endFileOperation()
             }
         }
+    }
+
+    private func isTemporaryOutputURL(_ url: URL) -> Bool {
+        let tempPath = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        return url.standardizedFileURL.path.hasPrefix(tempPath)
     }
     
     // MARK: - Rename

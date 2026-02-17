@@ -57,19 +57,15 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.dynamicIslandHeightOffset) private var dynamicIslandHeightOffset = PreferenceDefault.dynamicIslandHeightOffset
     @AppStorage(AppPreferenceKey.notchWidthOffset) private var notchWidthOffset = PreferenceDefault.notchWidthOffset
     @AppStorage(AppPreferenceKey.useDynamicIslandTransparent) private var useDynamicIslandTransparent = PreferenceDefault.useDynamicIslandTransparent
+    @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
     @AppStorage(AppPreferenceKey.enableQuickActions) private var enableQuickActions = PreferenceDefault.enableQuickActions
     @AppStorage(AppPreferenceKey.enableRightClickHide) private var enableRightClickHide = PreferenceDefault.enableRightClickHide
     @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
-    // PERF: These properties are read-only in conditional checks, not bound to UI controls.
-    // Using direct UserDefaults reads avoids reactive view invalidation.
-    private var enableGradientVisualizer: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableGradientVisualizer, default: PreferenceDefault.enableGradientVisualizer) }
-    private var enableMediaAlbumArtGlow: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableMediaAlbumArtGlow, default: PreferenceDefault.enableMediaAlbumArtGlow) }
-    private var todoShelfSplitViewEnabled: Bool { UserDefaults.standard.preference(AppPreferenceKey.todoShelfSplitViewEnabled, default: PreferenceDefault.todoShelfSplitViewEnabled) }
-    private var enableAutoClean: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableAutoClean, default: PreferenceDefault.enableAutoClean) }
-    private var cameraInstalled: Bool { UserDefaults.standard.preference(AppPreferenceKey.cameraInstalled, default: PreferenceDefault.cameraInstalled) }
-    private var cameraEnabled: Bool { UserDefaults.standard.preference(AppPreferenceKey.cameraEnabled, default: PreferenceDefault.cameraEnabled) }
-    private var caffeineInstalled: Bool { UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) }
-    private var terminalNotchEnabled: Bool { UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled) }
+    @AppStorage(AppPreferenceKey.enableGradientVisualizer) private var enableGradientVisualizer = PreferenceDefault.enableGradientVisualizer
+    @AppStorage(AppPreferenceKey.enableMediaAlbumArtGlow) private var enableMediaAlbumArtGlow = PreferenceDefault.enableMediaAlbumArtGlow
+    @AppStorage(AppPreferenceKey.cameraInstalled) private var cameraInstalled = PreferenceDefault.cameraInstalled
+    @AppStorage(AppPreferenceKey.cameraEnabled) private var cameraEnabled = PreferenceDefault.cameraEnabled
+    @AppStorage(AppPreferenceKey.todoShelfSplitViewEnabled) private var todoShelfSplitViewEnabled = PreferenceDefault.todoShelfSplitViewEnabled
 
     
     // HUD State - Use @ObservedObject for singletons (they manage their own lifecycle)
@@ -102,12 +98,13 @@ struct NotchShelfView: View {
     @State private var mediaFadeWorkItem: DispatchWorkItem?
     @State private var autoShrinkWorkItem: DispatchWorkItem?  // Timer for auto-shrinking shelf
     @State private var isHoveringExpandedContent = false  // Tracks if mouse is over the expanded shelf
-    @State private var isSongTransitioning = false  // Temporarily hide media during song transitions
+    @State private var browserTrackLoadingWorkItem: DispatchWorkItem?
+    @State private var browserTrackLoadingUntil: Date = .distantPast
     @State private var mediaDebounceWorkItem: DispatchWorkItem?  // Debounce for media changes
     @State private var isMediaStable = false  // Only show media HUD after debounce delay
     
     // Idle face preference
-    private var enableIdleFace: Bool { UserDefaults.standard.preference(AppPreferenceKey.enableIdleFace, default: PreferenceDefault.enableIdleFace) }
+    @AppStorage(AppPreferenceKey.enableIdleFace) private var enableIdleFace = PreferenceDefault.enableIdleFace
     
     
     /// Animation state for the border dash
@@ -124,7 +121,7 @@ struct NotchShelfView: View {
     @State private var shelfScrollView: NSScrollView?
     @State private var shelfScrollViewportFrame: CGRect = .zero
     @State private var shelfAutoScrollVelocity: CGFloat = 0
-    @State private var shelfAutoScrollCancellable: AnyCancellable?
+    private let shelfAutoScrollTicker = Timer.publish(every: 1.0 / 90.0, on: .main, in: .common).autoconnect()
     
     // Global rename state
     @State private var renamingItemId: UUID?
@@ -472,12 +469,13 @@ struct NotchShelfView: View {
     private let mediaPlayerWidth: CGFloat = 450
 
     private var isTerminalViewVisible: Bool {
-        return terminalManager.isInstalled && terminalNotchEnabled && terminalManager.isVisible
+        let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
+        return terminalManager.isInstalled && terminalEnabled && terminalManager.isVisible
     }
 
     private var caffeineExtensionEnabled: Bool {
-        caffeineInstalled &&
-        caffeineEnabled
+        UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) &&
+        UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
     }
 
     private var isCaffeineViewVisible: Bool {
@@ -733,6 +731,8 @@ struct NotchShelfView: View {
     private var shouldShowMediaHUD: Bool {
         // Media features require macOS 15.0+
         guard musicManager.isMediaAvailable else { return false }
+        let browserTrackLoading = isBrowserTrackLoading
+        let mediaIsActive = (musicManager.isPlaying && !musicManager.songTitle.isEmpty) || browserTrackLoading
         
         // CAFFEINE HOVER TAKES PRIORITY: When hovering with caffeine active, suppress media
         if isCaffeineHoverActive { return false }
@@ -750,21 +750,27 @@ struct NotchShelfView: View {
             return showMediaPlayer
         }
         
-        // Don't show during song transitions (collapse-expand effect)
-        if isSongTransitioning { return false }
         // Don't show if auto-fade is enabled and it has faded out
         if autoFadeMediaHUD && mediaHUDFadedOut {
             return false
         }
         // Only apply debounce check when setting is enabled
-        if debounceMediaChanges && !isMediaStable { return false }
+        if debounceMediaChanges && !isMediaStable && !browserTrackLoading { return false }
         // Don't show when any HUD is visible (they take priority)
         if HUDManager.shared.isVisible { return false }
         if let displayID = targetScreen?.displayID,
            notchController.fullscreenDisplayIDs.contains(displayID) {
             return false
         }
-        return showMediaPlayer && musicManager.isPlaying && !hudIsVisible && !isExpandedOnThisScreen
+        return showMediaPlayer &&
+            mediaIsActive &&
+            !hudIsVisible &&
+            !isExpandedOnThisScreen
+    }
+
+    private var isBrowserTrackLoading: Bool {
+        guard musicManager.isBrowserSource else { return false }
+        return Date() < browserTrackLoadingUntil
     }
 
     private var isMediaHUDHoverEligible: Bool {
@@ -1107,20 +1113,20 @@ struct NotchShelfView: View {
         // Only reaches here if there's nothing to show
         if !isBuiltInDisplay {
             // Allow user to keep notch/island visible when idle on external displays
-            return showIdleNotchOnExternalDisplays && enableNotchShelf
+            return showIdleNotchOnExternalDisplays
         }
         
         // Built-in display: check if it has a physical notch to cover
         if let screen = targetScreen ?? NSScreen.builtInWithNotch {
             // Built-in display WITH notch: show idle notch to cover camera
             if screen.safeAreaInsets.top > 0 {
-                return enableNotchShelf
+                return enableNotchShelf || showIdleNotchOnExternalDisplays
             }
         }
         
         // Built-in display WITHOUT notch (old MacBook Air, etc.): same behavior as external
         // No physical camera to cover, so respect the idle visibility setting
-        return showIdleNotchOnExternalDisplays && enableNotchShelf
+        return showIdleNotchOnExternalDisplays
     }
 
     /// During lock-in we must hide the inline notch instantly (no opacity tween),
@@ -1190,9 +1196,11 @@ struct NotchShelfView: View {
             // REGULAR BUTTONS: Show otherwise (terminal/caffeine/close buttons)
             // SMOOTH MORPH: Uses spring animation for seamless transition
             // Check both installed AND enabled for each extension
-            // PERF: Use computed properties instead of inline UserDefaults reads
+            let caffeineInstalled = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled)
+            let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
+            let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
             let caffeineShouldShow = caffeineInstalled && caffeineEnabled
-            let terminalShouldShow = terminalManager.isInstalled && terminalNotchEnabled
+            let terminalShouldShow = terminalManager.isInstalled && terminalEnabled
             let cameraShouldShow = canShowCameraFloatingButton
             if enableNotchShelf && isExpandedOnThisScreen {
                 // FLOATING BUTTONS: ZStack enables smooth crossfade between button states
@@ -1254,9 +1262,10 @@ struct NotchShelfView: View {
                                             todoManager.isShelfListExpanded = false
                                         }
                                     }
-                                    // SMOOTH: Don't call forceRecalculate synchronously here.
-                                    // setupStateObservation detects the state change and routes
-                                    // through the transition guard automatically.
+                                    notchController.forceRecalculateAllWindowSizes()
+                                    DispatchQueue.main.async {
+                                        notchController.forceRecalculateAllWindowSizes()
+                                    }
                                 }) {
                                     Image(systemName: "eyes")
                                 }
@@ -1282,9 +1291,10 @@ struct NotchShelfView: View {
                                             todoManager.isShelfListExpanded = false
                                         }
                                     }
-                                    // SMOOTH: Don't call forceRecalculate synchronously here.
-                                    // setupStateObservation detects the state change and routes
-                                    // through the transition guard automatically.
+                                    notchController.forceRecalculateAllWindowSizes()
+                                    DispatchQueue.main.async {
+                                        notchController.forceRecalculateAllWindowSizes()
+                                    }
                                 }) {
                                     Image(systemName: "camera.fill")
                                 }
@@ -1333,9 +1343,10 @@ struct NotchShelfView: View {
                                             todoManager.isShelfListExpanded = false
                                         }
                                     }
-                                    // SMOOTH: Don't call forceRecalculate synchronously here.
-                                    // setupStateObservation detects the state change and routes
-                                    // through the transition guard automatically.
+                                    notchController.forceRecalculateAllWindowSizes()
+                                    DispatchQueue.main.async {
+                                        notchController.forceRecalculateAllWindowSizes()
+                                    }
                                 }) {
                                     Image(systemName: terminalManager.isVisible ? "xmark" : "terminal")
                                 }
@@ -1346,8 +1357,6 @@ struct NotchShelfView: View {
                             // Close button (only in sticky mode AND when terminal is not visible)
                             if !autoCollapseShelf && !terminalManager.isVisible {
                                 Button(action: {
-                                    // SMOOTH: Activate transition guard before collapse animation
-                                    notchController.beginExpandCollapseTransition()
                                     withAnimation(displayExpandCloseAnimation) {
                                         state.expandedDisplayID = nil
                                         state.hoveringDisplayID = nil
@@ -1430,11 +1439,12 @@ struct NotchShelfView: View {
                 // Defer to next runloop so SwiftUI settles its new height before frame sync.
                 if oldCount != newCount {
                     DispatchQueue.main.async {
-                        guard isExpandedOnThisScreen,
-                              !state.isDropTargeted,
-                              !dragMonitor.isDragging,
-                              !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
+                        guard isExpandedOnThisScreen, !state.isDropTargeted, !dragMonitor.isDragging else { return }
                         notchController.forceRecalculateAllWindowSizes()
+                        DispatchQueue.main.async {
+                            guard isExpandedOnThisScreen, !state.isDropTargeted, !dragMonitor.isDragging else { return }
+                            notchController.forceRecalculateAllWindowSizes()
+                        }
                     }
                 }
             }
@@ -1504,14 +1514,15 @@ struct NotchShelfView: View {
     private var shelfContentWithMediaObservers: some View {
         shelfContentWithHUDObservers
             .onChange(of: musicManager.songTitle) { oldTitle, newTitle in
-                if !oldTitle.isEmpty && !newTitle.isEmpty && oldTitle != newTitle {
-                    withAnimation(displayUnifiedOpenCloseAnimation) {
-                        isSongTransitioning = true
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        withAnimation(displayUnifiedOpenCloseAnimation) {
-                            isSongTransitioning = false
-                        }
+                let trimmedOld = oldTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmedNew = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                let titleChanged = trimmedOld != trimmedNew
+
+                if titleChanged {
+                    if musicManager.isBrowserSource {
+                        // Browser players can briefly drop metadata between tracks.
+                        // Keep HUD pinned with loading placeholder during this handoff.
+                        beginBrowserTrackLoadingHold()
                     }
                     // Reset marquee scroll for new song
                     sharedMarqueeStartTime = Date()
@@ -1519,6 +1530,9 @@ struct NotchShelfView: View {
                 if !newTitle.isEmpty {
                     mediaHUDFadedOut = false
                     startMediaFadeTimer()
+                    if musicManager.isBrowserSource && musicManager.isPlaying {
+                        endBrowserTrackLoadingHold()
+                    }
                 }
             }
             .onChange(of: musicManager.isPlaying) { wasPlaying, isPlaying in
@@ -1536,10 +1550,16 @@ struct NotchShelfView: View {
                     mediaDebounceWorkItem = workItem
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
                     startMediaFadeTimer()
+                    if musicManager.isBrowserSource {
+                        endBrowserTrackLoadingHold()
+                    }
                 }
                 if !isPlaying && wasPlaying {
                     mediaDebounceWorkItem?.cancel()
                     isMediaStable = false
+                    if musicManager.isBrowserSource {
+                        beginBrowserTrackLoadingHold(duration: 2.6)
+                    }
                 }
             }
             .onChange(of: autoFadeMediaHUD) { wasEnabled, isEnabled in
@@ -1552,6 +1572,11 @@ struct NotchShelfView: View {
                     withAnimation(displayUnifiedOpenCloseAnimation) {
                         mediaHUDFadedOut = false
                     }
+                }
+            }
+            .onChange(of: musicManager.bundleIdentifier) { _, _ in
+                if !musicManager.isBrowserSource {
+                    endBrowserTrackLoadingHold()
                 }
             }
     }
@@ -1607,6 +1632,7 @@ struct NotchShelfView: View {
                     // Record dismissal to defer collapse until geometry is stable.
                     lastPopoverDismissedAt = Date()
                     if !state.isDropTargeted && !dragMonitor.isDragging {
+                        notchController.forceRecalculateAllWindowSizes()
                         DispatchQueue.main.async {
                             guard !state.isDropTargeted && !dragMonitor.isDragging else { return }
                             notchController.forceRecalculateAllWindowSizes()
@@ -1625,10 +1651,7 @@ struct NotchShelfView: View {
                 // Defer to next runloop so SwiftUI width/height settles before frame sync.
                 // This avoids the brief off-position jump on close/open transitions.
                 DispatchQueue.main.async {
-                    guard isExpandedOnThisScreen,
-                          !state.isDropTargeted,
-                          !dragMonitor.isDragging,
-                          !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
+                    guard isExpandedOnThisScreen, !state.isDropTargeted, !dragMonitor.isDragging else { return }
                     notchController.forceRecalculateAllWindowSizes()
                 }
             }
@@ -1673,23 +1696,13 @@ struct NotchShelfView: View {
                 NotchWindowController.shared.forceRecalculateAllWindowSizes()
             }
             .onChange(of: isTerminalViewVisible) { _, _ in
-                // SMOOTH: Skip during transitions — setupStateObservation handles sizing
-                guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
-                DispatchQueue.main.async {
-                    notchController.forceRecalculateAllWindowSizes()
-                }
+                notchController.forceRecalculateAllWindowSizes()
             }
             .onChange(of: isCameraViewVisible) { _, _ in
-                guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
-                DispatchQueue.main.async {
-                    notchController.forceRecalculateAllWindowSizes()
-                }
+                notchController.forceRecalculateAllWindowSizes()
             }
             .onChange(of: isCaffeineViewVisible) { _, _ in
-                guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
-                DispatchQueue.main.async {
-                    notchController.forceRecalculateAllWindowSizes()
-                }
+                notchController.forceRecalculateAllWindowSizes()
             }
             .onChange(of: canShowCameraFloatingButton) { _, canShow in
                 guard !canShow && showCameraView else { return }
@@ -1700,6 +1713,7 @@ struct NotchShelfView: View {
             }
             .onDisappear {
                 externalCollapseVisibilityWorkItem?.cancel()
+                browserTrackLoadingWorkItem?.cancel()
             }
             .background {
                 Button("") {
@@ -1806,6 +1820,26 @@ struct NotchShelfView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
+    private func beginBrowserTrackLoadingHold(duration: TimeInterval = 2.2) {
+        guard musicManager.isBrowserSource else { return }
+        let holdUntil = Date().addingTimeInterval(duration)
+        if holdUntil > browserTrackLoadingUntil {
+            browserTrackLoadingUntil = holdUntil
+        }
+
+        browserTrackLoadingWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            browserTrackLoadingUntil = .distantPast
+        }
+        browserTrackLoadingWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+
+    private func endBrowserTrackLoadingHold() {
+        browserTrackLoadingWorkItem?.cancel()
+        browserTrackLoadingUntil = .distantPast
+    }
+
     private func toggleExpandedShelfMediaSurface() {
         guard showMediaPlayer else { return }
         let showMedia = !isMediaPlayerVisibleInShelf
@@ -1816,7 +1850,7 @@ struct NotchShelfView: View {
             musicManager.isMediaHUDHidden = !showMedia
         }
 
-        // SMOOTH: Single deferred recalculate — avoid double sync+async
+        notchController.forceRecalculateAllWindowSizes()
         DispatchQueue.main.async {
             notchController.forceRecalculateAllWindowSizes()
         }
@@ -1865,8 +1899,6 @@ struct NotchShelfView: View {
             guard !notchController.hasActiveContextMenu() else { return }
             
             notchShelfDebugLog("⏳ AUTO-SHRINK COLLAPSING SHELF!")
-            // SMOOTH: Activate transition guard before collapse animation
-            notchController.beginExpandCollapseTransition()
             withAnimation(displayExpandCloseAnimation) {
                 state.expandedDisplayID = nil  // Collapse shelf on all screens
                 state.hoveringDisplayID = nil  // Reset hover state to go directly to regular notch
@@ -2138,6 +2170,7 @@ struct NotchShelfView: View {
         // Break up complex expressions for type checker
         let noHUDsVisible = !hudIsVisible && !HUDManager.shared.isVisible
         let notExpanded = !isExpandedOnThisScreen
+        let browserTrackLoading = isBrowserTrackLoading
         
         // CRITICAL (Issue #101): Hide media HUD when fullscreen app is active ON THIS DISPLAY
         // Multi-monitor support: Each screen independently tracks its fullscreen state
@@ -2145,22 +2178,22 @@ struct NotchShelfView: View {
         let notInFullscreen = !notchController.fullscreenDisplayIDs.contains(targetDisplayID)
         
         let shouldShowForced = musicManager.isMediaHUDForced &&
-            musicManager.isPlaying &&
-            !musicManager.isPlayerIdle &&
+            (musicManager.isPlaying || browserTrackLoading) &&
+            (!musicManager.isPlayerIdle || browserTrackLoading) &&
             showMediaPlayer &&
             noHUDsVisible &&
             notExpanded &&
             notInFullscreen &&
             !shouldLockMediaForTodo
         
-        let mediaIsPlaying = musicManager.isPlaying && !musicManager.songTitle.isEmpty
-        let notFadedOrTransitioning = !(autoFadeMediaHUD && mediaHUDFadedOut) && !isSongTransitioning
-        let debounceOk = !debounceMediaChanges || isMediaStable
+        let mediaIsPlaying = (musicManager.isPlaying && !musicManager.songTitle.isEmpty) || browserTrackLoading
+        let notFadedOrTransitioning = !(autoFadeMediaHUD && mediaHUDFadedOut)
+        let debounceOk = !debounceMediaChanges || isMediaStable || browserTrackLoading
         
         // FIX #95: Bypass ALL safeguards when forcing source switch (Spotify fallback)
         // When isMediaSourceForced is true, we know the source is playing (verified via AppleScript)
         let bypassSafeguards = musicManager.isMediaSourceForced
-        let hasContent = !musicManager.songTitle.isEmpty
+        let hasContent = !musicManager.songTitle.isEmpty || browserTrackLoading
         let shouldBlockAutoSwitch = shouldLockMediaForTodo
         let shouldShowNormal = showMediaPlayer && noHUDsVisible && notExpanded && notInFullscreen && !shouldBlockAutoSwitch &&
                               (bypassSafeguards ? hasContent : (mediaIsPlaying && notFadedOrTransitioning && debounceOk))
@@ -2248,9 +2281,18 @@ struct NotchShelfView: View {
                     RoundedRectangle(cornerRadius: currentCornerRadius)
                         .fill(notchOverlayTone(isExpandedOnThisScreen ? 0.08 : 0.2))
                         .overlay(
-                            Image(systemName: "music.note")
-                                .font(.system(size: isExpandedOnThisScreen ? 36 : 10))
-                                .foregroundStyle(notchPrimaryText(isExpandedOnThisScreen ? 0.3 : 0.5))
+                            Group {
+                                if isBrowserTrackLoading {
+                                    LoadingSpinner(
+                                        color: notchPrimaryText(isExpandedOnThisScreen ? 0.8 : 0.7),
+                                        size: isExpandedOnThisScreen ? 34 : 12
+                                    )
+                                } else {
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: isExpandedOnThisScreen ? 36 : 10))
+                                        .foregroundStyle(notchPrimaryText(isExpandedOnThisScreen ? 0.3 : 0.5))
+                                }
+                            }
                         )
                 }
             }
@@ -2507,7 +2549,9 @@ struct NotchShelfView: View {
                 let currentYOffset = isExpandedOnThisScreen ? expandedYOffset : hudYOffset
                 
                 // Title text
-                let songTitle = musicManager.songTitle.isEmpty ? "Not Playing" : musicManager.songTitle
+                let songTitle = isBrowserTrackLoading && musicManager.songTitle.isEmpty
+                    ? "Loading..."
+                    : (musicManager.songTitle.isEmpty ? "Not Playing" : musicManager.songTitle)
                 
                 // Alignment: Centered in HUD, left-aligned in expanded
                 let currentAlignment: Alignment = isExpandedOnThisScreen ? .leading : .center
@@ -2541,21 +2585,22 @@ struct NotchShelfView: View {
         
         let noHUDsVisible = !hudIsVisible && !HUDManager.shared.isVisible
         let notExpanded = !isExpandedOnThisScreen
+        let browserTrackLoading = isBrowserTrackLoading
         let targetDisplayID = targetScreen?.displayID ?? 0
         let notInFullscreen = !notchController.fullscreenDisplayIDs.contains(targetDisplayID)
         let shouldShowForced = musicManager.isMediaHUDForced &&
-            musicManager.isPlaying &&
-            !musicManager.isPlayerIdle &&
+            (musicManager.isPlaying || browserTrackLoading) &&
+            (!musicManager.isPlayerIdle || browserTrackLoading) &&
             showMediaPlayer &&
             noHUDsVisible &&
             notExpanded &&
             notInFullscreen &&
             !shouldLockMediaForTodo
-        let mediaIsActive = musicManager.isPlaying && !musicManager.songTitle.isEmpty
-        let notFadedOrTransitioning = !(autoFadeMediaHUD && mediaHUDFadedOut) && !isSongTransitioning
-        let debounceOk = !debounceMediaChanges || isMediaStable
+        let mediaIsActive = (musicManager.isPlaying && !musicManager.songTitle.isEmpty) || browserTrackLoading
+        let notFadedOrTransitioning = !(autoFadeMediaHUD && mediaHUDFadedOut)
+        let debounceOk = !debounceMediaChanges || isMediaStable || browserTrackLoading
         let bypassSafeguards = musicManager.isMediaSourceForced
-        let hasContent = !musicManager.songTitle.isEmpty
+        let hasContent = !musicManager.songTitle.isEmpty || browserTrackLoading
         let shouldBlockAutoSwitch = shouldLockMediaForTodo
         let shouldShowNormal = showMediaPlayer && noHUDsVisible && notExpanded && notInFullscreen && !shouldBlockAutoSwitch &&
                               (bypassSafeguards ? hasContent : (mediaIsActive && notFadedOrTransitioning && debounceOk))
@@ -2567,9 +2612,11 @@ struct NotchShelfView: View {
     private var shouldShowExpandedMediaPlayerForMorphing: Bool {
         guard isExpandedOnThisScreen && enableNotchShelf else { return false }
         // TERMINOTCH: Don't show morphing overlays when terminal is visible (and enabled)
-        guard !(terminalManager.isInstalled && terminalNotchEnabled && terminalManager.isVisible) else { return false }
+        let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
+        guard !(terminalManager.isInstalled && terminalEnabled && terminalManager.isVisible) else { return false }
         // HIGH ALERT: Don't show morphing overlays when caffeine view is visible (and enabled)
-        let caffeineShouldShow = caffeineInstalled && caffeineEnabled
+        let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
+        let caffeineShouldShow = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) && caffeineEnabled
         guard !(showCaffeineView && caffeineShouldShow) else { return false }
         guard !isCameraViewVisible else { return false }
         let dragMonitor = DragMonitor.shared
@@ -3412,15 +3459,8 @@ struct NotchShelfView: View {
                     }
             }
         )
-        .onChange(of: shelfAutoScrollVelocity) { _, newVelocity in
-            if newVelocity != 0 && shelfAutoScrollCancellable == nil {
-                shelfAutoScrollCancellable = Timer.publish(every: 1.0 / 90.0, on: .main, in: .common)
-                    .autoconnect()
-                    .sink { _ in performShelfAutoScrollTick() }
-            } else if newVelocity == 0 {
-                shelfAutoScrollCancellable?.cancel()
-                shelfAutoScrollCancellable = nil
-            }
+        .onReceive(shelfAutoScrollTicker) { _ in
+            performShelfAutoScrollTick()
         }
         // Listen for marquee drags without stealing child item drags.
         .simultaneousGesture(shelfSelectionGesture, including: .all)
@@ -3445,9 +3485,6 @@ private struct ShelfScrollViewResolver: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        // SMOOTH: Skip NSView hierarchy walk during expand/collapse animations.
-        // The scroll view doesn't need re-resolving during the 0.45s transition.
-        guard !NotchWindowController.shared.isExpandCollapseTransitioning else { return }
         DispatchQueue.main.async {
             resolveScrollView(from: nsView)
         }

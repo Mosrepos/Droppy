@@ -186,7 +186,7 @@ final class VoiceTranscribeManager: ObservableObject {
         // Start recording immediately - we can transcribe later
         // Model loading happens in parallel if needed
         if whisperKit == nil && isModelDownloaded {
-            print("VoiceTranscribe: Model not in memory, loading in background...")
+            print("VoiceTranscribe: Model not in memory, loading in background…")
             Task {
                 do {
                     // Use download: true - WhisperKit skips download if model exists in cache
@@ -316,7 +316,7 @@ final class VoiceTranscribeManager: ObservableObject {
         
         beginProcessingSession(
             inputDuration: recordingDuration,
-            initialStatus: "Preparing recording..."
+            initialStatus: "Preparing recording…"
         )
         
         // Start transcription
@@ -407,7 +407,7 @@ final class VoiceTranscribeManager: ObservableObject {
         
         beginProcessingSession(
             inputDuration: audioDuration(at: url),
-            initialStatus: "Retrying transcription..."
+            initialStatus: "Retrying transcription…"
         )
         recordingURL = url
         
@@ -429,7 +429,7 @@ final class VoiceTranscribeManager: ObservableObject {
         
         beginProcessingSession(
             inputDuration: 0,
-            initialStatus: "Preparing audio file..."
+            initialStatus: "Preparing audio file…"
         )
         
         transcriptionTask?.cancel()
@@ -650,14 +650,14 @@ final class VoiceTranscribeManager: ObservableObject {
         } else {
             beginProcessingSession(
                 inputDuration: audioDuration(at: url),
-                initialStatus: "Preparing recording..."
+                initialStatus: "Preparing recording…"
             )
         }
-        setTranscriptionProgress(0.05, status: "Preparing recording...")
+        setTranscriptionProgress(0.05, status: "Preparing recording…")
         
         // Ensure we have a loaded model
         if whisperKit == nil {
-            setTranscriptionProgress(0.1, status: "Loading AI model...")
+            setTranscriptionProgress(0.1, status: "Loading AI model…")
             do {
                 let kit = try await WhisperKit(
                     model: selectedModel.rawValue,
@@ -671,7 +671,7 @@ final class VoiceTranscribeManager: ObservableObject {
                 try await kit.prewarmModels()
                 try Task.checkCancellation()
                 whisperKit = kit
-                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio...")
+                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio…")
             } catch is CancellationError {
                 finishProcessingSession()
                 state = .idle
@@ -696,12 +696,12 @@ final class VoiceTranscribeManager: ObservableObject {
                 // Map progress: 0.2 to 0.95 (leave room for loading and completion)
                 self.setTranscriptionProgress(
                     0.2 + (progress.fractionCompleted * 0.75),
-                    status: "Transcribing audio..."
+                    status: "Transcribing audio…"
                 )
             }
         }
         defer { progressObservation.invalidate() }
-        setTranscriptionProgress(0.2, status: "Transcribing audio...")
+        setTranscriptionProgress(0.2, status: "Transcribing audio…")
         
         do {
             // Configure transcription options
@@ -715,7 +715,7 @@ final class VoiceTranscribeManager: ObservableObject {
             // Transcribe the audio file
             let results = try await whisper.transcribe(audioPath: url.path, decodeOptions: options)
             try Task.checkCancellation()
-            setTranscriptionProgress(0.98, status: "Finalizing transcript...")
+            setTranscriptionProgress(0.98, status: "Finalizing transcript…")
             
             // Extract text from results
             if let result = results.first {
@@ -754,7 +754,7 @@ final class VoiceTranscribeManager: ObservableObject {
     
     /// Transcribe an external audio file (does NOT delete the source file)
     private func transcribeAudioFile(at url: URL) async {
-        setTranscriptionProgress(0.05, status: "Preparing audio file...")
+        setTranscriptionProgress(0.05, status: "Preparing audio file…")
         
         // Start security-scoped access (required for files from NSOpenPanel)
         let accessGranted = url.startAccessingSecurityScopedResource()
@@ -773,7 +773,7 @@ final class VoiceTranscribeManager: ObservableObject {
         
         do {
             // Convert audio to WAV format (16kHz, mono, 16-bit) - required by WhisperKit
-            setTranscriptionProgress(0.08, status: "Converting audio...")
+            setTranscriptionProgress(0.08, status: "Converting audio…")
             if let convertedURL = try await convertToWav(source: url, destination: tempWavURL) {
                 print("VoiceTranscribe: Converted audio to WAV: \(convertedURL.path)")
             } else {
@@ -790,9 +790,9 @@ final class VoiceTranscribeManager: ObservableObject {
         
         // Ensure we have a loaded model
         if whisperKit == nil {
-            setTranscriptionProgress(0.1, status: "Loading AI model...")
+            setTranscriptionProgress(0.1, status: "Loading AI model…")
             do {
-                print("VoiceTranscribe: Loading WhisperKit model...")
+                print("VoiceTranscribe: Loading WhisperKit model…")
                 let kit = try await WhisperKit(
                     model: selectedModel.rawValue,
                     verbose: true,  // Enable verbose for debugging
@@ -806,7 +806,7 @@ final class VoiceTranscribeManager: ObservableObject {
                 try Task.checkCancellation()
                 whisperKit = kit
                 print("VoiceTranscribe: Model loaded successfully")
-                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio...")
+                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio…")
             } catch is CancellationError {
                 try? FileManager.default.removeItem(at: tempWavURL)
                 finishProcessingSession()
@@ -833,12 +833,12 @@ final class VoiceTranscribeManager: ObservableObject {
                 guard let self else { return }
                 self.setTranscriptionProgress(
                     0.2 + (progress.fractionCompleted * 0.75),
-                    status: "Transcribing audio..."
+                    status: "Transcribing audio…"
                 )
             }
         }
         defer { progressObservation.invalidate() }
-        setTranscriptionProgress(0.2, status: "Transcribing audio...")
+        setTranscriptionProgress(0.2, status: "Transcribing audio…")
         
         do {
             var options = DecodingOptions()
@@ -851,11 +851,11 @@ final class VoiceTranscribeManager: ObservableObject {
             try Task.checkCancellation()
             print("VoiceTranscribe: Transcription returned \(results.count) results")
             
-            setTranscriptionProgress(0.98, status: "Finalizing transcript...")
+            setTranscriptionProgress(0.98, status: "Finalizing transcript…")
             
             if let result = results.first {
                 transcriptionResult = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                print("VoiceTranscribe: File transcription complete - \(transcriptionResult.count) chars: '\(transcriptionResult.prefix(100))...'")
+                print("VoiceTranscribe: File transcription complete - \(transcriptionResult.count) chars: '\(transcriptionResult.prefix(100))…'")
                 
                 presentTranscriptionResult()
                 finishProcessingSession()
@@ -1126,15 +1126,45 @@ extension VoiceTranscribeManager {
 // MARK: - Keyboard Shortcuts
 
 extension VoiceTranscribeManager {
+    private static let disallowedUnmodifiedShortcutKeyCodes: Set<Int> = [
+        96,  // F5 (Dictation / Keyboard brightness down)
+        97,  // F6 (Do Not Disturb / Keyboard brightness up)
+        98,  // F7 (Previous track)
+        99,  // F3 (Mission Control)
+        100, // F8 (Play/Pause)
+        101, // F9 (Next track)
+        103, // F11 (Volume down)
+        109, // F10 (Mute)
+        111, // F12 (Volume up)
+        118, // F4 (Spotlight)
+        120, // F2 (Brightness up)
+        122  // F1 (Brightness down)
+    ]
+
+    private static func sanitizeShortcut(_ shortcut: SavedShortcut?) -> SavedShortcut? {
+        guard let shortcut else { return nil }
+        let flags = NSEvent.ModifierFlags(rawValue: shortcut.modifiers)
+            .intersection([.command, .shift, .option, .control, .function])
+
+        // Unmodified top-row hardware/media keys still trigger system actions (OSD/sound/volume),
+        // so they are not safe global shortcuts for recording toggles.
+        if flags.isEmpty && disallowedUnmodifiedShortcutKeyCodes.contains(shortcut.keyCode) {
+            print("[VoiceTranscribe] Ignoring unsupported unmodified media key shortcut: \(shortcut.keyCode)")
+            return nil
+        }
+
+        return SavedShortcut(keyCode: shortcut.keyCode, modifiers: flags.rawValue)
+    }
+
     /// Load shortcut preferences from UserDefaults
     func loadShortcutPreferences() {
         if let data = UserDefaults.standard.data(forKey: "voiceTranscribeQuickRecordShortcut"),
            let shortcut = try? JSONDecoder().decode(SavedShortcut.self, from: data) {
-            quickRecordShortcut = shortcut
+            quickRecordShortcut = Self.sanitizeShortcut(shortcut)
         }
         if let data = UserDefaults.standard.data(forKey: "voiceTranscribeInvisiRecordShortcut"),
            let shortcut = try? JSONDecoder().decode(SavedShortcut.self, from: data) {
-            invisiRecordShortcut = shortcut
+            invisiRecordShortcut = Self.sanitizeShortcut(shortcut)
         }
         
         // Start monitoring if we have any shortcuts
@@ -1237,11 +1267,12 @@ extension VoiceTranscribeManager {
     
     /// Set shortcut for a recording mode
     func setShortcut(_ shortcut: SavedShortcut?, for mode: VoiceRecordingMode) {
+        let sanitized = Self.sanitizeShortcut(shortcut)
         switch mode {
         case .quick:
-            quickRecordShortcut = shortcut
+            quickRecordShortcut = sanitized
         case .invisi:
-            invisiRecordShortcut = shortcut
+            invisiRecordShortcut = sanitized
         }
     }
     

@@ -107,10 +107,15 @@ final class MusicManager: ObservableObject {
                 
                 if !isSpotifyBundle {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        guard let self else { return }
                         SpotifyController.shared.isSpotifyPlaying { isSpotifyPlaying in
+                            // Track changes from browsers/web players can briefly report
+                            // paused while keeping previous metadata visible. Don't let
+                            // Spotify steal focus during that handoff.
+                            guard !self.hasVisibleTrackContext else { return }
                             if isSpotifyPlaying {
                                 // Spotify is playing in background - switch to it
-                                self?.forceUpdateFromSpotify()
+                                self.forceUpdateFromSpotify()
                             }
                         }
                     }
@@ -127,20 +132,7 @@ final class MusicManager: ObservableObject {
         }
     }
     @Published private(set) var songDuration: Double = 0
-    /// Elapsed time with dedup — only publishes when value changes by ≥ 0.5s
-    /// to avoid cascading 1Hz re-renders to all observers.
-    private var _elapsedTime: Double = 0
-    var elapsedTime: Double {
-        get { _elapsedTime }
-        set {
-            guard abs(newValue - _elapsedTime) >= 0.5 || _elapsedTime == 0 else {
-                _elapsedTime = newValue  // store silently for accurate reads
-                return
-            }
-            _elapsedTime = newValue
-            objectWillChange.send()
-        }
-    }
+    @Published private(set) var elapsedTime: Double = 0
     @Published private(set) var playbackRate: Double = 1.0
     @Published private(set) var timestampDate: Date = .distantPast
     @Published private(set) var bundleIdentifier: String?
@@ -170,6 +162,7 @@ final class MusicManager: ObservableObject {
     private var currentContentItemIdentifier: String?
     private var lastArtworkTrackIdentity: String = ""
     private var lastArtworkContentItemIdentifier: String?
+    private var lastArtworkFingerprint: UInt64?
     private var lastParsedEventTimestampString: String?
     private var lastParsedEventTimestampDate: Date?
     private let iso8601DateFormatter = ISO8601DateFormatter()
@@ -800,6 +793,12 @@ final class MusicManager: ObservableObject {
     var appleMusicController: AppleMusicController {
         AppleMusicController.shared
     }
+
+    /// Whether the current media source is a browser-based player.
+    var isBrowserSource: Bool {
+        guard let bundleIdentifier else { return false }
+        return isBrowserBundle(bundleIdentifier)
+    }
     
     /// Temporarily suppress timing updates after Spotify commands to avoid stale data
     private var suppressTimingUpdatesUntil: Date = .distantPast
@@ -861,7 +860,7 @@ final class MusicManager: ObservableObject {
     /// FIX #95: Force switch to Spotify by fetching data directly via AppleScript
     /// This bypasses MediaRemote which may be stuck on a stale source (e.g., paused browser)
     func forceUpdateFromSpotify() {
-        print("🎵 MusicManager: Forcing update from Spotify via AppleScript...")
+        print("🎵 MusicManager: Forcing update from Spotify via AppleScript…")
         
         SpotifyController.shared.fetchCurrentTrackInfo { [weak self] title, artist, album, duration, position in
             guard let self = self,
@@ -915,6 +914,12 @@ final class MusicManager: ObservableObject {
     /// Whether playback stopped recently (within 5 seconds) - keeps UI visible
     @Published private(set) var wasRecentlyPlaying: Bool = false
     private var recentlyPlayingTimer: Timer?
+
+    private var hasVisibleTrackContext: Bool {
+        !songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !albumName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     
     /// Whether a player is active (even if paused)
     var isPlayerIdle: Bool {
@@ -936,6 +941,8 @@ final class MusicManager: ObservableObject {
     private var isSpotifyPausedSourceReacquireFetchInFlight = false
     private let spotifyPausedSourceReacquireInterval: TimeInterval = 0.7
     private let spotifyPausedSourceReacquireWindow: TimeInterval = 6.0
+    private var transientIdleGraceDeadline: Date = .distantPast
+    private let transientIdleGraceWindow: TimeInterval = 3.0
 
     // Defer high-frequency media updates while NSMenu is actively tracking.
     // This keeps status-item menu highlight responsive.
@@ -1050,17 +1057,19 @@ final class MusicManager: ObservableObject {
         currentContentItemIdentifier = nil
         lastArtworkTrackIdentity = ""
         lastArtworkContentItemIdentifier = nil
+        lastArtworkFingerprint = nil
         lastParsedEventTimestampString = nil
         lastParsedEventTimestampDate = nil
         wasRecentlyPlaying = false
         isMediaHUDForced = false
+        transientIdleGraceDeadline = .distantPast
         stopAppleMusicMetadataSyncTimer()
         stopFallbackTimingSync()
     }
     
     /// Called when screen wakes from sleep - restart the adapter to prevent frozen HUD
     @objc private func handleScreenWake() {
-        print("MusicManager: Screen woke - restarting adapter process to refresh media stream...")
+        print("MusicManager: Screen woke - restarting adapter process to refresh media stream…")
         restartAdapterProcess()
     }
     
@@ -1251,6 +1260,14 @@ final class MusicManager: ObservableObject {
         menuTrackingDepth = 0
         deferredUpdateDuringMenuTracking = nil
     }
+
+    private func hasVisibleMenuWindow() -> Bool {
+        NSApp.windows.contains { window in
+            guard window.isVisible else { return false }
+            guard window.level.rawValue >= NSWindow.Level.popUpMenu.rawValue else { return false }
+            return NSStringFromClass(type(of: window)).lowercased().contains("menu")
+        }
+    }
     
     // MARK: - Process Management
     
@@ -1309,7 +1326,7 @@ final class MusicManager: ObservableObject {
                 
                 if !lineData.isEmpty {
                     if let lineStr = String(data: lineData, encoding: .utf8) {
-                        musicManagerLog("MusicManager: JSON line: \(lineStr.prefix(200))...")
+                        musicManagerLog("MusicManager: JSON line: \(lineStr.prefix(200))…")
                     }
                     self?.processJSONLine(lineData)
                 }
@@ -1434,15 +1451,17 @@ final class MusicManager: ObservableObject {
         if menuTrackingDepth > 0 {
             // Safety net: if tracking notifications became unbalanced, recover automatically.
             if RunLoop.main.currentMode != .eventTracking {
-                let hasVisibleMenuWindow = NSApp.windows.contains { window in
-                    guard window.isVisible else { return false }
-                    guard window.level.rawValue >= NSWindow.Level.popUpMenu.rawValue else { return false }
-                    return NSStringFromClass(type(of: window)).lowercased().contains("menu")
-                }
-                if !hasVisibleMenuWindow {
+                if !hasVisibleMenuWindow() {
                     menuTrackingDepth = 0
                 }
             }
+        }
+
+        // Fallback for panels where NSMenu tracking notifications are not reliably delivered.
+        // If a menu window is currently visible, defer media updates to avoid menu flicker.
+        if menuTrackingDepth == 0, hasVisibleMenuWindow() {
+            deferredUpdateDuringMenuTracking = update
+            return
         }
 
         if menuTrackingDepth > 0 {
@@ -1488,6 +1507,19 @@ final class MusicManager: ObservableObject {
         let incomingBundleFromPayload = payload.launchableBundleIdentifier
         let incomingBundleId = incomingBundleFromPayload ?? previousBundleIdentifier
         let sourceChanged = incomingBundleFromPayload != nil && incomingBundleFromPayload != previousBundleIdentifier
+        let pausedSpotifyTakeoverSnapshot =
+            sourceChanged &&
+            incomingBundleFromPayload == SpotifyController.spotifyBundleId &&
+            previousBundleIdentifier != nil &&
+            previousBundleIdentifier != SpotifyController.spotifyBundleId &&
+            !payload.isPlaying
+
+        // Ignore transient paused Spotify snapshots while a non-Spotify source
+        // is actively transitioning tracks. This prevents brief Spotify flashes.
+        if pausedSpotifyTakeoverSnapshot && hasVisibleTrackContext {
+            musicManagerLog("MusicManager: Ignoring paused Spotify takeover snapshot during active non-Spotify context")
+            return
+        }
         let payloadContentItemChanged = payload.contentItemIdentifier != nil &&
             payload.contentItemIdentifier != currentContentItemIdentifier
 
@@ -1513,6 +1545,21 @@ final class MusicManager: ObservableObject {
             rawElapsed == nil &&
             !payload.isPlaying &&
             (payload.playbackRate ?? 0) <= 0
+
+        if payloadLooksIdle && hasVisibleTrackContext {
+            let now = Date()
+            if transientIdleGraceDeadline == .distantPast {
+                transientIdleGraceDeadline = now.addingTimeInterval(transientIdleGraceWindow)
+                musicManagerLog("MusicManager: Entering transient idle grace window")
+                return
+            }
+            if now < transientIdleGraceDeadline {
+                musicManagerLog("MusicManager: Preserving display during transient idle grace")
+                return
+            }
+        } else {
+            transientIdleGraceDeadline = .distantPast
+        }
 
         // Source switched (or current source went idle) but payload has no active media:
         // clear stale metadata so the notch can collapse instead of staying "stuck".
@@ -1692,23 +1739,27 @@ final class MusicManager: ObservableObject {
             stopSpotifyPausedSourceReacquire()
         }
         
-        // Handle artwork only when track identity changes or when artwork is missing.
+        // Handle artwork on track/context changes and when the payload art itself changes.
         if let base64Art = payload.artworkData, shouldAcceptArtworkForPayload {
             let contentItemChanged = payload.contentItemIdentifier != nil &&
                 payload.contentItemIdentifier != lastArtworkContentItemIdentifier
             let artworkTrackChanged = incomingIdentity != lastArtworkTrackIdentity
             let hasNoArtwork = albumArt.size.width <= 0 || albumArt.size.height <= 0
+            let artworkFingerprint = fingerprintArtworkPayload(base64Art)
+            let artworkPayloadChanged = artworkFingerprint != lastArtworkFingerprint
 
-            if isTrackChange || contentItemChanged || artworkTrackChanged || hasNoArtwork,
+            if isTrackChange || contentItemChanged || artworkTrackChanged || artworkPayloadChanged || hasNoArtwork,
                let artData = Data(base64Encoded: base64Art),
                let image = NSImage(data: artData) {
                 albumArt = image
                 lastArtworkTrackIdentity = incomingIdentity
                 lastArtworkContentItemIdentifier = payload.contentItemIdentifier
+                lastArtworkFingerprint = artworkFingerprint
             }
         } else if isTrackChange {
             lastArtworkTrackIdentity = ""
             lastArtworkContentItemIdentifier = nil
+            lastArtworkFingerprint = nil
         }
         
         // Debug: Log the update
@@ -1730,6 +1781,16 @@ final class MusicManager: ObservableObject {
         lastParsedEventTimestampString = rawTimestamp
         lastParsedEventTimestampDate = parsed
         return parsed
+    }
+
+    /// Tracks artwork changes even when metadata stays constant (common for radio streams).
+    private func fingerprintArtworkPayload(_ payload: String) -> UInt64 {
+        var hash: UInt64 = 1469598103934665603
+        for byte in payload.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return hash
     }
     
     // MARK: - Cached Visualizer Color

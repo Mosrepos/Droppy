@@ -210,7 +210,6 @@ class ClipboardManager: ObservableObject {
     
     @Published var isEnabled: Bool = false {
         didSet {
-            guard oldValue != isEnabled else { return }
             UserDefaults.standard.set(isEnabled, forKey: "enableClipboardBeta")
             if isEnabled {
                 startMonitoring()
@@ -222,7 +221,6 @@ class ClipboardManager: ObservableObject {
     
     @Published var historyLimit: Int = 50 {
         didSet {
-            guard oldValue != historyLimit else { return }
             UserDefaults.standard.set(historyLimit, forKey: "clipboardHistoryLimit")
             enforceHistoryLimit()
         }
@@ -236,7 +234,6 @@ class ClipboardManager: ObservableObject {
     
     @Published var skipConcealedContent: Bool = false {
         didSet {
-            guard oldValue != skipConcealedContent else { return }
             UserDefaults.standard.set(skipConcealedContent, forKey: "skipConcealedClipboard")
         }
     }
@@ -433,7 +430,7 @@ class ClipboardManager: ObservableObject {
                     
                     // Save if we migrated data
                     if needsSave {
-                        print("📋 Saving migrated history to disk...")
+                        print("📋 Saving migrated history to disk…")
                         self.isLoading = false
                         self.saveToDisk()
                         self.isLoading = true

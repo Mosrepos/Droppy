@@ -229,12 +229,7 @@ class NotchDragContainer: NSView {
             _ = ToDoManager.shared.isCalendarSyncEnabled
         } onChange: {
             DispatchQueue.main.async { [weak self] in
-                // SMOOTH: Skip expensive tracking area rebuild during expand/collapse
-                // animations. The tracking area will be recalculated after the
-                // transition settles when the observer re-fires.
-                if !NotchWindowController.shared.isExpandCollapseTransitioning {
-                    self?.updateTrackingAreas()
-                }
+                self?.updateTrackingAreas()
                 self?.stateObservationActive = false
                 self?.setupStateObservation()  // Re-register (one-shot observation)
             }
@@ -728,7 +723,7 @@ class NotchDragContainer: NSView {
         let isMailAppEmail = mailTypes.contains(where: { pasteboard.types?.contains($0) ?? false })
         
         if isMailAppEmail {
-            print("📧 Mail.app email detected, using AppleScript to export...")
+            print("📧 Mail.app email detected, using AppleScript to export…")
             
             Task { @MainActor in
                 let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -831,37 +826,24 @@ class NotchDragContainer: NSView {
             return true
         }
         
-        // 3. Handle plain text drops (including web URLs) - create a .txt file
-        if let text = pasteboard.string(forType: .string), !text.isEmpty {
-            // Create a temp directory for text files
-            let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("DroppyDrops-\(UUID().uuidString)")
-            try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true, attributes: nil)
-            
-            // Generate a timestamped filename
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-            let timestamp = formatter.string(from: Date())
-            let filename = "Text \(timestamp).txt"
-            let fileURL = dropLocation.appendingPathComponent(filename)
-            
-            do {
-                try text.write(to: fileURL, atomically: true, encoding: .utf8)
-                DispatchQueue.main.async {
-                    let animationScreen = targetDisplayID.flatMap { displayID in
-                        NSScreen.screens.first(where: { $0.displayID == displayID })
-                    }
-                    withAnimation(DroppyAnimation.itemInsertion(for: animationScreen)) {
-                        DroppyState.shared.addItems(from: [fileURL])
-                        if let displayID = targetDisplayID {
-                            DroppyState.shared.expandShelf(for: displayID)
-                        }
+        // 3. Handle text/URL drops.
+        // Web links are materialized as .webloc items; plain text remains a .txt file.
+        let dropLocation = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("DroppyDrops-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dropLocation, withIntermediateDirectories: true, attributes: nil)
+        let droppedFiles = DroppyLinkSupport.createTextOrLinkFiles(from: pasteboard, in: dropLocation)
+        if !droppedFiles.isEmpty {
+            DispatchQueue.main.async {
+                let animationScreen = targetDisplayID.flatMap { displayID in
+                    NSScreen.screens.first(where: { $0.displayID == displayID })
+                }
+                withAnimation(DroppyAnimation.itemInsertion(for: animationScreen)) {
+                    DroppyState.shared.addItems(from: droppedFiles)
+                    if let displayID = targetDisplayID {
+                        DroppyState.shared.expandShelf(for: displayID)
                     }
                 }
-                return true
-            } catch {
-                print("Error saving text file: \(error)")
-                return false
             }
+            return true
         }
         
         return false

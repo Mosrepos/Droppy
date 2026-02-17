@@ -35,7 +35,7 @@ struct ShelfQuickActionsBar: View {
                 .fill(AdaptiveColors.overlayAuto(0.001)) // Nearly invisible but captures events
                 .frame(width: barWidth, height: buttonSize + 8)
                 // Track when drag is over the bar area
-                .onDrop(of: [UTType.fileURL, UTType.image, UTType.movie, UTType.data], isTargeted: $isBarAreaTargeted) { _ in
+                .onDrop(of: [UTType.fileURL, UTType.url, UTType.text, UTType.image, UTType.movie, UTType.data], isTargeted: $isBarAreaTargeted) { _ in
                     return false  // Don't handle drop here
                 }
                 // Keep shelf quick actions state alive while drag is over bar area

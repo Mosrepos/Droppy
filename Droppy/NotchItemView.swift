@@ -242,13 +242,16 @@ struct NotchItemView: View {
                 unzipFile()
                 return
             }
-            NSWorkspace.shared.open(item.url)
+            item.openFile()
         }
         
         let rightClickClosure: () -> Void = {
             hoverTask?.cancel()
             hoverTask = nil
             showFolderPreview = false
+            if cachedAvailableApps.isEmpty || cachedSharingServices.isEmpty {
+                refreshContextMenuCache()
+            }
             if !state.selectedItems.contains(item.id) {
                 state.deselectAll()
                 state.select(item)
@@ -440,7 +443,6 @@ struct NotchItemView: View {
                         state.clearPoof(for: item.id)
                     }
                 }
-                refreshContextMenuCache()
             }
             .onChange(of: item.url) { _, _ in
                 refreshContextMenuCache()
@@ -465,7 +467,7 @@ struct NotchItemView: View {
                 Label("Show in Finder", systemImage: "folder")
             }
             
-            // Move To...
+            // Move To…
             Menu {
                 // Saved Destinations
                 ForEach(DestinationManager.shared.destinations) { dest in
@@ -483,10 +485,10 @@ struct NotchItemView: View {
                 Button {
                     chooseDestinationAndMove()
                 } label: {
-                    Label("Choose Folder...", systemImage: "folder.badge.plus")
+                    Label("Choose Folder…", systemImage: "folder.badge.plus")
                 }
             } label: {
-                Label("Move to...", systemImage: "arrow.right.doc.on.clipboard")
+                Label("Move to…", systemImage: "arrow.right.doc.on.clipboard")
             }
             
             // Open With submenu
@@ -505,7 +507,7 @@ struct NotchItemView: View {
                         }
                     }
                 } label: {
-                    Label("Open With...", systemImage: "square.and.arrow.up.on.square")
+                    Label("Open With…", systemImage: "square.and.arrow.up.on.square")
                 }
             }
             
@@ -513,7 +515,7 @@ struct NotchItemView: View {
             Menu {
                 ForEach(cachedSharingServices, id: \.title) { service in
                     Button {
-                        service.perform(withItems: [item.url])
+                        service.perform(withItems: [item.preferredShareURL])
                     } label: {
                         Label {
                             Text(service.title)
@@ -574,9 +576,9 @@ struct NotchItemView: View {
                     }
                 } label: {
                     if state.selectedItems.count > 1 && state.selectedItems.contains(item.id) {
-                        Label("Convert All (\(state.selectedItems.count))...", systemImage: "arrow.triangle.2.circlepath")
+                        Label("Convert All (\(state.selectedItems.count))…", systemImage: "arrow.triangle.2.circlepath")
                     } else {
-                        Label("Convert to...", systemImage: "arrow.triangle.2.circlepath")
+                        Label("Convert to…", systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
             }
@@ -645,7 +647,7 @@ struct NotchItemView: View {
                             }
                         }
                         if !isMultiSelect && (showImageTargetSize || showVideoTargetSize) {
-                            Button("Target Size...") {
+                            Button("Target Size…") {
                                 compressFile(mode: nil)
                             }
                         }
@@ -810,7 +812,7 @@ struct NotchItemView: View {
 
     private func refreshContextMenuCache() {
         cachedAvailableApps = item.getAvailableApplications()
-        cachedSharingServices = sharingServicesForItems([item.url])
+        cachedSharingServices = sharingServicesForItems([item.preferredShareURL])
     }
     
     // MARK: - OCR
@@ -971,8 +973,7 @@ struct NotchItemView: View {
             }
             
             if let compressedURL = await FileCompressor.shared.compress(url: item.url, mode: mode) {
-                // Mark compressed file as temporary for cleanup when removed
-                let newItem = DroppedItem(url: compressedURL, isTemporary: true)
+                let newItem = DroppedItem(url: compressedURL, isTemporary: isTemporaryOutputURL(compressedURL))
                 
                 // Smart Export: auto-save to folder if enabled
                 _ = await MainActor.run {
@@ -1034,7 +1035,7 @@ struct NotchItemView: View {
         Task {
             do {
                 let outputURL = try await item.removeBackground()
-                let newItem = DroppedItem(url: outputURL, isTemporary: true)
+                let newItem = DroppedItem(url: outputURL, isTemporary: isTemporaryOutputURL(outputURL))
                 
                 await MainActor.run {
                     isRemovingBackground = false
@@ -1109,7 +1110,7 @@ struct NotchItemView: View {
         Task {
             for selectedItem in selectedItems {
                 if let compressedURL = await FileCompressor.shared.compress(url: selectedItem.url, mode: mode) {
-                    let newItem = DroppedItem(url: compressedURL, isTemporary: true)
+                    let newItem = DroppedItem(url: compressedURL, isTemporary: isTemporaryOutputURL(compressedURL))
                     
                     // Smart Export: auto-save to folder if enabled
                     _ = await MainActor.run {
@@ -1265,7 +1266,7 @@ struct NotchItemView: View {
             for selectedItem in imagesToProcess {
                 do {
                     let outputURL = try await selectedItem.removeBackground()
-                    let newItem = DroppedItem(url: outputURL, isTemporary: true)
+                    let newItem = DroppedItem(url: outputURL, isTemporary: isTemporaryOutputURL(outputURL))
                     await MainActor.run {
                         // End processing for old item, replace with new
                         state.endProcessing(for: selectedItem.id)
@@ -1289,6 +1290,11 @@ struct NotchItemView: View {
                 state.endFileOperation()
             }
         }
+    }
+
+    private func isTemporaryOutputURL(_ url: URL) -> Bool {
+        let tempPath = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        return url.standardizedFileURL.path.hasPrefix(tempPath)
     }
     
     // MARK: - Rename

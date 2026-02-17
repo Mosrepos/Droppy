@@ -8,10 +8,10 @@ struct SavedShortcut: Codable, Equatable {
     var description: String {
         var str = ""
         let flags = NSEvent.ModifierFlags(rawValue: modifiers)
-        if flags.contains(.command) { str += "⌘" }
-        if flags.contains(.shift) { str += "⇧" }
-        if flags.contains(.option) { str += "⌥" }
         if flags.contains(.control) { str += "⌃" }
+        if flags.contains(.option) { str += "⌥" }
+        if flags.contains(.shift) { str += "⇧" }
+        if flags.contains(.command) { str += "⌘" }
         
         // For modifier-only shortcuts, the flags already describe the combo.
         if KeyCodeHelper.isModifierKey(code: UInt16(keyCode)) {
@@ -47,7 +47,7 @@ struct SavedShortcut: Codable, Equatable {
 struct KeyShortcutRecorder: View {
     @Binding var shortcut: SavedShortcut?
     var recordButtonTitle: String = "Record Shortcut"
-    var recordingButtonTitle: String = "Press Keys..."
+    var recordingButtonTitle: String = "Press Keys…"
     var recordButtonColor: Color = .blue
     var recordButtonWidth: CGFloat = 120
     @State private var isRecording = false

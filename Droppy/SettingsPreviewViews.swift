@@ -1485,7 +1485,6 @@ struct DropIndicatorPreview: View {
 enum ExtensionCategory: String, CaseIterable, Identifiable {
     case all = "All"
     case installed = "Installed"
-    case disabled = "Disabled"
     case ai = "AI"
     case productivity = "Productivity"
     case media = "Media"
@@ -1496,7 +1495,6 @@ enum ExtensionCategory: String, CaseIterable, Identifiable {
         switch self {
         case .all: return "square.grid.2x2"
         case .installed: return "checkmark.circle.fill"
-        case .disabled: return "xmark.circle"
         case .ai: return "sparkles"
         case .productivity: return "bolt.fill"
         case .media: return "music.note"
@@ -1507,7 +1505,6 @@ enum ExtensionCategory: String, CaseIterable, Identifiable {
         switch self {
         case .all: return .white
         case .installed: return .green
-        case .disabled: return .gray
         case .ai: return .purple
         case .productivity: return .orange
         case .media: return .green

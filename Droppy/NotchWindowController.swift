@@ -188,20 +188,20 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Pending size update work items (for coalesced deferred updates)
     private var pendingSizeUpdates: [CGDirectDisplayID: DispatchWorkItem] = [:]
-    
-    /// Tracks the previous expand state so setupStateObservation can detect
-    /// expand/collapse transitions and coordinate window resizing with SwiftUI animation.
-    private var previousExpandedDisplayID: CGDirectDisplayID? = nil
-    
-    /// TRANSITION GUARD: True while an expand/collapse animation is in progress.
-    /// When set, applySizeUpdate will allow window GROWTH but defer window SHRINKS
-    /// until after the SwiftUI spring animation settles. This prevents ALL code paths
-    /// (setupStateObservation, forceRecalculateAllWindowSizes, watchdog, etc.) from
-    /// calling setFrame() with a shorter height during the animation.
-    private(set) var isExpandCollapseTransitioning = false
-    
-    /// Work item to clear the transition guard after the animation settles.
-    private var expandCollapseTransitionEnd: DispatchWorkItem?
+
+    /// Signature used to skip redundant size recomputation when only hover/click-only
+    /// interaction state changed.
+    private struct WindowSizeSignature: Equatable {
+        let isExpanded: Bool
+        let isDropTargeted: Bool
+        let shelfDisplaySlotCount: Int
+        let todoListExpanded: Bool
+        let todoItemCount: Int
+        let todoShowsUndoToast: Bool
+    }
+
+    /// Last applied size signature. Updated when scheduling a size pass.
+    private var lastWindowSizeSignature: WindowSizeSignature?
     
     /// Last click time for debounce (prevents rapid toggle storms)
     private var lastNotchClickTime: Date = .distantPast
@@ -973,6 +973,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             
             // Find the window whose screen contains the mouse
             guard let (targetWindow, targetScreen) = self.findWindowForMouseLocation(mouseLocation) else { return }
+            guard self.shouldAllowShelfInteractions(for: targetWindow, on: targetScreen) else { return }
 
             // While Notification HUD is visible on this display, don't run notch-click
             // shelf toggles from the global monitor.
@@ -1052,8 +1053,6 @@ final class NotchWindowController: NSObject, ObservableObject {
                     guard DroppyState.shared.isExpanded(for: targetScreen.displayID) else { return }
                     
                     withAnimation(DroppyAnimation.notchState(for: targetScreen)) {
-                        // Activate transition guard BEFORE collapse animation
-                        self.beginExpandCollapseTransition()
                         DroppyState.shared.expandedDisplayID = nil
                         DroppyState.shared.setHovering(for: targetScreen.displayID, isHovering: false)
                     }
@@ -1073,6 +1072,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             
             // Find the window whose screen contains the mouse
             guard let (targetWindow, targetScreen) = self.findWindowForMouseLocation(mouseLocation) else { return }
+            guard self.shouldAllowShelfInteractions(for: targetWindow, on: targetScreen) else { return }
             
             // Use media-aware collapsed hit zone so right-click follows visible surface.
             let notchRect = targetWindow.collapsedInteractionRect()
@@ -1127,6 +1127,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                 
                 // Find window for this click
                 guard let (targetWindow, targetScreen) = self.findWindowForMouseLocation(mouseLocation) else { return event }
+                guard self.shouldAllowShelfInteractions(for: targetWindow, on: targetScreen) else { return event }
                 
                 let notchRect = targetWindow.collapsedInteractionRect()
                 let screenTopY = targetScreen.frame.maxY
@@ -1161,6 +1162,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                 
                 // Find the window whose screen contains the mouse
                 guard let (targetWindow, targetScreen) = self.findWindowForMouseLocation(mouseLocation) else { return event }
+                guard self.shouldAllowShelfInteractions(for: targetWindow, on: targetScreen) else { return event }
 
                 let notchRect = targetWindow.collapsedInteractionRect()
 
@@ -1214,18 +1216,6 @@ final class NotchWindowController: NSObject, ObservableObject {
                         return event
                     }
                     DispatchQueue.main.async {
-                        let isCurrentlyExpanded = DroppyState.shared.isExpanded(for: targetScreen.displayID)
-                        if isCurrentlyExpanded {
-                            // COLLAPSE: Activate transition guard BEFORE animation.
-                            // Window stays at expanded height while SwiftUI animates
-                            // content away, then shrinks after animation settles.
-                            self.beginExpandCollapseTransition()
-                        } else {
-                            // EXPAND: Pre-size window BEFORE animation.
-                            // Window grows to expanded height immediately so SwiftUI
-                            // content animates INTO already-available space.
-                            self.preSizeWindowForExpand(displayID: targetScreen.displayID)
-                        }
                         let animation = DroppyAnimation.notchState(for: targetScreen)
                         withAnimation(animation) {
                             DroppyState.shared.toggleShelfExpansion(for: targetScreen.displayID)
@@ -1412,6 +1402,15 @@ final class NotchWindowController: NSObject, ObservableObject {
                     extraPadding: 10
                 )
                 
+                if isWithinNotchX {
+                    // Fullscreen "Hide All": reveal first, then allow hover/expand interactions.
+                    if isFullscreenOnThisDisplay && !self.fullscreenHoverRevealedDisplays.contains(screen.displayID) {
+                        self.fullscreenHoverRevealedDisplays.insert(screen.displayID)
+                        window.revealInFullscreen()
+                    }
+                    guard self.shouldAllowShelfInteractions(for: window, on: screen) else { continue }
+                }
+
                 if isWithinNotchX && !DroppyState.shared.isHovering(for: screen.displayID) {
                     // Cursor is at top edge of this screen within notch range - trigger hover!
                     let displayID = screen.displayID  // Capture for async block
@@ -1575,15 +1574,11 @@ final class NotchWindowController: NSObject, ObservableObject {
                 guard let self = self, !self.isTemporarilyHidden else { return }
                 
                 self.updateAllWindowsMouseEventHandling()
-                
-                // Detect expand/collapse transitions and activate the transition guard.
-                let currentExpandedID = DroppyState.shared.expandedDisplayID
-                let wasExpanded = self.previousExpandedDisplayID != nil
-                let isNowExpanded = currentExpandedID != nil
-                self.previousExpandedDisplayID = currentExpandedID
-                
-                if wasExpanded != isNowExpanded {
-                    self.beginExpandCollapseTransition()
+
+                let nextSizeSignature = self.currentWindowSizeSignature()
+                let shouldRecalculateSizes = nextSizeSignature != self.lastWindowSizeSignature
+                if shouldRecalculateSizes {
+                    self.lastWindowSizeSignature = nextSizeSignature
                 }
                 
                 // CONSTRAINT CASCADE SAFETY: Skip window resize while a drag session is active.
@@ -1595,7 +1590,9 @@ final class NotchWindowController: NSObject, ObservableObject {
                 // - isDropTargeted can be false for parts of an active drag gesture
                 // - DragMonitor.isDragging stays true for the full drag lifecycle
                 // This ensures we never resize inside AppKit's drag loop.
-                if !DroppyState.shared.isDropTargeted && !DragMonitor.shared.isDragging {
+                if shouldRecalculateSizes &&
+                    !DroppyState.shared.isDropTargeted &&
+                    !DragMonitor.shared.isDragging {
                     self.updateAllWindowsSize()
                 }
                 
@@ -1604,67 +1601,18 @@ final class NotchWindowController: NSObject, ObservableObject {
             }
         }
     }
-    
-    /// Activates the transition guard for expand/collapse animations.
-    /// During this window (~0.45s), applySizeUpdate will allow window GROWTH but
-    /// defer window SHRINKS so setFrame doesn't race with SwiftUI's spring.
-    func beginExpandCollapseTransition() {
-        isExpandCollapseTransitioning = true
-        
-        // Cancel any previous transition end
-        expandCollapseTransitionEnd?.cancel()
-        
-        // Clear the guard after the spring animation settles.
-        // notchState spring: response ~0.34s, damping 0.9 → settling ≈ 0.42s.
-        // Use 0.45s for margin.
-        let endWork = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            self.isExpandCollapseTransitioning = false
-            self.expandCollapseTransitionEnd = nil
-            // Apply the correct final size now that the animation is done
-            self.forceRecalculateAllWindowSizes()
-        }
-        expandCollapseTransitionEnd = endWork
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: endWork)
-    }
-    
-    /// Pre-sizes the window for expansion BEFORE the SwiftUI animation starts.
-    /// This grows the window to expanded height immediately so SwiftUI content
-    /// animates INTO already-available space — eliminating the resize-animation race.
-    /// Growing into empty space has zero visual cost (the area below the notch is invisible).
-    func preSizeWindowForExpand(displayID: CGDirectDisplayID) {
-        guard let window = notchWindows[displayID],
-              let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
-        
-        // Calculate the expanded height
-        let expandedHeight = calculateCorrectWindowHeight(for: screen)
-        let currentHeight = window.frame.height
-        
-        // Only pre-size if we'd actually grow
-        guard expandedHeight > currentHeight else { return }
-        
-        // Cache the expected size
-        expectedWindowSizes[displayID] = expandedHeight
-        
-        // Grow immediately with CATransaction to suppress any implicit AppKit animations
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        let expectedWidth = currentInteractionWindowWidth()
-        let expectedX = effectiveShelfCenterX(for: screen) - (expectedWidth / 2)
-        let newFrame = NSRect(
-            x: expectedX,
-            y: screen.frame.origin.y + screen.frame.height - expandedHeight,
-            width: expectedWidth,
-            height: expandedHeight
-        )
-        window.setFrame(newFrame, display: false, animate: false)
-        window.setFrameTopLeftPoint(NSPoint(x: expectedX, y: screen.frame.maxY))
-        CATransaction.commit()
-        
-        // Activate transition guard
-        beginExpandCollapseTransition()
-    }
 
+    private func currentWindowSizeSignature() -> WindowSizeSignature {
+        WindowSizeSignature(
+            isExpanded: DroppyState.shared.isExpanded,
+            isDropTargeted: DroppyState.shared.isDropTargeted,
+            shelfDisplaySlotCount: DroppyState.shared.shelfDisplaySlotCount,
+            todoListExpanded: ToDoManager.shared.isShelfListExpanded,
+            todoItemCount: ToDoManager.shared.items.count,
+            todoShowsUndoToast: ToDoManager.shared.showUndoToast
+        )
+    }
+    
     /// Dynamically resizes all notch windows to fit current shelf content
     /// ROCK-SOLID: Multi-layer protection against size reversion
     /// Layer 1: Throttle rapid updates → Layer 2: Expected size cache
@@ -1721,21 +1669,9 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Applies a size update to a window (the actual frame change)
     /// LAYER 4: Frame application + LAYER 5: Immediate validation
-    /// TRANSITION GUARD: During expand/collapse animations, only allow GROWTH.
-    /// Shrink resizes are deferred until after the animation settles.
     private func applySizeUpdate(for displayID: CGDirectDisplayID, height newHeight: CGFloat) {
         guard let window = notchWindows[displayID],
               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
-        
-        // TRANSITION GUARD: During expand/collapse animation, only allow window growth.
-        // Shrinking the window during the animation causes setFrame() to race with
-        // SwiftUI's spring interpolation, producing a visible hitch/stutter.
-        let currentHeight = window.frame.height
-        if isExpandCollapseTransitioning && newHeight < currentHeight {
-            // Window would shrink — skip. beginExpandCollapseTransition's
-            // deferred callback will apply the correct size after settling.
-            return
-        }
         
         // Update timestamp
         lastSizeUpdateTime[displayID] = Date()
@@ -1744,16 +1680,13 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         // Only resize if significantly different (avoid micro-updates)
         // Keep this coarse to prevent update-constraints feedback loops.
+        let currentHeight = window.frame.height
         let currentX = window.frame.origin.x
         let currentWidth = window.frame.width
         let needsHeightUpdate = abs(newHeight - currentHeight) > 10
         let needsXUpdate = abs(expectedX - currentX) > horizontalRecenterTolerance
         let needsWidthUpdate = abs(expectedWidth - currentWidth) > 2
         if needsHeightUpdate || needsXUpdate || needsWidthUpdate {
-            // Suppress any implicit AppKit animations during frame change
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            
             // Resize from top - keep window anchored at screen top
             let newFrame = NSRect(
                 x: expectedX,
@@ -1764,8 +1697,6 @@ final class NotchWindowController: NSObject, ObservableObject {
             window.setFrame(newFrame, display: false, animate: false)
             window.setFrameTopLeftPoint(NSPoint(x: expectedX, y: screen.frame.maxY))
             
-            CATransaction.commit()
-            
             // LAYER 5: Immediate validation - verify the frame was applied correctly
             DispatchQueue.main.async { [weak self] in
                 self?.validateSizeForWindow(displayID: displayID)
@@ -1775,10 +1706,6 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Validates that a window matches its expected size, self-heals if not
     private func validateSizeForWindow(displayID: CGDirectDisplayID) {
-        // Don't validate during expand/collapse transitions — the guard in applySizeUpdate
-        // intentionally defers shrinks, so validation would fight the guard.
-        guard !isExpandCollapseTransitioning else { return }
-        
         guard let window = notchWindows[displayID],
               let expectedHeight = expectedWindowSizes[displayID],
               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
@@ -1792,8 +1719,6 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         if deviation > sizeDeviationTolerance || xDeviation > horizontalRecenterTolerance || widthDeviation > 2 {
             // Size doesn't match - force correct it NOW
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
             let newFrame = NSRect(
                 x: expectedX,
                 y: screen.frame.origin.y + screen.frame.height - expectedHeight,
@@ -1802,7 +1727,6 @@ final class NotchWindowController: NSObject, ObservableObject {
             )
             window.setFrame(newFrame, display: false, animate: false)
             window.setFrameTopLeftPoint(NSPoint(x: expectedX, y: screen.frame.maxY))
-            CATransaction.commit()
         }
     }
     
@@ -1858,7 +1782,25 @@ final class NotchWindowController: NSObject, ObservableObject {
             }
         }
         return nil
-    }    
+    }
+
+    /// True only when this display's notch surface is intended to be interactive.
+    /// Prevents hidden fullscreen windows from consuming hover/click logic.
+    private func shouldAllowShelfInteractions(for window: NotchWindow, on screen: NSScreen) -> Bool {
+        guard !isTemporarilyHidden else { return false }
+
+        let displayID = screen.displayID
+        if fullscreenDisplayIDs.contains(displayID) {
+            let hideMediaOnly = (UserDefaults.standard.object(forKey: AppPreferenceKey.hideMediaOnlyOnFullscreen) as? Bool)
+                ?? PreferenceDefault.hideMediaOnlyOnFullscreen
+            let isHoverRevealed = fullscreenHoverRevealedDisplays.contains(displayID)
+            if !hideMediaOnly && !isHoverRevealed {
+                return false
+            }
+        }
+
+        return window.isVisibleForInteraction()
+    }
 
     fileprivate func isAtAbsoluteTopEdge(_ mouseLocation: NSPoint, on screen: NSScreen) -> Bool {
         mouseLocation.y >= (screen.frame.maxY - fullscreenTopEdgeRevealTolerance)
@@ -2069,7 +2011,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         if lockScreenEnabled && !lockHUDEnabled {
             // WINDOW RECREATION: Destroy and rebuild all windows
             // This is the only way to "undelegaDe" from SkyLight
-            print("🔥 NotchWindowController: Destroying SkyLight-delegated windows...")
+            print("🔥 NotchWindowController: Destroying SkyLight-delegated windows…")
             
             // Close and remove all existing windows
             for window in notchWindows.values {
@@ -2110,7 +2052,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         
         // 5. Fallback retry if global monitor failed
         if globalMouseMonitor == nil {
-            print("⚠️ NotchWindowController: Global monitor failed to start! Retrying...")
+            print("⚠️ NotchWindowController: Global monitor failed to start! Retrying…")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.startMonitors()
             }
@@ -2226,9 +2168,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             let deviation = abs(currentHeight - correctHeight)
             
             // If size has drifted more than tolerance, force-correct it
-            // TRANSITION GUARD: Skip correction during expand/collapse animation
-            // to avoid fighting the intentional shrink-deferral.
-            if deviation > sizeDeviationTolerance && !isExpandCollapseTransitioning {
+            if deviation > sizeDeviationTolerance {
                 // Throttle log to once per minute per display
                 let now = Date()
                 if Self.lastSizeHealLogTime.map({ now.timeIntervalSince($0) > 60 }) ?? true {
@@ -2238,8 +2178,6 @@ final class NotchWindowController: NSObject, ObservableObject {
                 
                 // Update cache and force-apply correct size
                 expectedWindowSizes[displayID] = correctHeight
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
                 let newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: screen.frame.origin.y + screen.frame.height - correctHeight,
@@ -2248,7 +2186,6 @@ final class NotchWindowController: NSObject, ObservableObject {
                 )
                 window.setFrame(newFrame, display: false, animate: false)
                 window.setFrameTopLeftPoint(NSPoint(x: window.frame.origin.x, y: screen.frame.maxY))
-                CATransaction.commit()
             }
         }
     }
@@ -2407,7 +2344,9 @@ final class NotchWindowController: NSObject, ObservableObject {
             // Find the target screen and check if mouse is in notch zone
             var isMouseOverNotchZone = false
             if let targetDisplayID = displayID,
-               let targetWindow = self.notchWindows[targetDisplayID] {
+               let targetWindow = self.notchWindows[targetDisplayID],
+               let targetScreen = targetWindow.notchScreen,
+               self.shouldAllowShelfInteractions(for: targetWindow, on: targetScreen) {
                 isMouseOverNotchZone = self.isMouseInAutoExpandIntentZone(
                     mouseLocation: currentMouse,
                     window: targetWindow
@@ -2535,6 +2474,16 @@ final class NotchWindowController: NSObject, ObservableObject {
                         window.revealInFullscreen()
                     }
                 }
+            }
+
+            guard shouldAllowShelfInteractions(for: window, on: screen) else {
+                if DroppyState.shared.isHovering(for: displayID) {
+                    DispatchQueue.main.async {
+                        DroppyState.shared.setHovering(for: displayID, isHovering: false)
+                    }
+                }
+                cancelAutoExpandTimer()
+                return
             }
             
             // Route event only to the window for this screen
@@ -2938,6 +2887,12 @@ class NotchWindow: NSPanel {
         rect.origin.x -= mediaWingWidth
         rect.size.width += (mediaWingWidth * 2)
         return rect
+    }
+
+    /// Interaction visibility guard used by controller-level click/hover monitors.
+    /// `targetAlpha` avoids a race where reveal starts before `alphaValue` updates.
+    func isVisibleForInteraction() -> Bool {
+        alphaValue > 0.01 || targetAlpha > 0.01
     }
 
     /// Mirrors collapsed mini-media visibility conditions closely enough for hit-testing.
@@ -3365,6 +3320,14 @@ class NotchWindow: NSPanel {
             }
             return
         }
+
+        // Fullscreen hidden state: never allow an invisible notch window to intercept clicks.
+        if !isVisibleForInteraction() {
+            if !self.ignoresMouseEvents {
+                self.ignoresMouseEvents = true
+            }
+            return
+        }
         
         // Safely capture state - avoid accessing shared singletons if they might be nil
         // Use local variables to minimize property access time
@@ -3615,6 +3578,16 @@ class NotchWindow: NSPanel {
         // This allows volume/brightness HUDs to still appear while media is hidden
         // Also respect hover-reveal state - don't hide if user has triggered reveal via top-edge hover
         let shouldHide = isFullscreen && !hideMediaOnly && !isHoverRevealed
+        if shouldHide {
+            let state = DroppyState.shared
+            if state.expandedDisplayID == displayID {
+                state.expandedDisplayID = nil
+            }
+            if state.hoveringDisplayID == displayID {
+                state.hoveringDisplayID = nil
+            }
+            NotchWindowController.shared.cancelAutoExpandTimer()
+        }
         let newTargetAlpha: CGFloat = shouldHide ? 0.0 : 1.0
         
         // Only trigger animation if the TARGET has changed

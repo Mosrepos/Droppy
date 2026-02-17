@@ -68,6 +68,15 @@ class GlobalHotKey {
         Self.uniqueID += 1
         
         print("⌨️ GlobalHotKey: Init (Code: \(keyCode), Mods: \(modifiers))")
+
+        // Safety guard: never capture plain Escape globally.
+        // This key is expected to keep working system-wide (vim, modals, etc.).
+        let normalizedModifiers = NSEvent.ModifierFlags(rawValue: modifiers)
+            .intersection([.command, .option, .control, .shift, .function])
+        if keyCode == Int(kVK_Escape) && normalizedModifiers.isEmpty {
+            print("⚠️ GlobalHotKey: Refusing to register plain Escape as a global shortcut")
+            return
+        }
         
         // 1. Register Carbon when supported by the shortcut shape.
         if shouldRegisterCarbon(keyCode: keyCode, modifiers: modifiers) {
@@ -150,7 +159,7 @@ class GlobalHotKey {
         } else if attempt < maxAttempts {
             // TCC subsystem may not be ready yet - retry with increasing delay
             let delay = Double(attempt) * 0.5  // 0.5s, 1.0s, 1.5s
-            print("⚠️ GlobalHotKey: IOHIDManager open failed (attempt \(attempt)), retrying in \(delay)s...")
+            print("⚠️ GlobalHotKey: IOHIDManager open failed (attempt \(attempt)), retrying in \(delay)s…")
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.tryOpenHIDManager(attempt: attempt + 1, maxAttempts: maxAttempts)
             }
