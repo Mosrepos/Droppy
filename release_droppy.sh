@@ -78,10 +78,8 @@ if [ -n "$NOTES_FILE" ] && [ -f "$NOTES_FILE" ]; then
     step "Reading $NOTES_FILE..."
     NOTES_CONTENT=$(cat "$NOTES_FILE")
     export NEW_NOTES="$NOTES_CONTENT"
-    
-    step "Updating README.md Changelog..."
-    # Update README with perl to handle multiline
-    perl -0777 -i -pe 's/(<!-- CHANGELOG_START -->)(.*?)(<!-- CHANGELOG_END -->)/$1\n$ENV{NEW_NOTES}\n$3/s' README.md
+
+    step "README latest release section sync is automated via GitHub Releases workflow."
     
     step "Updating Website Version to $VERSION..."
     # Update DROPPY_VERSION in docs/index.html and docs/extensions.html

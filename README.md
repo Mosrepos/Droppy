@@ -26,6 +26,7 @@
 ---
 
 ## Latest Release
+<sub>Auto-synced from the latest GitHub release notes.</sub>
 
 <!-- CHANGELOG_START -->
 ## 🚀 Droppy v11.2.1
