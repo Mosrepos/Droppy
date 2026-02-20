@@ -606,7 +606,8 @@ struct BasketDragHandle: View {
     }
     @State private var isHovering = false
     @State private var isDragging = false
-    @State private var initialMouseOffset: CGPoint = .zero // Offset from window origin to mouse
+    @State private var openHandCursorPushed = false
+    @State private var closedHandCursorPushed = false
     
     /// Capsule fill color - accent is only used when multiple baskets are visible.
     private var capsuleFill: Color {
@@ -630,10 +631,17 @@ struct BasketDragHandle: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            Capsule()
-                .fill(capsuleFill)
-                .frame(width: 44, height: 5)
+        ZStack {
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(capsuleFill)
+                    .frame(width: 44, height: 5)
+            }
+            NativeWindowDragArea(
+                onDragStart: beginWindowDrag,
+                onDragEnd: endWindowDrag
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 140, height: 28) // Large hit area
         .contentShape(Rectangle())
@@ -642,41 +650,89 @@ struct BasketDragHandle: View {
                 isHovering = hovering
             }
             if hovering {
-                NSCursor.openHand.push()
-            } else if !isDragging {
+                if !openHandCursorPushed {
+                    NSCursor.openHand.push()
+                    openHandCursorPushed = true
+                }
+            } else if !isDragging, openHandCursorPushed {
                 NSCursor.pop()
+                openHandCursorPushed = false
             }
         }
-        .gesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                .onChanged { value in
-                    guard let window = controller?.basketWindow else { return }
-                    
-                    let mouseLocation = NSEvent.mouseLocation
-                    
-                    if !isDragging {
-                        // First drag event - capture offset from window origin to mouse
-                        isDragging = true
-                        initialMouseOffset = CGPoint(
-                            x: mouseLocation.x - window.frame.origin.x,
-                            y: mouseLocation.y - window.frame.origin.y
-                        )
-                        NSCursor.closedHand.push()
-                        HapticFeedback.select()
-                    }
-                    
-                    // Move window maintaining the initial offset (no jump!)
-                    let newX = mouseLocation.x - initialMouseOffset.x
-                    let newY = mouseLocation.y - initialMouseOffset.y
-                    window.setFrameOrigin(NSPoint(x: newX, y: newY))
-                }
-                .onEnded { _ in
-                    isDragging = false
-                    NSCursor.pop()
-                }
-        )
+        .onDisappear {
+            if closedHandCursorPushed {
+                NSCursor.pop()
+                closedHandCursorPushed = false
+            }
+            if openHandCursorPushed {
+                NSCursor.pop()
+                openHandCursorPushed = false
+            }
+        }
         .animation(.easeOut(duration: 0.15), value: isHovering)
         .animation(.easeOut(duration: 0.15), value: isDragging)
+    }
+
+    private func beginWindowDrag() {
+        guard controller?.basketWindow != nil else { return }
+        guard !isDragging else { return }
+        isDragging = true
+        if !closedHandCursorPushed {
+            NSCursor.closedHand.push()
+            closedHandCursorPushed = true
+        }
+        HapticFeedback.select()
+    }
+
+    private func endWindowDrag() {
+        guard isDragging else { return }
+        isDragging = false
+        if closedHandCursorPushed {
+            NSCursor.pop()
+            closedHandCursorPushed = false
+        }
+        if !isHovering, openHandCursorPushed {
+            NSCursor.pop()
+            openHandCursorPushed = false
+        }
+    }
+}
+
+private struct NativeWindowDragArea: NSViewRepresentable {
+    let onDragStart: () -> Void
+    let onDragEnd: () -> Void
+
+    func makeNSView(context: Context) -> NativeWindowDragView {
+        let view = NativeWindowDragView()
+        view.onDragStart = onDragStart
+        view.onDragEnd = onDragEnd
+        return view
+    }
+
+    func updateNSView(_ nsView: NativeWindowDragView, context: Context) {
+        nsView.onDragStart = onDragStart
+        nsView.onDragEnd = onDragEnd
+    }
+}
+
+private final class NativeWindowDragView: NSView {
+    var onDragStart: (() -> Void)?
+    var onDragEnd: (() -> Void)?
+
+    override var isOpaque: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window else {
+            super.mouseDown(with: event)
+            return
+        }
+        onDragStart?()
+        window.performDrag(with: event)
+        onDragEnd?()
     }
 }
 

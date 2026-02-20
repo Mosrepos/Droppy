@@ -477,22 +477,37 @@ private struct MenuBarFloatingBarView: View {
     let items: [MenuBarFloatingItemSnapshot]
     let onPress: (MenuBarFloatingItemSnapshot) -> Void
 
+    private var barShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+    }
+
     private var rowHeight: CGFloat {
         FloatingBarMetrics.rowHeight(for: items)
     }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    useTransparentBackground
-                    ? AnyShapeStyle(.ultraThinMaterial)
-                    : AdaptiveColors.panelBackgroundOpaqueStyle
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(AdaptiveColors.overlayAuto(useTransparentBackground ? 0.2 : 0.1), lineWidth: 1)
-                )
+            if useTransparentBackground {
+                if #available(macOS 26.0, *) {
+                    barShape
+                        .fill(.clear)
+                        .glassEffect(in: barShape)
+                } else {
+                    barShape
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            barShape
+                                .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 1)
+                        )
+                }
+            } else {
+                barShape
+                    .fill(AdaptiveColors.panelBackgroundOpaqueStyle)
+                    .overlay(
+                        barShape
+                            .stroke(AdaptiveColors.overlayAuto(0.1), lineWidth: 1)
+                    )
+            }
 
             HStack(spacing: 0) {
                 ForEach(items) { item in

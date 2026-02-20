@@ -9,7 +9,6 @@ import SwiftUI
 import AppKit
 
 struct NotificationHUDInfoView: View {
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     private var manager = NotificationHUDManager.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -45,7 +44,7 @@ struct NotificationHUDInfoView: View {
         }
         .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .notificationHUD)

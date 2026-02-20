@@ -286,7 +286,20 @@ struct UpdaterView: View {
         }
         .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)
-        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.black))
+        .background {
+            if useTransparentBackground {
+                if #available(macOS 26.0, *) {
+                    Rectangle()
+                        .fill(.clear)
+                        .glassEffect(in: Rectangle())
+                } else {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                }
+            } else {
+                Color.black
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)

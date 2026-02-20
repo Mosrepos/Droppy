@@ -15,8 +15,6 @@ struct ExtensionInfoView: View {
     var onAction: (() -> Void)?
     var installCount: Int?
     var rating: AnalyticsService.ExtensionRating?
-    
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.disableAnalytics) private var disableAnalytics = PreferenceDefault.disableAnalytics
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
@@ -59,7 +57,7 @@ struct ExtensionInfoView: View {
         }
         .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: extensionType)

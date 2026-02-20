@@ -107,13 +107,7 @@ struct OnboardingView: View {
                 .frame(height: 70)
         }
         .frame(width: windowSize.width, height: windowSize.height)
-        .background {
-            if useTransparentBackground {
-                AnyView(Rectangle().droppyGlassFill())
-            } else {
-                AnyView(AdaptiveColors.panelBackgroundAuto)
-            }
-        }
+        .droppyTransparentBackground(useTransparentBackground)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xxl, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DroppyRadius.xxl, style: .continuous)

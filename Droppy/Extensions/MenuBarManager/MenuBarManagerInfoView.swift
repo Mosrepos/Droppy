@@ -102,7 +102,7 @@ struct MenuBarManagerInfoView: View {
             buttonSection
         }
         .frame(width: 450, height: panelHeight)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .menuBarManager)
@@ -677,10 +677,9 @@ struct MenuBarManagerInfoView: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(
-                        useTransparentBackground
-                        ? AnyShapeStyle(.ultraThinMaterial)
-                        : AdaptiveColors.panelBackgroundOpaqueStyle
+                    .droppyNativeGlassFill(
+                        useTransparentBackground,
+                        fallback: AdaptiveColors.panelBackgroundAuto
                     )
             )
             .overlay(
@@ -792,10 +791,9 @@ struct MenuBarManagerInfoView: View {
             .frame(minHeight: 60)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        useTransparentBackground
-                        ? AnyShapeStyle(.ultraThinMaterial)
-                        : AdaptiveColors.panelBackgroundOpaqueStyle
+                    .droppyNativeGlassFill(
+                        useTransparentBackground,
+                        fallback: AdaptiveColors.panelBackgroundAuto
                     )
             )
             .overlay(
@@ -887,10 +885,9 @@ struct MenuBarManagerInfoView: View {
                         .padding(2)
                         .background(
                             Circle()
-                                .fill(
-                                    useTransparentBackground
-                                    ? AnyShapeStyle(.ultraThinMaterial)
-                                    : AdaptiveColors.panelBackgroundOpaqueStyle
+                                .droppyNativeGlassFill(
+                                    useTransparentBackground,
+                                    fallback: AdaptiveColors.panelBackgroundAuto
                                 )
                         )
                         .offset(x: 4, y: 2)

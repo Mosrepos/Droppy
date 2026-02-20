@@ -20,6 +20,31 @@ private let basketSwitcherDropTypes: [UTType] = [
     .data
 ]
 
+private struct BasketSwitcherContainerBackground: View {
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+    }
+
+    private var usesNativeGlass: Bool {
+        if #available(macOS 26.0, *) {
+            return true
+        }
+        return false
+    }
+
+    var body: some View {
+        shape
+            .droppyNativeGlassFill(true)
+            .overlay {
+                if !usesNativeGlass {
+                    shape
+                        .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 0.5)
+                }
+            }
+            .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
+    }
+}
+
 /// Cmd+Tab style overlay for selecting which basket to drop files into
 /// Appears when jiggling while dragging with multiple baskets active
 struct BasketSwitcherView: View {
@@ -31,6 +56,7 @@ struct BasketSwitcherView: View {
     let onDropToNewBasket: ([NSItemProvider]) -> Void
     /// Called to dismiss the switcher
     let onDismiss: () -> Void
+    var showsBackdrop: Bool = true
     
     @State private var hoveredBasketIndex: Int? = nil
     @State private var isNewBasketHovered: Bool = false
@@ -41,9 +67,15 @@ struct BasketSwitcherView: View {
     
     var body: some View {
         ZStack {
-            // Dimming background
-            Color.black.opacity(0.35)
+            Group {
+                if showsBackdrop {
+                    Color.black.opacity(0.35)
+                } else {
+                    Color.clear
+                }
+            }
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
                 .onTapGesture {
                     onDismiss()
                 }
@@ -82,16 +114,7 @@ struct BasketSwitcherView: View {
                 }
             }
             .padding(24)
-            .background(
-                // Glassmorphism container
-                RoundedRectangle(cornerRadius: 20)
-                    .droppyGlassFill()
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
-            )
+            .background(BasketSwitcherContainerBackground())
         }
     }
 }
@@ -103,6 +126,7 @@ struct BasketSelectionView: View {
     let onSelect: (FloatingBasketWindowController) -> Void
     let onNewBasket: () -> Void
     let onDismiss: () -> Void
+    var showsBackdrop: Bool = true
     
     @State private var hoveredBasketIndex: Int? = nil
     @State private var isNewBasketHovered: Bool = false
@@ -113,9 +137,15 @@ struct BasketSelectionView: View {
     
     var body: some View {
         ZStack {
-            // Dimming background
-            Color.black.opacity(0.35)
+            Group {
+                if showsBackdrop {
+                    Color.black.opacity(0.35)
+                } else {
+                    Color.clear
+                }
+            }
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
                 .onTapGesture {
                     onDismiss()
                 }
@@ -150,16 +180,7 @@ struct BasketSelectionView: View {
                 }
             }
             .padding(24)
-            .background(
-                // Glassmorphism container
-                RoundedRectangle(cornerRadius: 20)
-                    .droppyGlassFill()
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
-            )
+            .background(BasketSwitcherContainerBackground())
         }
     }
 }
@@ -394,6 +415,7 @@ struct TrackedFolderSwitcherView: View {
     let pendingFiles: [URL]
     let onSelectBasket: (FloatingBasketWindowController) -> Void
     let onDismiss: () -> Void
+    var showsBackdrop: Bool = true
     
     @State private var hoveredBasketIndex: Int? = nil
 
@@ -412,9 +434,15 @@ struct TrackedFolderSwitcherView: View {
     
     var body: some View {
         ZStack {
-            // Dimming background
-            Color.black.opacity(0.35)
+            Group {
+                if showsBackdrop {
+                    Color.black.opacity(0.35)
+                } else {
+                    Color.clear
+                }
+            }
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
                 .onTapGesture {
                     onDismiss()
                 }
@@ -465,16 +493,7 @@ struct TrackedFolderSwitcherView: View {
                 }
             }
             .padding(24)
-            .background(
-                // Glassmorphism container
-                RoundedRectangle(cornerRadius: 20)
-                    .droppyGlassFill()
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 0.5)
-                    )
-                    .shadow(color: .black.opacity(0.3), radius: 30, y: 10)
-            )
+            .background(BasketSwitcherContainerBackground())
         }
     }
 }
@@ -547,7 +566,8 @@ final class BasketSwitcherWindowController {
     static let shared = BasketSwitcherWindowController()
     
     private var switcherWindow: NSPanel?
-    private var hostingView: NSHostingView<BasketSwitcherView>?
+    private var dimmingWindow: NSPanel?
+    private var hostingView: NSView?
     
     /// Whether the switcher is currently visible
     var isVisible: Bool {
@@ -733,22 +753,15 @@ final class BasketSwitcherWindowController {
             },
             onDismiss: { [weak self] in
                 self?.hide()
-            }
+            },
+            showsBackdrop: false
         )
         
+        showDimmingWindow(on: screen)
+
         // Create window
-        let panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = makeOverlayPanel(on: screen)
         panel.level = .popUpMenu
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = false
         
         // Create hosting view
         let hosting = NSHostingView(rootView: switcherView)
@@ -780,17 +793,24 @@ final class BasketSwitcherWindowController {
                 }
                 hiddenBaskets = []
             }
+            if let dimmingPanel = dimmingWindow {
+                dimmingWindow = nil
+                dimmingPanel.orderOut(nil)
+                dimmingPanel.close()
+            }
             hostingView = nil
             return
         }
         
         // Store reference to clean up after animation
         let panelToClose = panel
+        let dimmingToClose = dimmingWindow
         let hostingToRemove = hostingView
         let basketsToRestore = hiddenBaskets
         
         // Clear references immediately to prevent double-hide issues
         switcherWindow = nil
+        dimmingWindow = nil
         hostingView = nil
         hiddenBaskets = []
         
@@ -812,10 +832,13 @@ final class BasketSwitcherWindowController {
             context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panelToClose.animator().alphaValue = 0
+            dimmingToClose?.animator().alphaValue = 0
         } completionHandler: {
             hostingToRemove?.removeFromSuperview()
             panelToClose.orderOut(nil)
             panelToClose.close()
+            dimmingToClose?.orderOut(nil)
+            dimmingToClose?.close()
         }
     }
     
@@ -857,22 +880,15 @@ final class BasketSwitcherWindowController {
             },
             onDismiss: { [weak self] in
                 self?.hide()
-            }
+            },
+            showsBackdrop: false
         )
         
+        showDimmingWindow(on: screen)
+
         // Create window
-        let panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = makeOverlayPanel(on: screen)
         panel.level = .popUpMenu
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = false
         
         // Create hosting view
         let hosting = NSHostingView(rootView: selectionView)
@@ -881,6 +897,7 @@ final class BasketSwitcherWindowController {
         
         // Store references
         switcherWindow = panel
+        hostingView = hosting
         
         // Animate in
         panel.alphaValue = 0
@@ -930,22 +947,15 @@ final class BasketSwitcherWindowController {
             },
             onDismiss: { [weak self] in
                 self?.hide()
-            }
+            },
+            showsBackdrop: false
         )
         
+        showDimmingWindow(on: screen)
+
         // Create window
-        let panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = makeOverlayPanel(on: screen)
         panel.level = .popUpMenu
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = false
         
         // Create hosting view
         let hosting = NSHostingView(rootView: switcherView)
@@ -955,6 +965,7 @@ final class BasketSwitcherWindowController {
         
         // Store references
         switcherWindow = panel
+        hostingView = hosting
         
         // Animate in
         panel.alphaValue = 0
@@ -964,6 +975,44 @@ final class BasketSwitcherWindowController {
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
+        }
+    }
+
+    private func makeOverlayPanel(on screen: NSScreen) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: screen.frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = false
+        return panel
+    }
+
+    private func showDimmingWindow(on screen: NSScreen) {
+        if let existing = dimmingWindow {
+            existing.orderOut(nil)
+            existing.close()
+            dimmingWindow = nil
+        }
+
+        let dimming = makeOverlayPanel(on: screen)
+        dimming.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
+        dimming.backgroundColor = NSColor.black.withAlphaComponent(0.35)
+        dimming.ignoresMouseEvents = true
+        dimming.alphaValue = 0
+        dimming.orderFrontRegardless()
+
+        dimmingWindow = dimming
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            dimming.animator().alphaValue = 1
         }
     }
     

@@ -11,7 +11,6 @@ struct QuickshareInfoView: View {
     @AppStorage(AppPreferenceKey.showQuickshareInMenuBar) private var showInMenuBar = PreferenceDefault.showQuickshareInMenuBar
     @AppStorage(AppPreferenceKey.showQuickshareInSidebar) private var showInSidebar = PreferenceDefault.showQuickshareInSidebar
     @AppStorage(AppPreferenceKey.quickshareRequireUploadConfirmation) private var requireUploadConfirmation = PreferenceDefault.quickshareRequireUploadConfirmation
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @Environment(\.dismiss) private var dismiss
     
     // For list observation
@@ -62,7 +61,7 @@ struct QuickshareInfoView: View {
         }
         .frame(width: 540)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .quickshare)

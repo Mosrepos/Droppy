@@ -145,7 +145,7 @@ struct BasketItemView: View {
                 value: [item.id: geo.frame(in: .named("basketContainer"))]
             )
         })
-        .popover(isPresented: renamePopoverPresented, arrowEdge: .top) {
+        .droppyPopover(isPresented: renamePopoverPresented, arrowEdge: .top) {
             RenameTooltipPopover(
                 text: $renamingText,
                 title: String(localized: "action.edit"),
@@ -455,7 +455,7 @@ struct BasketItemView: View {
                 isHovering = false
             }
         }
-        .popover(isPresented: $showFolderPreview, arrowEdge: .bottom) {
+        .droppyPopover(isPresented: $showFolderPreview, arrowEdge: .bottom) {
             FolderPreviewPopover(
                 folderURL: item.url,
                 isPinned: item.isPinned,

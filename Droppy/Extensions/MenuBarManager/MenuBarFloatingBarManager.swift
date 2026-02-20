@@ -806,7 +806,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         for id in alwaysHiddenItemIDs {
             guard scannedByID[id] == nil, let cached = itemRegistryByID[id] else { continue }
-            guard shouldUseRegistryFallback(for: cached, itemID: id) else { continue }
+            guard shouldRetainRegistryFallback(cached, itemID: id) else { continue }
             merged.append(withCachedIconIfNeeded(cached))
         }
 
@@ -977,7 +977,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         for id in effectiveFloatingIDs {
             if let scanned = scannedByID[id] {
                 hiddenByID[id] = scanned
-            } else if let cached = itemRegistryByID[id], shouldUseRegistryFallback(for: cached, itemID: id) {
+            } else if let cached = itemRegistryByID[id], shouldRetainRegistryFallback(cached, itemID: id) {
                 let resolved = withCachedIconIfNeeded(cached)
                 hiddenByID[id] = resolved
             }
@@ -1444,7 +1444,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         let mouseLocation = NSEvent.mouseLocation
         guard let screen = interactionScreen(for: mouseLocation) else { return false }
         let menuBarHeight = effectiveMenuBarHeight(for: screen)
-        return isHoveringRevealEligibleMenuBarIcon(
+        return isInInteractiveMenuBarZone(
             mouseLocation: mouseLocation,
             screen: screen,
             menuBarHeight: menuBarHeight
@@ -1480,38 +1480,17 @@ final class MenuBarFloatingBarManager: ObservableObject {
         return max(24, NSStatusBar.system.thickness)
     }
 
-    private func isHoveringRevealEligibleMenuBarIcon(
+    private func isInInteractiveMenuBarZone(
         mouseLocation: CGPoint,
         screen: NSScreen,
         menuBarHeight: CGFloat
     ) -> Bool {
+        let isWithinScreenX = mouseLocation.x >= screen.frame.minX && mouseLocation.x <= screen.frame.maxX
+        guard isWithinScreenX else { return false }
         let isAtTop = mouseLocation.y >= screen.frame.maxY - menuBarHeight
         guard isAtTop else { return false }
 
-        if let hiddenFrame = MenuBarManager.shared.controlItemFrame(for: .hidden),
-           screen.frame.intersects(hiddenFrame) {
-            let dividerBoundaryX = hiddenDividerBoundaryX(for: hiddenFrame)
-            switch hiddenSectionSide() {
-            case .leftOfHiddenDivider:
-                if mouseLocation.x < dividerBoundaryX - 1 {
-                    return false
-                }
-            case .rightOfHiddenDivider:
-                if mouseLocation.x > dividerBoundaryX + 1 {
-                    return false
-                }
-            }
-        }
-
-        let mouseQuartzRect = MenuBarFloatingCoordinateConverter.appKitToQuartz(
-            CGRect(x: mouseLocation.x, y: mouseLocation.y, width: 1, height: 1)
-        )
-        let mouseQuartzPoint = CGPoint(x: mouseQuartzRect.midX, y: mouseQuartzRect.midY)
-        if MenuBarStatusWindowCache.containsStatusItem(at: mouseQuartzPoint, maxAge: 0.1) {
-            return true
-        }
-        // Fallback for systems where status-item windows report non-standard geometry.
-        return MenuBarStatusWindowCache.containsAnyStatusWindow(at: mouseQuartzPoint, maxAge: 0.1)
+        return true
     }
 
     private func beginMenuInteractionLock(using manager: MenuBarManager) {
@@ -1733,6 +1712,13 @@ final class MenuBarFloatingBarManager: ObservableObject {
                $0.ownerBundleID == requested.ownerBundleID && $0.statusItemIndex == statusItemIndex
            }) {
             return byIndex
+        }
+
+        if let windowID = requested.windowID,
+           let byWindowID = itemClosestToVisibleSide(scannedItems.filter {
+               $0.ownerBundleID == requested.ownerBundleID && $0.windowID == windowID
+           }) {
+            return byWindowID
         }
 
         if let scanned = itemClosestToVisibleSide(scannedItems.filter({ $0.id == requested.id })) {
@@ -2277,6 +2263,20 @@ final class MenuBarFloatingBarManager: ObservableObject {
         let fallbackTitleToken = stableTextToken(fallback.title)
         let fallbackDetailToken = stableTextToken(fallback.detail)
 
+        if let fallbackWindowID = fallback.windowID {
+            let byWindowID = scannedItems.filter { candidate in
+                candidate.ownerBundleID == fallback.ownerBundleID
+                    && candidate.windowID == fallbackWindowID
+            }
+            if !byWindowID.isEmpty {
+                return byWindowID.min { lhs, rhs in
+                    let lhsDistance = abs(lhs.quartzFrame.midX - fallback.quartzFrame.midX)
+                    let rhsDistance = abs(rhs.quartzFrame.midX - fallback.quartzFrame.midX)
+                    return lhsDistance < rhsDistance
+                }
+            }
+        }
+
         let sameMetadata = scannedItems.filter { candidate in
             guard candidate.ownerBundleID == fallback.ownerBundleID else { return false }
             if let fallbackIdentifier = fallback.axIdentifier {
@@ -2696,7 +2696,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
                 return !isMandatoryMenuBarManagerControlItem(scanned)
             }
             if let cached = itemRegistryByID[id] {
-                guard shouldUseRegistryFallback(for: cached, itemID: id) else { return false }
+                guard shouldRetainRegistryFallback(cached, itemID: id) else { return false }
                 return !isMandatoryMenuBarManagerControlItem(cached)
             }
             if let ownerBundleID = ownerBundleIDFromItemID(id) {
@@ -2740,6 +2740,72 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
         if let fallbackOwner = ownerBundleIDFromItemID(itemID) {
             return isOwnerBundleRunning(fallbackOwner)
+        }
+        return false
+    }
+
+    private func shouldRetainRegistryFallback(_ item: MenuBarFloatingItemSnapshot, itemID: String) -> Bool {
+        guard shouldUseRegistryFallback(for: item, itemID: itemID) else {
+            return false
+        }
+
+        let resolvedIcon = item.icon ?? cachedIcon(for: item)
+        guard resolvedIcon != nil else {
+            // Never surface iconless registry ghosts as dashed placeholders.
+            return false
+        }
+
+        // If this owner is currently scanned but no live item resembles the fallback,
+        // treat the registry entry as stale and drop it.
+        if hasLiveOwnerItems(item.ownerBundleID),
+           !hasLikelyLiveMatch(for: item) {
+            if isIconDebugEnabled {
+                iconDebugLog("registry fallback pruned-stale \(iconDebugName(for: item))")
+            }
+            return false
+        }
+
+        return true
+    }
+
+    private func hasLiveOwnerItems(_ ownerBundleID: String) -> Bool {
+        scannedItems.contains { item in
+            item.ownerBundleID == ownerBundleID
+                && !isMandatoryMenuBarManagerControlItem(item)
+        }
+    }
+
+    private func hasLikelyLiveMatch(for fallback: MenuBarFloatingItemSnapshot) -> Bool {
+        let candidates = scannedItems.filter { candidate in
+            candidate.ownerBundleID == fallback.ownerBundleID
+                && !isMandatoryMenuBarManagerControlItem(candidate)
+        }
+        guard !candidates.isEmpty else { return false }
+
+        if candidates.contains(where: { $0.id == fallback.id }) {
+            return true
+        }
+        if let fallbackIdentifier = fallback.axIdentifier, !fallbackIdentifier.isEmpty,
+           candidates.contains(where: { $0.axIdentifier == fallbackIdentifier }) {
+            return true
+        }
+        if let fallbackWindowID = fallback.windowID,
+           candidates.contains(where: { $0.windowID == fallbackWindowID }) {
+            return true
+        }
+        if let fallbackIndex = fallback.statusItemIndex,
+           candidates.contains(where: { $0.statusItemIndex == fallbackIndex }) {
+            return true
+        }
+        let fallbackTitleToken = stableTextToken(fallback.title)
+        if let fallbackTitleToken,
+           candidates.contains(where: { stableTextToken($0.title) == fallbackTitleToken }) {
+            return true
+        }
+        let fallbackDetailToken = stableTextToken(fallback.detail)
+        if let fallbackDetailToken,
+           candidates.contains(where: { stableTextToken($0.detail) == fallbackDetailToken }) {
+            return true
         }
         return false
     }
@@ -2803,6 +2869,13 @@ final class MenuBarFloatingBarManager: ObservableObject {
         if let fallbackIdentifier = fallback.axIdentifier,
            let identifierMatch = candidates.first(where: { $0.axIdentifier == fallbackIdentifier }) {
             return identifierMatch
+        }
+
+        if let fallbackWindowID = fallback.windowID {
+            let windowMatches = candidates.filter { $0.windowID == fallbackWindowID }
+            if let windowMatch = nearestByQuartzDistance(from: fallback, in: windowMatches) {
+                return windowMatch
+            }
         }
 
         let fallbackDetailToken = stableTextToken(fallback.detail)

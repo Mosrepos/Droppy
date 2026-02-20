@@ -9,8 +9,6 @@ import SwiftUI
 
 struct TelepromptyInfoView: View {
     @Environment(\.dismiss) private var dismiss
-
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.telepromptyInstalled) private var isInstalled = PreferenceDefault.telepromptyInstalled
     @AppStorage(AppPreferenceKey.telepromptyEnabled) private var isEnabled = PreferenceDefault.telepromptyEnabled
     @AppStorage(AppPreferenceKey.telepromptyScript) private var script = PreferenceDefault.telepromptyScript
@@ -51,7 +49,7 @@ struct TelepromptyInfoView: View {
         }
         .frame(width: 560)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .teleprompty)

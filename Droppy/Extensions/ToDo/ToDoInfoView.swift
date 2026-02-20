@@ -16,7 +16,6 @@ struct ToDoInfoView: View {
     }
 
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
 
     @AppStorage(AppPreferenceKey.todoInstalled) private var isInstalled = PreferenceDefault.todoInstalled
     @AppStorage(AppPreferenceKey.todoAutoCleanupHours) private var autoCleanupHours = PreferenceDefault.todoAutoCleanupHours
@@ -70,7 +69,7 @@ struct ToDoInfoView: View {
         }
         .frame(width: 675)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .todo)

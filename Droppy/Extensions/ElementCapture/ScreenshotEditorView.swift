@@ -1293,7 +1293,7 @@ struct ScreenshotEditorView: View {
                         accentColor: .yellow
                     ))
                     .help(tool.tooltipWithShortcut)
-                    .popover(isPresented: $showingImageOverlayOptionsPopover, arrowEdge: .top) {
+                    .droppyPopover(isPresented: $showingImageOverlayOptionsPopover, arrowEdge: .top) {
                         imageOverlayOptionsPopover
                     }
                 } else {
@@ -1369,7 +1369,7 @@ struct ScreenshotEditorView: View {
                 accentColor: .blue
             ))
             .help("Background Style")
-            .popover(isPresented: $showingCanvasStylePopover, arrowEdge: .top) {
+            .droppyPopover(isPresented: $showingCanvasStylePopover, arrowEdge: .top) {
                 canvasStylePopover
             }
         }
@@ -1495,7 +1495,7 @@ struct ScreenshotEditorView: View {
                 scheduleStickerPickerPopoverClose()
             }
         }
-        .popover(isPresented: $showingStickerPickerPopover, arrowEdge: .top) {
+        .droppyPopover(isPresented: $showingStickerPickerPopover, arrowEdge: .top) {
             HStack(spacing: 6) {
                 ForEach(stickerTools) { tool in
                     Button {
@@ -1568,7 +1568,7 @@ struct ScreenshotEditorView: View {
                 scheduleColorPickerPopoverClose()
             }
         }
-        .popover(isPresented: $showingColorPickerPopover, arrowEdge: .top) {
+        .droppyPopover(isPresented: $showingColorPickerPopover, arrowEdge: .top) {
             HStack(spacing: 6) {
                 ForEach(colors, id: \.self) { color in
                     Button {
@@ -1631,7 +1631,7 @@ struct ScreenshotEditorView: View {
                 scheduleStrokePickerPopoverClose()
             }
         }
-        .popover(isPresented: $showingStrokePickerPopover, arrowEdge: .top) {
+        .droppyPopover(isPresented: $showingStrokePickerPopover, arrowEdge: .top) {
             HStack(spacing: 6) {
                 ForEach(strokeWidths, id: \.0) { width, name in
                     Button {

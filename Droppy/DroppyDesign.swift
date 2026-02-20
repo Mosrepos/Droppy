@@ -274,6 +274,29 @@ private struct PremiumBlurModifier: ViewModifier {
     }
 }
 
+private struct DroppyLiquidPopoverSurfaceModifier: ViewModifier {
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .droppyNativeGlassFill(
+                        useTransparentBackground,
+                        fallback: AdaptiveColors.panelBackgroundAuto
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        AdaptiveColors.overlayAuto(useTransparentBackground ? 0.14 : 0.08),
+                        lineWidth: 1
+                    )
+            }
+    }
+}
+
 // MARK: - Shadow View Modifiers
 
 extension View {
@@ -303,25 +326,64 @@ extension View {
 
     /// Applies the app's shared window background treatment.
     func droppyTransparentBackground(_ useTransparentBackground: Bool) -> some View {
-        self.background(
-            useTransparentBackground
-                ? AnyShapeStyle(.ultraThinMaterial)
-                : AdaptiveColors.panelBackgroundOpaqueStyle
+        self.background {
+            Rectangle()
+                .droppyNativeGlassFill(
+                    useTransparentBackground,
+                    fallback: AdaptiveColors.panelBackgroundAuto
+                )
+        }
+    }
+
+    /// Applies shared popover chrome used by extension info panels.
+    func droppyLiquidPopoverSurface(cornerRadius: CGFloat = DroppyRadius.xl) -> some View {
+        modifier(DroppyLiquidPopoverSurfaceModifier(cornerRadius: cornerRadius))
+    }
+
+    /// Shared popover wrapper used across Droppy settings and item rows.
+    func droppyPopover<PopoverContent: View>(
+        isPresented: Binding<Bool>,
+        attachmentAnchor: PopoverAttachmentAnchor = .rect(.bounds),
+        arrowEdge: Edge = .top,
+        @ViewBuilder content: @escaping () -> PopoverContent
+    ) -> some View {
+        popover(
+            isPresented: isPresented,
+            attachmentAnchor: attachmentAnchor,
+            arrowEdge: arrowEdge,
+            content: content
         )
     }
 }
 
 extension Shape {
     /// Fills the shape with Droppy's shared glass material.
+    @ViewBuilder
     func droppyGlassFill() -> some View {
-        self.fill(.ultraThinMaterial)
+        if #available(macOS 26.0, *) {
+            self
+                .fill(.clear)
+                .glassEffect(in: self)
+        } else {
+            self.fill(.ultraThinMaterial)
+        }
+    }
+
+    /// Fills with native macOS 26 glass when available, falls back to material on older macOS.
+    @ViewBuilder
+    func droppyNativeGlassFill(_ useTransparentBackground: Bool, fallback: Color = AdaptiveColors.panelBackgroundAuto) -> some View {
+        if useTransparentBackground {
+            self.droppyGlassFill()
+        } else {
+            self.fill(fallback)
+        }
     }
 
     /// Fills with glass when transparency is enabled, otherwise a solid fallback.
     @ViewBuilder
     func droppyTransparentFill(_ useTransparentBackground: Bool, fallback: Color = AdaptiveColors.panelBackgroundAuto) -> some View {
         if useTransparentBackground {
-            self.droppyGlassFill()
+            self.droppyNativeGlassFill(true, fallback: fallback)
         } else {
             self.fill(fallback)
         }

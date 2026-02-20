@@ -16,6 +16,9 @@ extension Notification.Name {
     /// Posted when the clipboard window is shown
     static let clipboardWindowDidShow = Notification.Name("ClipboardWindowDidShow")
     
+    /// Posted when the clipboard window is hidden/closed.
+    static let clipboardWindowDidHide = Notification.Name("ClipboardWindowDidHide")
+    
     // MARK: - Drag & Drop
     
     /// Posted when a file is dragged out from the shelf
@@ -66,6 +69,12 @@ extension Notification.Name {
     
     /// Posted when a file should be added to the shelf (e.g., from screenshot editor)
     static let addFileToShelf = Notification.Name("addFileToShelf")
+
+    // MARK: - Basket
+
+    /// Posted when basket window visibility/topology changes.
+    /// Used to refresh UI that depends on multi-basket state (e.g. accent handles).
+    static let basketVisibilityDidChange = Notification.Name("basketVisibilityDidChange")
     
     // MARK: - System (Darwin notifications - keep as-is)
     

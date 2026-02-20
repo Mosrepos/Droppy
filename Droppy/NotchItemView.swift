@@ -403,7 +403,7 @@ struct NotchItemView: View {
                     isHovering = false
                 }
             }
-            .popover(isPresented: $showFolderPreview, arrowEdge: .bottom) {
+            .droppyPopover(isPresented: $showFolderPreview, arrowEdge: .bottom) {
                 FolderPreviewPopover(
                     folderURL: item.url,
                     isPinned: item.isPinned,
@@ -1535,7 +1535,7 @@ private struct NotchItemContent: View {
                 pendingConvertedItem = nil
             }
         }
-        .popover(isPresented: renamePopoverPresented, arrowEdge: .top) {
+        .droppyPopover(isPresented: renamePopoverPresented, arrowEdge: .top) {
             RenameTooltipPopover(
                 text: $renamingText,
                 title: String(localized: "action.edit"),

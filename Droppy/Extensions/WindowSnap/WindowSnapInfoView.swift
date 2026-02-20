@@ -50,7 +50,6 @@ private enum WindowSnapModifierOption: CaseIterable, Identifiable {
 
 @MainActor
 struct WindowSnapInfoView: View {
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.windowSnapPointerModeEnabled) private var pointerModeEnabled = PreferenceDefault.windowSnapPointerModeEnabled
     @AppStorage(AppPreferenceKey.windowSnapMoveModifierMask) private var moveModifierMask = Int(PreferenceDefault.windowSnapMoveModifierMask)
     @AppStorage(AppPreferenceKey.windowSnapResizeModifierMask) private var resizeModifierMask = Int(PreferenceDefault.windowSnapResizeModifierMask)
@@ -138,7 +137,7 @@ struct WindowSnapInfoView: View {
         }
         .frame(width: 500)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .onAppear {
             loadShortcuts()

@@ -24,11 +24,15 @@ struct BasketQuickActionsBar: View {
     private let buttonSize: CGFloat = 48
     private let spacing: CGFloat = 12
     private var isQuickshareEnabled: Bool { !ExtensionType.quickshare.isRemoved }
-    
-    // Colors based on transparency mode
-    private var buttonFill: Color {
-        useTransparentBackground ? AdaptiveColors.overlayAuto(0.12) : Color.black
+
+    private var useNativeQuickActionGlass: Bool {
+        guard useTransparentBackground else { return false }
+        if #available(macOS 26.0, *) {
+            return true
+        }
+        return false
     }
+    
     @State private var isBarAreaTargeted = false  // Track when drag is over the bar area (between buttons)
     
     /// Computed width of expanded bar area: 4 buttons + 3 gaps
@@ -92,11 +96,11 @@ struct BasketQuickActionsBar: View {
                 
                 // Collapsed: Zap button
                 Circle()
-                    .droppyTransparentFill(useTransparentBackground)
+                    .droppyNativeGlassFill(useTransparentBackground, fallback: Color.black)
                     .frame(width: buttonSize, height: buttonSize)
                     .overlay(
                         Circle()
-                            .stroke(AdaptiveColors.overlayAuto(isBoltTargeted ? 0.3 : (useTransparentBackground ? 0.12 : 0.06)), lineWidth: 1)
+                            .stroke(AdaptiveColors.overlayAuto(isBoltTargeted ? 0.3 : (useNativeQuickActionGlass ? 0.0 : (useTransparentBackground ? 0.12 : 0.06))), lineWidth: 1)
                     )
                     .overlay(
                         Image(systemName: "bolt.fill")
@@ -261,11 +265,20 @@ struct QuickDropActionButton: View {
     @State private var isTargeted = false
     
     private let size: CGFloat = 48
+
+    private var useNativeQuickActionGlass: Bool {
+        guard useTransparent else { return false }
+        if #available(macOS 26.0, *) {
+            return true
+        }
+        return false
+    }
     
     // Border opacity matches basket: 0.12 when transparent, 0.06 when solid
     private var borderOpacity: Double {
         if isTargeted { return 0.3 }
         if isHovering { return 0.2 }
+        if useNativeQuickActionGlass { return 0.0 }
         return useTransparent ? 0.12 : 0.06
     }
     
@@ -285,7 +298,7 @@ struct QuickDropActionButton: View {
             }
         ) {
             Circle()
-                .droppyTransparentFill(useTransparent)
+                .droppyNativeGlassFill(useTransparent, fallback: Color.black)
                 .frame(width: size, height: size)
                 .overlay(
                     // Border matches basket style exactly

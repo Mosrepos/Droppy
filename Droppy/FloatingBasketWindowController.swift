@@ -123,6 +123,10 @@ final class FloatingBasketWindowController: NSObject {
         return result
     }
 
+    private static func notifyBasketVisibilityChanged() {
+        NotificationCenter.default.post(name: .basketVisibilityDidChange, object: nil)
+    }
+
     /// Adds inbound files to the best available basket and reveals it.
     /// Used by non-drag entry points (URL scheme, services, clipboard, tracked folders, etc.).
     @discardableResult
@@ -217,6 +221,7 @@ final class FloatingBasketWindowController: NSObject {
         
         DroppyState.shared.isBasketVisible = shared.basketWindow?.isVisible == true
         DroppyState.shared.isBasketTargeted = false
+        notifyBasketVisibilityChanged()
     }
     
     private static func mergeBasketItems(from source: BasketState, into destination: BasketState) {
@@ -361,9 +366,9 @@ final class FloatingBasketWindowController: NSObject {
     }
     
     /// Called by DragMonitor when jiggle is detected during an active drag
-    /// - If dragging + 1 basket visible: spawn new basket (if multi-basket enabled)
-    /// - If dragging + 2+ baskets visible: show basket switcher
-    /// - If no basket visible: show primary basket
+    /// - If dragging + 0 baskets: show primary basket
+    /// - If dragging + 1 basket: spawn a second basket (if multi-basket enabled)
+    /// - If dragging + 2+ baskets: show basket switcher
     func onJiggleDetected() {
         guard !isShowingOrHiding else { return }
         guard DragMonitor.shared.isDragging else { return }
@@ -372,46 +377,32 @@ final class FloatingBasketWindowController: NSObject {
         if !multiBasketEnabled && !Self.activeBaskets.isEmpty {
             Self.enforceSingleBasketMode()
         }
-        let hiddenWithItems = Self.basketsWithItems.filter { $0.basketWindow?.isVisible != true }
-        
-        if Self.isAnyBasketVisible {
-            // Basket(s) already visible
-            if multiBasketEnabled {
-                // DRAGGING a file with basket visible
-                if !hiddenWithItems.isEmpty {
-                    // STEP 1: Show hidden baskets first
-                    Self.showAllHiddenBaskets()
-                    // After showing hidden, check if switcher needed (delayed to let windows appear)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        let allVisible = Self.visibleBaskets
-                        if allVisible.count >= 2 {
-                            BasketSwitcherWindowController.shared.show(baskets: allVisible) { selected, _ in
-                                selected.basketWindow?.orderFrontRegardless()
-                            }
-                        }
-                    }
-                } else {
-                    // No hidden baskets - check visible count
-                    let allVisible = Self.visibleBaskets
-                    if allVisible.count >= 2 {
-                        // STEP 2: 2+ baskets visible → show switcher
-                        BasketSwitcherWindowController.shared.show(baskets: allVisible) { selected, _ in
-                            selected.basketWindow?.orderFrontRegardless()
-                        }
-                    } else {
-                        // STEP 3: Only 1 basket → spawn new
-                        Self.spawnNewBasket()
-                    }
-                }
-            }
-            // Already visible and single-basket mode: keep current basket.
-        } else {
-            // No basket visible - show hidden baskets or primary basket
-            if !hiddenWithItems.isEmpty {
-                Self.showAllHiddenBaskets()
-            } else {
+
+        guard multiBasketEnabled else {
+            if !Self.isAnyBasketVisible {
                 showBasket()
             }
+            return
+        }
+
+        // Drag-jiggle behavior should depend on existing baskets, not on visibility:
+        // 0 baskets -> show primary, 1 basket -> spawn second, 2+ baskets -> switcher.
+        var availableBaskets: [FloatingBasketWindowController] = []
+        for basket in Self.visibleBaskets where !availableBaskets.contains(where: { $0 === basket }) {
+            availableBaskets.append(basket)
+        }
+        for basket in Self.basketsWithItems where !availableBaskets.contains(where: { $0 === basket }) {
+            availableBaskets.append(basket)
+        }
+
+        if availableBaskets.count >= 2 {
+            BasketSwitcherWindowController.shared.show(baskets: availableBaskets) { selected, _ in
+                selected.showBasket(atLastPosition: true)
+            }
+        } else if availableBaskets.count == 1 {
+            Self.spawnNewBasket()
+        } else {
+            showBasket()
         }
     }
     
@@ -499,6 +490,7 @@ final class FloatingBasketWindowController: NSObject {
     /// Removes a basket from the active collection (called when closed)
     static func removeBasket(_ basket: FloatingBasketWindowController) {
         activeBaskets.removeAll { $0 === basket }
+        notifyBasketVisibilityChanged()
     }
 
     /// Aggressively reclaim transient image/link caches when no baskets are visible.
@@ -640,6 +632,7 @@ final class FloatingBasketWindowController: NSObject {
             cancelHideTimer()
             startKeyboardMonitor()
             startMouseTrackingMonitor()
+            Self.notifyBasketVisibilityChanged()
         } else {
             // Create new window at target position (delegate to showBasket which handles creation)
             // Set the target frame temporarily and call regular showBasket
@@ -681,6 +674,7 @@ final class FloatingBasketWindowController: NSObject {
             cancelHideTimer()
             startKeyboardMonitor()
             startMouseTrackingMonitor()
+            Self.notifyBasketVisibilityChanged()
             return
         }
 
@@ -773,6 +767,7 @@ final class FloatingBasketWindowController: NSObject {
         basketWindow = panel
         lastBasketFrame = windowFrame  // Save position for tracked folder reopening
         isShowingOrHiding = false
+        Self.notifyBasketVisibilityChanged()
         
         // PREMIUM: Haptic feedback confirms jiggle gesture success
         HapticFeedback.expand()
@@ -1027,6 +1022,7 @@ final class FloatingBasketWindowController: NSObject {
             DroppyState.shared.isBasketTargeted = false
             self.isShowingOrHiding = false
             Self.releaseTransientMemoryIfIdle()
+            Self.notifyBasketVisibilityChanged()
 
         }
     }

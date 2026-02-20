@@ -34,7 +34,6 @@ enum FFmpegInstallStep: Int, CaseIterable {
 // MARK: - Install View
 
 struct FFmpegInstallView: View {
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @ObservedObject var manager = FFmpegInstallManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
@@ -83,7 +82,7 @@ struct FFmpegInstallView: View {
         }
         .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .ffmpegVideoCompression)

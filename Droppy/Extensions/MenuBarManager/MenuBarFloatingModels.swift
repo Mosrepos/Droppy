@@ -472,13 +472,7 @@ enum MenuBarStatusWindowCache {
         }
 
         let statusLayer = Int(CGWindowLevelForKey(.statusWindow))
-        let acceptedLayers = Set([
-            statusLayer - 2,
-            statusLayer - 1,
-            statusLayer,
-            statusLayer + 1,
-            statusLayer + 2,
-        ])
+        let acceptedLayers = Set((statusLayer - 4)...(statusLayer + 4))
 
         var entries = [CGWindowID: Entry]()
         entries.reserveCapacity(windowList.count)
@@ -494,8 +488,9 @@ enum MenuBarStatusWindowCache {
 
             guard bounds.width > 3,
                   bounds.height > 3,
-                  bounds.width < 280,
-                  bounds.height < 56 else {
+                  bounds.width < 1200,
+                  bounds.height < 90,
+                  isLikelyMenuBarBandBounds(bounds) else {
                 continue
             }
 
@@ -513,6 +508,27 @@ enum MenuBarStatusWindowCache {
         }
 
         return entries
+    }
+
+    private static func isLikelyMenuBarBandBounds(_ bounds: CGRect) -> Bool {
+        let aspectRatio = bounds.width / max(bounds.height, 1)
+        guard aspectRatio <= 40 else {
+            return false
+        }
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        guard let screen = MenuBarFloatingCoordinateConverter.screenContaining(quartzPoint: center),
+              let displayBounds = MenuBarFloatingCoordinateConverter.displayBounds(of: screen) else {
+            return false
+        }
+        let inferredMenuBarHeight = max(22, min(72, screen.frame.maxY - screen.visibleFrame.maxY))
+        let tolerance = max(44, inferredMenuBarHeight + 16)
+
+        // Different macOS APIs can report window bounds in different coordinate
+        // conventions (top-left vs. bottom-left origin). Accept either "near top edge"
+        // interpretation to keep status-window detection stable across systems.
+        let nearTopInTopLeftCoords = abs(bounds.minY - displayBounds.minY) <= tolerance
+        let nearTopInBottomLeftCoords = abs(displayBounds.maxY - bounds.maxY) <= tolerance
+        return nearTopInTopLeftCoords || nearTopInBottomLeftCoords
     }
 }
 

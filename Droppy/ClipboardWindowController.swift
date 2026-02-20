@@ -169,8 +169,15 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             if let window = self?.window {
                 AppKitMotion.resetPresentationState(window)
             }
+            NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
             self?.isAnimating = false
         }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stopClickMonitoring()
+        ClipboardManager.shared.isEditingContent = false
+        NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
     }
     
     // MARK: - Click Monitoring (Auto-Close)
@@ -267,6 +274,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             if let window = self?.window {
                 AppKitMotion.resetPresentationState(window)
             }
+            NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
             self?.isAnimating = false
             
             // The Mirror Method (V12): Refined Sequence
@@ -319,6 +327,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             if let window = self?.window {
                 AppKitMotion.resetPresentationState(window)
             }
+            NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
             self?.isAnimating = false
             
             // The Mirror Method (V12): Refined Sequence

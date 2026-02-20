@@ -11,8 +11,6 @@ import AppKit
 
 struct CameraInfoView: View {
     @Environment(\.dismiss) private var dismiss
-
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.cameraInstalled) private var isInstalled = PreferenceDefault.cameraInstalled
     @AppStorage(AppPreferenceKey.cameraEnabled) private var isEnabled = PreferenceDefault.cameraEnabled
     @AppStorage(AppPreferenceKey.cameraPreferredDeviceID) private var preferredDeviceID = PreferenceDefault.cameraPreferredDeviceID
@@ -47,7 +45,7 @@ struct CameraInfoView: View {
         }
         .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .camera)

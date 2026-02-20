@@ -59,17 +59,22 @@ struct FloatingBasketView: View {
     
     // Global rename state
     @State private var renamingItemId: UUID?
+
+    // Keeps accent handle state in sync when basket visibility/topology changes.
+    @State private var accentColorsEnabled = FloatingBasketWindowController.shouldShowAccentColors
     
     /// Owning controller for this basket instance.
     private var ownerController: FloatingBasketWindowController? { basketState.ownerController }
 
     /// Show accent colors only when at least two baskets are visible.
-    private var shouldShowAccentColor: Bool {
-        ownerController?.shouldShowAccentColor ?? FloatingBasketWindowController.shouldShowAccentColors
-    }
+    private var shouldShowAccentColor: Bool { accentColorsEnabled }
 
     private var effectiveAccentColor: Color {
         shouldShowAccentColor ? accentColor.color : AdaptiveColors.primaryTextAuto
+    }
+
+    private func refreshAccentColorVisibility() {
+        accentColorsEnabled = ownerController?.shouldShowAccentColor ?? FloatingBasketWindowController.shouldShowAccentColors
     }
     
     private let cornerRadius: CGFloat = 28
@@ -92,6 +97,14 @@ struct FloatingBasketView: View {
 
     private var basketSecondaryTextColor: Color {
         AdaptiveColors.secondaryTextAuto
+    }
+
+    private var usesNativeBasketGlass: Bool {
+        guard useTransparentBackground else { return false }
+        if #available(macOS 26.0, *) {
+            return true
+        }
+        return false
     }
     
     /// Full expanded width derived from item width/spacing and fixed edge padding.
@@ -205,6 +218,12 @@ struct FloatingBasketView: View {
         }
         .onReceive(autoScrollTicker) { _ in
             performAutoScrollTick()
+        }
+        .onAppear {
+            refreshAccentColorVisibility()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .basketVisibilityDidChange)) { _ in
+            refreshAccentColorVisibility()
         }
         .onChange(of: enableQuickActions) { _, enabled in
             if !enabled {
@@ -452,15 +471,17 @@ struct FloatingBasketView: View {
     @ViewBuilder
     private var basketBackground: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .droppyTransparentFill(useTransparentBackground)
+            .droppyNativeGlassFill(useTransparentBackground)
             .frame(width: currentWidth, height: currentHeight)
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(
-                        AdaptiveColors.overlayAuto(0.12),
-                        lineWidth: 1
-                    )
-            )
+            .overlay {
+                if !usesNativeBasketGlass {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(
+                            AdaptiveColors.overlayAuto(0.12),
+                            lineWidth: 1
+                        )
+                }
+            }
             // Sleek drag handle at top.
             // Keep it visible for empty baskets too so newly created blank baskets
             // can still be repositioned immediately.
@@ -514,7 +535,8 @@ struct FloatingBasketView: View {
             // Opaque background to hide content underneath
             // Must match basket background style (material for transparent, black for solid)
             if useTransparentBackground {
-                Rectangle().droppyGlassFill()
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .droppyNativeGlassFill(true)
             } else {
                 Rectangle().fill(AdaptiveColors.panelBackgroundAuto)
             }

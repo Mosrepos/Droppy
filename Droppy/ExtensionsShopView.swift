@@ -818,6 +818,7 @@ struct FeaturedExtensionCard<DetailView: View>: View {
             SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
         }) {
             detailView()
+                .presentationBackground(.clear)
         }
     }
 }
@@ -986,6 +987,7 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
             SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
         }) {
             detailView()
+                .presentationBackground(.clear)
         }
     }
 }
@@ -1164,6 +1166,7 @@ struct FeaturedExtensionCardCompact<DetailView: View>: View {
             SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
         }) {
             detailView()
+                .presentationBackground(.clear)
         }
     }
 }
@@ -1299,6 +1302,7 @@ struct CompactExtensionRow<DetailView: View>: View {
             SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
         }) {
             detailView()
+                .presentationBackground(.clear)
         }
         .opacity(isDisabled ? 0.78 : 1)
     }
@@ -1535,7 +1539,10 @@ struct AIBackgroundRemovalSettingsRow: View {
         .onTapGesture { showInstallSheet = true }
         .sheet(isPresented: $showInstallSheet, onDismiss: {
             SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-        }) { AIInstallView() }
+        }) {
+            AIInstallView()
+                .presentationBackground(.clear)
+        }
     }
 }
 

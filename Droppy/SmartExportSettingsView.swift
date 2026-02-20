@@ -281,7 +281,7 @@ struct SmartExportSettingsRow: View {
                 .onHover { hovering in
                     showPopover = hovering
                 }
-                .popover(isPresented: $showPopover, arrowEdge: .leading) {
+                .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.down.doc.fill")

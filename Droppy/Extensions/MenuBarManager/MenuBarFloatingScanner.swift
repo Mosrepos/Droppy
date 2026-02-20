@@ -264,7 +264,12 @@ final class MenuBarFloatingScanner {
                     preferredOwnerPIDs: ownerPIDs,
                     excluding: consumedWindowIDs
                 )
-                if let matchedWindowID {
+                if let matchedWindowID,
+                   shouldConsumeWindowID(
+                       matchedWindowID,
+                       for: quartzFrame,
+                       in: menuBarWindowEntries
+                   ) {
                     consumedWindowIDs.insert(matchedWindowID)
                 }
                 if includeIcons, isIconDebugEnabled {
@@ -285,6 +290,7 @@ final class MenuBarFloatingScanner {
                     icon = captureIcon(
                         quartzRect: quartzFrame,
                         windowID: matchedWindowID,
+                        windowEntries: menuBarWindowEntries,
                         compositeImages: compositeImages
                     )
                     if isIconDebugEnabled {
@@ -396,11 +402,12 @@ final class MenuBarFloatingScanner {
             runningBundleIDs = runningBundleIDsSnapshot()
             lastFullOwnerDiscoveryTimestamp = now
         } else {
-            runningBundleIDs = ownerHasMenuBarRoots
-                .compactMap { (bundleID, hasRoots) in
-                    hasRoots ? bundleID : nil
-                }
-                .sorted()
+            // Between full discovery passes, still include newly-launched bundles
+            // we have never evaluated yet. This prevents delayed detection for
+            // fresh menu bar apps opened within the discovery cooldown window.
+            runningBundleIDs = runningBundleIDsSnapshot().filter { bundleID in
+                ownerHasMenuBarRoots[bundleID] != false
+            }
         }
 
         for bundleID in runningBundleIDs {
@@ -615,6 +622,33 @@ final class MenuBarFloatingScanner {
         return bestID
     }
 
+    private func shouldConsumeWindowID(
+        _ windowID: CGWindowID,
+        for quartzFrame: CGRect,
+        in windowEntries: [CGWindowID: MenuBarStatusWindowCache.Entry]
+    ) -> Bool {
+        guard let windowBounds = windowEntries[windowID]?.bounds else {
+            return true
+        }
+
+        let widthAllowance = max(5, quartzFrame.width * 0.72)
+        let heightAllowance = max(4, quartzFrame.height * 0.72)
+        let isNearSingleItemWindow =
+            abs(windowBounds.width - quartzFrame.width) <= widthAllowance
+            && abs(windowBounds.height - quartzFrame.height) <= heightAllowance
+        if isNearSingleItemWindow {
+            return true
+        }
+
+        // Shared/container status windows can host multiple adjacent icons.
+        // Reusing their window ID lets each AX frame crop its own real glyph.
+        if isLikelyContainerWindowBounds(windowBounds) {
+            return false
+        }
+
+        return true
+    }
+
     // MARK: - Icon Capture
 
     /// Batch-captures all menu bar item windows with transparent backgrounds.
@@ -673,7 +707,7 @@ final class MenuBarFloatingScanner {
                 cgImage: cgImage,
                 size: NSSize(width: bounds.width, height: bounds.height)
             )
-            if isSuspiciousCapture(nsImage) {
+            if !isLikelyContainerWindowBounds(bounds), isSuspiciousCapture(nsImage) {
                 iconDebugLog("modern capture reject window=\(wid) reason=suspicious \(iconDebugSummary(nsImage))")
                 continue
             }
@@ -708,7 +742,7 @@ final class MenuBarFloatingScanner {
                 cgImage: cgImage,
                 size: NSSize(width: bounds.width, height: bounds.height)
             )
-            if isSuspiciousCapture(nsImage) {
+            if !isLikelyContainerWindowBounds(bounds), isSuspiciousCapture(nsImage) {
                 iconDebugLog("legacy capture reject window=\(windowID) reason=suspicious \(iconDebugSummary(nsImage))")
                 continue
             }
@@ -720,7 +754,12 @@ final class MenuBarFloatingScanner {
         return results
     }
 
-    private func captureIcon(quartzRect: CGRect, windowID: CGWindowID?, compositeImages: [CGWindowID: NSImage]?) -> NSImage? {
+    private func captureIcon(
+        quartzRect: CGRect,
+        windowID: CGWindowID?,
+        windowEntries: [CGWindowID: MenuBarStatusWindowCache.Entry],
+        compositeImages: [CGWindowID: NSImage]?
+    ) -> NSImage? {
         guard quartzRect.width > 1, quartzRect.height > 1 else {
             iconDebugLog("capture skip reason=invalidRect width=\(quartzRect.width) height=\(quartzRect.height)")
             return nil
@@ -733,14 +772,21 @@ final class MenuBarFloatingScanner {
             iconDebugLog("capture skip window=\(windowID) reason=cooldown")
             return nil
         }
+        let windowBounds = windowEntries[windowID]?.bounds ?? quartzRect
 
         // Primary path: use pre-captured composite image.
-        if let image = compositeImages?[windowID] {
+        if let image = compositeImages?[windowID],
+           let cropped = croppedIcon(
+               from: image,
+               windowBounds: windowBounds,
+               targetQuartzRect: quartzRect,
+               treatAsContainerWindow: isLikelyContainerWindowBounds(windowBounds)
+           ) {
             recordCaptureSuccess(for: windowID)
             if isIconDebugEnabled {
-                iconDebugLog("capture hit-composite window=\(windowID) \(iconDebugSummary(image))")
+                iconDebugLog("capture hit-composite window=\(windowID) \(iconDebugSummary(cropped))")
             }
-            return image
+            return cropped
         }
 
         // Fallback: capture the exact window instead of a display region to avoid wrong icons.
@@ -759,20 +805,106 @@ final class MenuBarFloatingScanner {
             iconDebugLog("capture fallback reject window=\(windowID) reason=fullyTransparent")
             return nil
         }
-        let nsImage = NSImage(
+        let capturedWindowImage = NSImage(
             cgImage: cgImage,
-            size: NSSize(width: quartzRect.width, height: quartzRect.height)
+            size: NSSize(width: windowBounds.width, height: windowBounds.height)
         )
-        guard !isSuspiciousCapture(nsImage) else {
+        guard let cropped = croppedIcon(
+            from: capturedWindowImage,
+            windowBounds: windowBounds,
+            targetQuartzRect: quartzRect,
+            treatAsContainerWindow: isLikelyContainerWindowBounds(windowBounds)
+        ) else {
             recordCaptureFailure(for: windowID)
-            iconDebugLog("capture fallback reject window=\(windowID) reason=suspicious \(iconDebugSummary(nsImage))")
+            iconDebugLog("capture fallback reject window=\(windowID) reason=suspicious \(iconDebugSummary(capturedWindowImage))")
             return nil
         }
         recordCaptureSuccess(for: windowID)
         if isIconDebugEnabled {
-            iconDebugLog("capture fallback accept window=\(windowID) \(iconDebugSummary(nsImage))")
+            iconDebugLog("capture fallback accept window=\(windowID) \(iconDebugSummary(cropped))")
         }
-        return nsImage
+        return cropped
+    }
+
+    private func croppedIcon(
+        from windowImage: NSImage,
+        windowBounds: CGRect,
+        targetQuartzRect: CGRect,
+        treatAsContainerWindow: Bool
+    ) -> NSImage? {
+        guard windowBounds.width > 1, windowBounds.height > 1 else {
+            if !isSuspiciousCapture(windowImage) {
+                return windowImage
+            }
+            return nil
+        }
+
+        let targetRect = targetQuartzRect.intersection(windowBounds)
+        guard targetRect.width > 1, targetRect.height > 1 else {
+            if !isSuspiciousCapture(windowImage) {
+                return windowImage
+            }
+            return nil
+        }
+
+        let iconImage = cropWindowImage(
+            windowImage,
+            windowBounds: windowBounds,
+            targetQuartzRect: targetRect
+        ) ?? windowImage
+        guard let cgImage = iconImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              !isFullyTransparent(cgImage) else {
+            return nil
+        }
+        if treatAsContainerWindow {
+            return iconImage
+        }
+        return isSuspiciousCapture(iconImage) ? nil : iconImage
+    }
+
+    private func cropWindowImage(
+        _ windowImage: NSImage,
+        windowBounds: CGRect,
+        targetQuartzRect: CGRect
+    ) -> NSImage? {
+        guard let cgImage = windowImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        let scaleX = CGFloat(cgImage.width) / max(windowBounds.width, 1)
+        let scaleY = CGFloat(cgImage.height) / max(windowBounds.height, 1)
+        let localX = (targetQuartzRect.minX - windowBounds.minX) * scaleX
+        let localY = (targetQuartzRect.minY - windowBounds.minY) * scaleY
+        let localWidth = targetQuartzRect.width * scaleX
+        let localHeight = targetQuartzRect.height * scaleY
+
+        var cropRect = CGRect(
+            x: localX,
+            y: CGFloat(cgImage.height) - localY - localHeight,
+            width: localWidth,
+            height: localHeight
+        ).integral
+        let imageBounds = CGRect(
+            x: 0,
+            y: 0,
+            width: CGFloat(cgImage.width),
+            height: CGFloat(cgImage.height)
+        )
+        cropRect = cropRect.intersection(imageBounds)
+        guard cropRect.width > 1,
+              cropRect.height > 1,
+              let croppedCGImage = cgImage.cropping(to: cropRect) else {
+            return nil
+        }
+        return NSImage(
+            cgImage: croppedCGImage,
+            size: NSSize(width: targetQuartzRect.width, height: targetQuartzRect.height)
+        )
+    }
+
+    private func isLikelyContainerWindowBounds(_ bounds: CGRect) -> Bool {
+        guard bounds.width > 1, bounds.height > 1 else { return false }
+        let aspectRatio = bounds.width / max(bounds.height, 1)
+        return bounds.width >= 120 && aspectRatio >= 4.6
     }
 
     private func shouldSkipCapture(for windowID: CGWindowID) -> Bool {

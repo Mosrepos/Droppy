@@ -631,7 +631,7 @@ struct SettingsView: View {
         ZStack {
             NavigationSplitView {
                 SettingsSidebar(selectedTab: $selectedTab)
-                    .droppyTransparentBackground(useTransparentBackground)
+                    .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
             } detail: {
                 settingsDetail
             }
@@ -642,7 +642,7 @@ struct SettingsView: View {
         // Apply blue accent color for toggles
         .tint(.droppyAccent)
         // Apply transparent material or solid black
-        .droppyTransparentBackground(useTransparentBackground)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
         // CRITICAL: Always use dark color scheme to ensure text is readable
         // In both solid black and transparent material modes, we need light text
         
@@ -2954,23 +2954,30 @@ struct SettingsView: View {
                 // AI Background Removal has its own view
                 if extensionType == .aiBackgroundRemoval {
                     AIInstallView()
+                        .presentationBackground(.clear)
                 } else if extensionType == .windowSnap {
                     // Window Snap has its own detailed configuration view
                     WindowSnapInfoView(installCount: nil, rating: nil)
+                        .presentationBackground(.clear)
                 } else if extensionType == .elementCapture {
                     // Element Capture has its own detailed configuration view
                     ElementCaptureInfoView(currentShortcut: .constant(nil), installCount: nil, rating: nil)
+                        .presentationBackground(.clear)
                 } else if extensionType == .voiceTranscribe {
                     // Voice Transcribe has its own detailed configuration view
                     VoiceTranscribeInfoView(installCount: nil, rating: nil)
+                        .presentationBackground(.clear)
                 } else if extensionType == .ffmpegVideoCompression {
                     // FFmpeg Video Compression has its own install view
                     FFmpegInstallView(installCount: nil, rating: nil)
+                        .presentationBackground(.clear)
                 } else if extensionType == .camera {
                     CameraInfoView(installCount: nil, rating: nil)
+                        .presentationBackground(.clear)
                 } else if extensionType == .menuBarManager {
                     // Menu Bar Manager has its own configuration view
                     MenuBarManagerInfoView(installCount: nil, rating: nil)
+                        .presentationBackground(.clear)
                 } else {
                     // All other extensions use ExtensionInfoView
                     ExtensionInfoView(extensionType: extensionType) {
@@ -2990,6 +2997,7 @@ struct SettingsView: View {
                             break // No action needed - these have their own configuration UI
                         }
                     }
+                    .presentationBackground(.clear)
                 }
             }
     }
@@ -3838,7 +3846,7 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(DroppyPillButtonStyle(size: .small))
-            .popover(isPresented: $showAppPicker, arrowEdge: .bottom) {
+            .droppyPopover(isPresented: $showAppPicker, arrowEdge: .bottom) {
                 appPickerView
             }
         } header: {
@@ -4114,7 +4122,7 @@ struct SwipeGestureInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
                         PremiumSettingsIcon(icon: "hand.draw.fill", baseHue: 0.95, size: 32, iconSize: 16)
@@ -4156,7 +4164,7 @@ struct NotchShelfInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "rectangle.topthird.inset.filled")
@@ -4201,7 +4209,7 @@ struct BasketGestureInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "hand.draw.fill")
@@ -4243,7 +4251,7 @@ struct JiggleToShowInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "waveform.path")
@@ -4289,7 +4297,7 @@ struct InstantAppearInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "bolt.fill")
@@ -4331,7 +4339,7 @@ struct BasketSensitivityInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "slider.horizontal.3")
@@ -4372,7 +4380,7 @@ struct BasketDragShortcutInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "keyboard")
@@ -4413,7 +4421,7 @@ struct AirDropZoneInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "airplayaudio")
@@ -4455,7 +4463,7 @@ struct AutoCleanInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
@@ -4497,7 +4505,7 @@ struct AlwaysCopyInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "shield.checkered")
@@ -5111,7 +5119,7 @@ struct PowerFoldersInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "folder.fill.badge.plus")
@@ -5167,7 +5175,7 @@ struct ClipboardShortcutInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "doc.on.clipboard.fill")
@@ -5233,7 +5241,7 @@ struct ExternalDisplayInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "display")
@@ -5274,7 +5282,7 @@ struct QuickActionsInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "bolt.circle.fill")
@@ -5441,7 +5449,7 @@ struct TrackedFoldersInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .leading) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "folder.badge.plus")
@@ -5798,7 +5806,7 @@ struct AdvancedAutofadeInfoButton: View {
             .onHover { hovering in
                 showPopover = hovering
             }
-            .popover(isPresented: $showPopover, arrowEdge: .trailing) {
+            .droppyPopover(isPresented: $showPopover, arrowEdge: .trailing) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Advanced Auto-Fade")
                         .font(.headline)

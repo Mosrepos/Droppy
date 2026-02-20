@@ -1339,10 +1339,15 @@ final class MenuBarManager: ObservableObject {
         let mouseLocation = NSEvent.mouseLocation
         guard let screen = interactionScreen(for: mouseLocation) else { return }
         let menuBarHeight = effectiveMenuBarHeight(for: screen)
+        let isInMenuBarInteractionZone = isInInteractiveMenuBarZone(
+            mouseLocation: mouseLocation,
+            screen: screen,
+            menuBarHeight: menuBarHeight
+        )
         
         // Reveal only when hovering an actual visible menu bar icon
         // to avoid triggering on empty right-side menu bar space.
-        let isInMenuBar = isHoveringRevealEligibleMenuBarIcon(
+        let isHoveringRevealEligibleIcon = isHoveringRevealEligibleMenuBarIcon(
             mouseLocation: mouseLocation,
             screen: screen,
             menuBarHeight: menuBarHeight
@@ -1350,7 +1355,7 @@ final class MenuBarManager: ObservableObject {
 
         
         if let hiddenSection = section(withName: .hidden) {
-            if isInMenuBar && hiddenSection.isHidden {
+            if isHoveringRevealEligibleIcon && hiddenSection.isHidden {
                 // Check if a modifier key is required and if it's held
                 if let requiredFlags = hoverModifierKey.eventFlags {
                     guard NSEvent.modifierFlags.contains(requiredFlags) else { return }
@@ -1359,11 +1364,11 @@ final class MenuBarManager: ObservableObject {
                 cancelAutoHide()
                 cancelPendingHoverHide()
                 hiddenSection.show()
-            } else if isInMenuBar && !hiddenSection.isHidden {
+            } else if isInMenuBarInteractionZone && !hiddenSection.isHidden {
                 // Cursor still in menu bar while items are shown - cancel any pending hide
                 cancelAutoHide()
                 cancelPendingHoverHide()
-            } else if !isInMenuBar && !hiddenSection.isHidden {
+            } else if !isInMenuBarInteractionZone && !hiddenSection.isHidden {
                 // Cursor left menu bar — apply rehide strategy
                 switch rehideStrategy {
                 case .timed:
@@ -1407,7 +1412,7 @@ final class MenuBarManager: ObservableObject {
             guard !self.isLockedVisible else { return }
 
             let currentLocation = NSEvent.mouseLocation
-            let stillInMenuBar = self.isHoveringRevealEligibleMenuBarIcon(
+            let stillInMenuBar = self.isInInteractiveMenuBarZone(
                 mouseLocation: currentLocation,
                 screen: screen,
                 menuBarHeight: menuBarHeight
@@ -1491,14 +1496,31 @@ final class MenuBarManager: ObservableObject {
         return max(24, NSStatusBar.system.thickness)
     }
 
+    private func isInInteractiveMenuBarZone(
+        mouseLocation: CGPoint,
+        screen: NSScreen,
+        menuBarHeight: CGFloat
+    ) -> Bool {
+        let isWithinScreenX = mouseLocation.x >= screen.frame.minX && mouseLocation.x <= screen.frame.maxX
+        guard isWithinScreenX else { return false }
+        let isAtTop = mouseLocation.y >= screen.frame.maxY - menuBarHeight
+        guard isAtTop else { return false }
+
+        return true
+    }
+
     private func isHoveringRevealEligibleMenuBarIcon(
         mouseLocation: CGPoint,
         screen: NSScreen,
         menuBarHeight: CGFloat
     ) -> Bool {
-        let isAtTop = mouseLocation.y >= screen.frame.maxY - menuBarHeight
-        guard isAtTop else { return false }
+        guard isInInteractiveMenuBarZone(
+            mouseLocation: mouseLocation,
+            screen: screen,
+            menuBarHeight: menuBarHeight
+        ) else { return false }
 
+        // Keep reveal intent scoped to the managed side of the divider.
         if let hiddenFrame = controlItemFrame(for: .hidden),
            screen.frame.intersects(hiddenFrame) {
             let dividerBoundaryX = hiddenDividerBoundaryX(for: hiddenFrame)
@@ -1622,7 +1644,7 @@ final class MenuBarManager: ObservableObject {
         guard let screen = interactionScreen(for: mouseLocation) else { return }
         let menuBarHeight = effectiveMenuBarHeight(for: screen)
 
-        if !isHoveringRevealEligibleMenuBarIcon(
+        if !isInInteractiveMenuBarZone(
             mouseLocation: mouseLocation,
             screen: screen,
             menuBarHeight: menuBarHeight

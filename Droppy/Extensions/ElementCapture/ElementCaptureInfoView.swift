@@ -11,8 +11,6 @@ struct ElementCaptureInfoView: View {
     @Binding var currentShortcut: SavedShortcut?
     var installCount: Int?
     var rating: AnalyticsService.ExtensionRating?
-    
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringAction = false
     @State private var isHoveringClose = false
@@ -96,7 +94,7 @@ struct ElementCaptureInfoView: View {
         }
         .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .onAppear { loadShortcuts() }
         .onDisappear {
@@ -575,7 +573,7 @@ struct ElementCaptureInfoView: View {
                         .foregroundStyle(.secondary)
                         .onTapGesture { showOCRInfo.toggle() }
                         .onHover { hovering in showOCRInfo = hovering }
-                        .popover(isPresented: $showOCRInfo, arrowEdge: .trailing) {
+                        .droppyPopover(isPresented: $showOCRInfo, arrowEdge: .trailing) {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "text.viewfinder")

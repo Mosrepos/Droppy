@@ -180,7 +180,7 @@ struct ToDoView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
                 .droppyTextInputChrome(horizontalPadding: 10, verticalPadding: 6)
-                .popover(isPresented: $showingMentionPicker, arrowEdge: .bottom) {
+                .droppyPopover(isPresented: $showingMentionPicker, arrowEdge: .bottom) {
                     ToDoReminderListMentionTooltip(
                         options: mentionOptions,
                         selectedID: manager.newItemReminderListID,
@@ -195,7 +195,7 @@ struct ToDoView: View {
                     showingNewDueDatePicker.toggle()
                 }
                 .help(manager.newItemDueDate == nil ? "Set due date" : "Edit due date")
-                .popover(isPresented: $showingNewDueDatePicker) {
+                .droppyPopover(isPresented: $showingNewDueDatePicker) {
                     ToDoDueDatePopoverContentView(
                         dueDate: Bindable(manager).newItemDueDate,
                         primaryButtonTitle: "Done",
@@ -908,14 +908,14 @@ struct ToDoRow: View {
                 isEditing = true
             }
         }
-        .popover(
+        .droppyPopover(
             isPresented: $isShowingInfoPopover,
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .top
         ) {
             infoPopoverContent
         }
-        .popover(isPresented: $isEditing) {
+        .droppyPopover(isPresented: $isEditing) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(String(localized: "action.edit"))
                     .font(.system(size: 12, weight: .semibold))

@@ -444,7 +444,7 @@ struct ToDoShelfBar: View {
                 showingInputDueDatePicker.toggle()
             }
             .help(inputDueDate == nil ? "Set due date" : "Edit due date")
-            .popover(isPresented: $showingInputDueDatePicker) {
+            .droppyPopover(isPresented: $showingInputDueDatePicker) {
                 ToDoDueDatePopoverContentLocal(
                     dueDate: $inputDueDate,
                     primaryButtonTitle: "Done",
@@ -535,7 +535,7 @@ struct ToDoShelfBar: View {
         )
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: Layout.textFieldHeight, alignment: .center)
-            .popover(isPresented: $showingMentionPicker, arrowEdge: .bottom) {
+            .droppyPopover(isPresented: $showingMentionPicker, arrowEdge: .bottom) {
                 ToDoReminderListMentionTooltip(
                     options: mentionOptions,
                     selectedID: inputReminderListID,
@@ -1041,7 +1041,7 @@ struct ToDoShelfBar: View {
                             .buttonStyle(DroppyPillButtonStyle(size: .small))
                             .contentTransition(.interpolate)
                             .animation(DroppyAnimation.state, value: detailDueDateDraft == nil)
-                            .popover(isPresented: $showingDetailDueDatePicker) {
+                            .droppyPopover(isPresented: $showingDetailDueDatePicker) {
                                 ToDoDueDatePopoverContentLocal(
                                     dueDate: Binding(
                                         get: { detailDueDateDraft },
@@ -2219,14 +2219,14 @@ private struct CompactTimelineDetailsModifier<InfoPopover: View, EditPopover: Vi
                         isEditing = true
                     }
                 }
-                .popover(
+                .droppyPopover(
                     isPresented: $isShowingInfoPopover,
                     attachmentAnchor: .rect(.bounds),
                     arrowEdge: .top
                 ) {
                     infoPopover
                 }
-                .popover(isPresented: $isEditing) {
+                .droppyPopover(isPresented: $isEditing) {
                     editPopover
                 }
                 .onChange(of: isShowingInfoPopover) { _, _ in
@@ -2453,14 +2453,14 @@ private struct TaskRow: View {
             }
         }
         .animation(DroppyAnimation.hoverQuick, value: isHovering)
-        .popover(
+        .droppyPopover(
             isPresented: $isShowingInfoPopover,
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .top
         ) {
             hoverInfoPopoverContent
         }
-        .popover(isPresented: $isEditing) {
+        .droppyPopover(isPresented: $isEditing) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(String(localized: "action.edit"))
                     .font(.system(size: 12, weight: .semibold))

@@ -212,7 +212,7 @@ struct ClipboardManagerView: View {
                                     }
                                 }
                             }
-                            .popover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
+                            .droppyPopover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
                                 TagFilterPopover(
                                     selectedTagFilter: $selectedTagFilter,
                                     showTagManagement: $showTagManagement,
@@ -275,7 +275,7 @@ struct ClipboardManagerView: View {
                     }
             }
         }
-        .droppyTransparentBackground(useTransparentBackground)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
         .frame(minWidth: 1040, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity)
         .background(pasteShortcutButton)
         .background(navigationShortcutButtons)
@@ -407,7 +407,7 @@ struct ClipboardManagerView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .droppyTransparentBackground(useTransparentBackground)
+            .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous)
@@ -1451,7 +1451,7 @@ struct ClipboardItemRow: View {
             isHovering = hovering
         }
         .animation(DroppyAnimation.hoverBouncy, value: isHovering)
-        .popover(isPresented: renamePopoverPresented, arrowEdge: .top) {
+        .droppyPopover(isPresented: renamePopoverPresented, arrowEdge: .top) {
             ClipboardRenamePopover(
                 text: $renamingText,
                 title: String(localized: "action.edit"),
@@ -1767,6 +1767,25 @@ struct ClipboardPreviewView: View {
         }
         
         isSavingFile = false
+    }
+
+    private func releasePreviewResources(clearCachedContent: Bool) {
+        videoPlayer?.pause()
+        videoPlayer?.replaceCurrentItem(with: nil)
+        videoPlayer = nil
+        isVideoFile = false
+
+        guard clearCachedContent else { return }
+        cachedImage = nil
+        cachedAttributedText = nil
+        cachedFilePreview = nil
+        linkPreviewTitle = nil
+        linkPreviewDescription = nil
+        linkPreviewImage = nil
+        linkPreviewIcon = nil
+        isLoadingLinkPreview = false
+        isDirectImageLink = false
+        showZoomedPreview = false
     }
     
     var body: some View {
@@ -2226,7 +2245,7 @@ struct ClipboardPreviewView: View {
                     }
                     .buttonStyle(DroppyCircleButtonStyle(size: 40))
                     .help("Assign Tag")
-                    .popover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
+                    .droppyPopover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
                         VStack(spacing: 4) {
                             ForEach(manager.tags) { tag in
                                 Button {
@@ -2286,7 +2305,7 @@ struct ClipboardPreviewView: View {
                         }
                         .padding(DroppySpacing.sm)
                         .frame(minWidth: 140)
-                        .background { Rectangle().droppyGlassFill() }
+                        .background { Rectangle().fill(.ultraThinMaterial) }
                     }
                 }
                 
@@ -2349,24 +2368,17 @@ struct ClipboardPreviewView: View {
         }
         .padding(DroppySpacing.xl)
         .onDisappear {
-            // Release cached images when view disappears to free memory
-            cachedImage = nil
-            cachedAttributedText = nil
-            cachedFilePreview = nil
-            linkPreviewImage = nil
-            linkPreviewIcon = nil
+            releasePreviewResources(clearCachedContent: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardWindowDidHide)) { _ in
+            releasePreviewResources(clearCachedContent: true)
         }
         .task(id: item.id) {
             // Asynchronously load and process preview content
             isLoadingPreview = true
-            
-            // Clear previous cache immediately to avoid flicker or wrong previews
-            cachedImage = nil
-            cachedAttributedText = nil
-            cachedFilePreview = nil
-            linkPreviewTitle = nil
-            linkPreviewImage = nil
-            isDirectImageLink = false
+
+            // Ensure media decoders and previous preview state are released before loading a new item.
+            releasePreviewResources(clearCachedContent: true)
             
             // Reset page navigation state
             currentPageIndex = 0
@@ -2707,7 +2719,7 @@ struct ZoomedDocumentPreviewSheet: View {
                                 .padding(DroppySpacing.sm)
                                 .background(
                                     RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous)
-                                        .droppyGlassFill()
+                                        .fill(.ultraThinMaterial)
                                 )
                             }
                             .padding(DroppySpacing.md)
@@ -3112,7 +3124,7 @@ struct StackedCardView: View {
         .frame(width: 130, height: 120)
         .background(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                .droppyGlassFill()
+                .fill(.ultraThinMaterial)
         )
         .overlay(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
@@ -3323,7 +3335,7 @@ struct URLTypeBadge: View {
             .foregroundStyle(AdaptiveColors.primaryTextAuto)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background { Rectangle().droppyGlassFill() }
+            .background { Rectangle().fill(.ultraThinMaterial) }
             .background(AdaptiveColors.overlayAuto(0.2))
             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
             .overlay(
@@ -3342,10 +3354,6 @@ struct TagFilterPopover: View {
     @ObservedObject var manager: ClipboardManager
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
 
-    private var panelBackgroundStyle: AnyShapeStyle {
-        useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle
-    }
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -3426,7 +3434,7 @@ struct TagFilterPopover: View {
             }
         }
         .frame(width: 200)
-        .background(panelBackgroundStyle)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
@@ -3454,10 +3462,6 @@ struct TagManagementSheet: View {
         Color(hex: ClipboardTag.presetColors[selectedColorIndex]) ?? .cyan
     }
 
-    private var panelBackgroundStyle: AnyShapeStyle {
-        useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle
-    }
-    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -3646,7 +3650,7 @@ struct TagManagementSheet: View {
             .padding(DroppySpacing.lg)
         }
         .frame(width: 340, height: 630)
-        .background(panelBackgroundStyle)
+        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)

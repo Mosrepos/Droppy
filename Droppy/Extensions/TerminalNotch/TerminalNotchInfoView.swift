@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct TerminalNotchInfoView: View {
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.terminalNotchExternalApp) private var terminalNotchExternalApp = PreferenceDefault.terminalNotchExternalApp
     @ObservedObject private var manager = TerminalNotchManager.shared
     @Environment(\.dismiss) private var dismiss
@@ -57,7 +56,7 @@ struct TerminalNotchInfoView: View {
         }
         .frame(width: 450)
         .fixedSize(horizontal: true, vertical: true)
-        .droppyTransparentBackground(useTransparentBackground)
+        .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
         .sheet(isPresented: $showReviewsSheet) {
             ExtensionReviewsSheet(extensionType: .terminalNotch)
@@ -216,7 +215,7 @@ struct TerminalNotchInfoView: View {
                         .onHover { hovering in
                             showShortcutInfo = hovering
                         }
-                        .popover(isPresented: $showShortcutInfo, arrowEdge: .trailing) {
+                        .droppyPopover(isPresented: $showShortcutInfo, arrowEdge: .trailing) {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "terminal")
