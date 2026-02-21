@@ -68,6 +68,7 @@ enum AppPreferenceKey {
     static let enableCapsLockHUD = "enableCapsLockHUD"
     static let enableAirPodsHUD = "enableAirPodsHUD"
     static let enableLockScreenHUD = "enableLockScreenHUD"
+    static let enableLockScreenUnlockSound = "enableLockScreenUnlockSound"
     static let enableDNDHUD = "enableDNDHUD"
     static let enableUpdateHUD = "enableUpdateHUD"
     static let enableBetterDisplayCompatibility = "enableBetterDisplayCompatibility"
@@ -296,6 +297,7 @@ enum PreferenceDefault {
     static let enableCapsLockHUD = true
     static let enableAirPodsHUD = true
     static let enableLockScreenHUD = true  // Safe: uses separate-window architecture, main notch never delegated to SkyLight
+    static let enableLockScreenUnlockSound = false  // Off by default
     static let enableDNDHUD = false  // Requires Full Disk Access
     static let enableUpdateHUD = true  // Show HUD when update is available
     static let enableBetterDisplayCompatibility = true  // Allow BetterDisplay to own brightness keys while Droppy mirrors HUD updates

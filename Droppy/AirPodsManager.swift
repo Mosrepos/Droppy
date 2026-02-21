@@ -48,6 +48,12 @@ final class AirPodsManager {
     
     /// Track devices we've already shown HUD for (to avoid re-triggering on same connection)
     private var shownDeviceAddresses: Set<String> = []
+
+    /// Per-device disconnect notifications so state can be invalidated immediately.
+    private var disconnectNotifications: [String: IOBluetoothUserNotification] = [:]
+
+    /// Address currently associated with the visible/active HUD payload.
+    private var currentHUDDeviceAddress: String?
     
     // MARK: - Initialization
     
@@ -86,6 +92,10 @@ final class AirPodsManager {
         debounceWorkItem?.cancel()
         isMonitoring = false
         shownDeviceAddresses.removeAll()
+        disconnectNotifications.values.forEach { $0.unregister() }
+        disconnectNotifications.removeAll()
+        currentHUDDeviceAddress = nil
+        dismissHUD()
     }
     
     /// Manually trigger HUD for testing
@@ -98,7 +108,7 @@ final class AirPodsManager {
             rightBattery: 90,
             caseBattery: 75
         )
-        showHUD(for: testAirPods)
+        showHUD(for: testAirPods, address: nil, triggerDisplayEvent: true)
     }
     
     /// Dismiss the HUD immediately
@@ -106,6 +116,7 @@ final class AirPodsManager {
         DispatchQueue.main.async {
             self.isHUDVisible = false
             self.connectedAirPods = nil
+            self.currentHUDDeviceAddress = nil
         }
     }
     
@@ -120,6 +131,7 @@ final class AirPodsManager {
                 // Don't show HUD for already-connected devices on app launch
                 if let address = device.addressString {
                     shownDeviceAddresses.insert(address)
+                    registerDisconnectNotification(for: device, address: address)
                 }
                 print("[AirPods] Found already-connected: \(airPods.name) at \(airPods.batteryLevel)%")
             }
@@ -130,6 +142,11 @@ final class AirPodsManager {
     
     @objc private func handleDeviceConnection(_ notification: IOBluetoothUserNotification?, device: IOBluetoothDevice?) {
         guard let btDevice = device, btDevice.isConnected() else { return }
+
+        let deviceAddress = btDevice.addressString
+        if let deviceAddress {
+            registerDisconnectNotification(for: btDevice, address: deviceAddress)
+        }
         
         // Check if this is a Bluetooth audio device
         guard let audioDevice = identifyAirPods(btDevice) else {
@@ -156,10 +173,32 @@ final class AirPodsManager {
         // Debounce rapid reconnections (devices can connect/disconnect in quick succession)
         debounceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            self?.showHUD(for: audioDevice)
+            self?.showHUD(for: audioDevice, address: deviceAddress, triggerDisplayEvent: true)
+            self?.scheduleBatteryRefresh(for: btDevice, address: deviceAddress)
         }
         debounceWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+    }
+
+    @objc private func handleDeviceDisconnection(_ notification: IOBluetoothUserNotification?, device: IOBluetoothDevice?) {
+        guard let btDevice = device else { return }
+        let address = btDevice.addressString
+
+        if let address {
+            shownDeviceAddresses.remove(address)
+            disconnectNotifications[address]?.unregister()
+            disconnectNotifications.removeValue(forKey: address)
+        }
+
+        DispatchQueue.main.async {
+            if self.currentHUDDeviceAddress == address || self.connectedAirPods?.name == btDevice.name {
+                self.connectedAirPods = nil
+                self.isHUDVisible = false
+                self.currentHUDDeviceAddress = nil
+            }
+        }
+
+        print("[Audio] Device disconnected: \(btDevice.name ?? "Unknown")")
     }
     
     // MARK: - Device Identification (AirPods + Generic Headphones)
@@ -271,6 +310,13 @@ final class AirPodsManager {
                 singleBattery = value
             }
         }
+
+        // Some Bluetooth headsets expose only a generic batteryPercent key.
+        if singleBattery == nil && device.responds(to: Selector(("batteryPercent"))) {
+            if let value = device.value(forKey: "batteryPercent") as? Int, value >= 0, value <= 100 {
+                singleBattery = value
+            }
+        }
         
         // Calculate combined battery display value
         let combined: Int
@@ -296,13 +342,45 @@ final class AirPodsManager {
     
     // MARK: - HUD Display
     
-    private func showHUD(for airPods: ConnectedAirPods) {
+    private func showHUD(for airPods: ConnectedAirPods, address: String?, triggerDisplayEvent: Bool) {
         DispatchQueue.main.async {
             self.connectedAirPods = airPods
-            self.lastConnectionAt = Date()
-            self.isHUDVisible = true
+            self.currentHUDDeviceAddress = address
+            if triggerDisplayEvent {
+                self.lastConnectionAt = Date()
+                self.isHUDVisible = true
+            }
             
             print("[AirPods] Showing HUD for: \(airPods.name) - L:\(airPods.leftBattery ?? -1)% R:\(airPods.rightBattery ?? -1)% Case:\(airPods.caseBattery ?? -1)%")
+        }
+    }
+
+    private func registerDisconnectNotification(for device: IOBluetoothDevice, address: String) {
+        guard disconnectNotifications[address] == nil else { return }
+        guard let notification = device.register(
+            forDisconnectNotification: self,
+            selector: #selector(handleDeviceDisconnection(_:device:))
+        ) else {
+            return
+        }
+        disconnectNotifications[address] = notification
+    }
+
+    /// Refresh battery values shortly after connection because macOS can initially report stale values.
+    private func scheduleBatteryRefresh(for device: IOBluetoothDevice, address: String?) {
+        let refreshDelays: [TimeInterval] = [1.0, 2.5]
+        for delay in refreshDelays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.isMonitoring, device.isConnected() else { return }
+
+                // If another device took over the HUD, don't let older refreshes override it.
+                if let address, let currentAddress = self.currentHUDDeviceAddress, currentAddress != address {
+                    return
+                }
+
+                guard let refreshedDevice = self.identifyAirPods(device) else { return }
+                self.showHUD(for: refreshedDevice, address: address, triggerDisplayEvent: false)
+            }
         }
     }
 }

@@ -49,6 +49,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.enableCapsLockHUD) private var enableCapsLockHUD = PreferenceDefault.enableCapsLockHUD
     @AppStorage(AppPreferenceKey.enableAirPodsHUD) private var enableAirPodsHUD = PreferenceDefault.enableAirPodsHUD
     @AppStorage(AppPreferenceKey.enableLockScreenHUD) private var enableLockScreenHUD = PreferenceDefault.enableLockScreenHUD
+    @AppStorage(AppPreferenceKey.enableLockScreenUnlockSound) private var enableLockScreenUnlockSound = PreferenceDefault.enableLockScreenUnlockSound
     @AppStorage(AppPreferenceKey.enableDNDHUD) private var enableDNDHUD = PreferenceDefault.enableDNDHUD
     @AppStorage(AppPreferenceKey.enableUpdateHUD) private var enableUpdateHUD = PreferenceDefault.enableUpdateHUD
     @AppStorage(AppPreferenceKey.mediaControlTargetMode) private var mediaControlTargetMode = PreferenceDefault.mediaControlTargetMode
@@ -2572,6 +2573,24 @@ struct SettingsView: View {
                     } else {
                         LockScreenManager.shared.disable()
                         closeNotchWindowIfUnused()
+                    }
+                }
+
+                if enableLockScreenHUD {
+                    HStack(spacing: 12) {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(width: 40, height: 40)
+                            .foregroundStyle(.secondary)
+
+                        Toggle(isOn: $enableLockScreenUnlockSound) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Unlock Sound")
+                                Text("Play a subtle sound when unlocking")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 

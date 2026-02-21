@@ -212,6 +212,12 @@ class LockScreenManager: ObservableObject {
     
     /// Plays a premium, subtle unlock sound
     private func playUnlockSound() {
+        let enableUnlockSound = UserDefaults.standard.preference(
+            AppPreferenceKey.enableLockScreenUnlockSound,
+            default: PreferenceDefault.enableLockScreenUnlockSound
+        )
+        guard enableUnlockSound else { return }
+
         if let sound = NSSound(named: "Pop") {
             sound.volume = 0.4
             sound.play()
