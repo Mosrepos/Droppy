@@ -139,7 +139,6 @@ final class HUDManager {
     /// Dismiss the current HUD immediately
     func dismiss() {
         let wasLockScreenHUD = activeHUD?.type == .lockScreen
-        let wasNotificationHUD = activeHUD?.type == .notification
 
         dismissTimer?.invalidate()
         dismissTimer = nil
@@ -149,11 +148,7 @@ final class HUDManager {
             activeHUD = nil
         }
 
-        // Notify window controller to update mouse event handling
-        if wasNotificationHUD {
-            print("🔔 HUDManager: Notification HUD dismissed - posting state change notification")
-            NotificationCenter.default.post(name: .hudStateDidChange, object: nil)
-        }
+        notifyHUDStateDidChange()
 
         // Process queue after dismiss animation
         let queueDelay: TimeInterval = wasLockScreenHUD ? 0.12 : 0.2
@@ -184,6 +179,7 @@ final class HUDManager {
         withAnimation(appearAnimation) {
             activeHUD = hud
         }
+        notifyHUDStateDidChange()
 
         if request.type == .notification {
             // NotificationHUDManager owns notification lifecycle and hover-aware dismissal.
@@ -192,12 +188,6 @@ final class HUDManager {
             dismissTimer = nil
         } else {
             resetDismissTimer(duration: request.duration)
-        }
-
-        // Notify window controller to update mouse event handling for interactive HUDs
-        if request.type == .notification {
-            print("🔔 HUDManager: Notification HUD shown - posting state change notification")
-            NotificationCenter.default.post(name: .hudStateDidChange, object: nil)
         }
     }
     
@@ -224,12 +214,17 @@ final class HUDManager {
         )
         
         activeHUD = hud
+        notifyHUDStateDidChange()
         if request.type == .notification {
             dismissTimer?.invalidate()
             dismissTimer = nil
         } else {
             resetDismissTimer(duration: request.duration)
         }
+    }
+
+    private func notifyHUDStateDidChange() {
+        NotificationCenter.default.post(name: .hudStateDidChange, object: nil)
     }
     
     private func queueRequest(_ request: HUDRequest) {

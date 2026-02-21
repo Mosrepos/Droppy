@@ -851,6 +851,16 @@ final class LicenseManager: ObservableObject {
     }
 
     private static func loadConfiguration() -> Configuration {
+        if shouldDisableLicenseEnforcementForCurrentProcess() {
+            return Configuration(
+                productID: nil,
+                productPermalink: nil,
+                purchaseURL: nil,
+                trialEntitlementBaseURL: nil,
+                trialEntitlementPublicKey: nil
+            )
+        }
+
         let info = Bundle.main.infoDictionary ?? [:]
 
         let productID = normalizedConfigValue(info["GumroadProductID"] as? String)
@@ -890,6 +900,15 @@ final class LicenseManager: ObservableObject {
         }
 
         return trimmed
+    }
+
+    private static func shouldDisableLicenseEnforcementForCurrentProcess() -> Bool {
+        guard let raw = ProcessInfo.processInfo.environment["DROPPY_DISABLE_LICENSE_ENFORCEMENT"] else {
+            return false
+        }
+
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["1", "true", "yes", "on"].contains(normalized)
     }
 
     private static func keyHint(for key: String) -> String {

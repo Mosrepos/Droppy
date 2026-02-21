@@ -34,7 +34,7 @@ struct ConnectedAirPods: Equatable {
         /// SF Symbol name for this device type
         var symbolName: String {
             switch self {
-            case .airpods: return "airpods"
+            case .airpods: return "airpodspro"
             case .airpodsPro: return "airpodspro"
             case .airpodsMax: return "airpodsmax"
             case .airpodsGen3: return "airpods.gen3"
@@ -187,17 +187,18 @@ struct AirPodsHUDView: View {
     
     @ViewBuilder
     private func airPodsIconView(size: CGFloat) -> some View {
+        let glyphSize = size * 0.8
         ZStack {
             // Soft depth pass behind the main glyph
             Image(systemName: airPods.type.symbolName)
-                .font(.system(size: size, weight: .medium))
+                .font(.system(size: glyphSize, weight: .medium))
                 .foregroundStyle(.black.opacity(0.28))
                 .offset(x: 1.1, y: 1.6)
                 .blur(radius: 0.2)
 
             // Main glyph
             Image(systemName: airPods.type.symbolName)
-                .font(.system(size: size, weight: .medium))
+                .font(.system(size: glyphSize, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
                         colors: [
@@ -211,7 +212,7 @@ struct AirPodsHUDView: View {
 
             // Specular highlight pass to fake depth on SF symbol
             Image(systemName: airPods.type.symbolName)
-                .font(.system(size: size, weight: .medium))
+                .font(.system(size: glyphSize, weight: .medium))
                 .foregroundStyle(
                     LinearGradient(
                         colors: [.white.opacity(0.9), .white.opacity(0.1), .clear],
@@ -233,6 +234,14 @@ struct AirPodsHUDView: View {
     
     @ViewBuilder
     private func batteryRingView(size: CGFloat) -> some View {
+        let isThreeDigits = airPods.batteryLevel >= 100
+        let batteryFontSize: CGFloat = {
+            if size > 24 {
+                return isThreeDigits ? 9.5 : 11
+            }
+            return isThreeDigits ? 7.4 : 9
+        }()
+
         ZStack {
             // Background ring
             Circle()
@@ -252,9 +261,13 @@ struct AirPodsHUDView: View {
             
             // Battery percentage text
             Text("\(airPods.batteryLevel)")
-                .font(.system(size: size > 24 ? 11 : 9, weight: .bold, design: .rounded))
+                .font(.system(size: batteryFontSize, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .allowsTightening(true)
+                .frame(width: max(10, size - 6))
         }
         .frame(width: size, height: size)
         .opacity(batteryOpacity)

@@ -80,8 +80,10 @@ final class PermissionManager: ObservableObject {
         print("🔐   isScreenRecordingGranted = \(isScreenRecordingGranted)")
         
         // Input Monitoring
+        let imPreflight = preflightListenEventAccess()
         let imCache = UserDefaults.standard.bool(forKey: inputMonitoringGrantedKey)
         print("🔐 INPUT MONITORING:")
+        print("🔐   CGPreflightListenEventAccess() = \(imPreflight)")
         print("🔐   Cache = \(imCache)")
         print("🔐   (Runtime check done via GlobalHotKey)")
         
@@ -281,6 +283,15 @@ final class PermissionManager: ObservableObject {
     }
     
     // MARK: - Input Monitoring
+
+    /// Lightweight TCC preflight check for ListenEvent/Input Monitoring access.
+    /// This is separate from IOHID runtime checks used by GlobalHotKey.
+    func preflightListenEventAccess() -> Bool {
+        if #available(macOS 10.15, *) {
+            return CGPreflightListenEventAccess()
+        }
+        return true
+    }
     
     /// Check if input monitoring permission is granted
     /// runtimeCheck is the live result from IOHIDManager (from GlobalHotKey)

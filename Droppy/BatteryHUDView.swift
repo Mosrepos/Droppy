@@ -8,6 +8,124 @@
 
 import SwiftUI
 
+private enum BatteryAssetVariant {
+    case bar
+    case bolt
+    case boltTop
+
+    var suffix: String {
+        switch self {
+        case .bar: return "Bar"
+        case .bolt: return "Bolt"
+        case .boltTop: return "BoltTop"
+        }
+    }
+
+    var groupName: String {
+        switch self {
+        case .bar: return "Bar"
+        case .bolt: return "Bolt"
+        case .boltTop: return "BoltTop"
+        }
+    }
+}
+
+private func quantizedBatteryLevel(_ rawLevel: Int) -> Int {
+    let clamped = max(0, min(100, rawLevel))
+    let roundedUpToFive = Int((Double(clamped) / 5.0).rounded(.up) * 5)
+    return min(100, max(5, roundedUpToFive))
+}
+
+/// Battery icon loader for imported SystemBatteryDark assets.
+struct SystemBatteryAssetIcon: View {
+    let level: Int
+    let isCharging: Bool
+    let isPluggedIn: Bool
+    var width: CGFloat
+    var height: CGFloat
+
+    private var variant: BatteryAssetVariant {
+        if isCharging { return .boltTop }
+        if isPluggedIn { return .bolt }
+        return .bar
+    }
+
+    private var clampedLevel: Int {
+        max(0, min(100, level))
+    }
+
+    private var assetName: String {
+        "\(quantizedBatteryLevel(clampedLevel))\(variant.suffix)"
+    }
+
+    private var candidateNames: [String] {
+        [
+            assetName,
+            "SystemBatteryDark/\(variant.groupName)/\(assetName)",
+            "SystemBatteryDark.\(variant.groupName).\(assetName)"
+        ]
+    }
+
+    private var resolvedImage: NSImage? {
+        for candidate in candidateNames {
+            if let image = NSImage(named: NSImage.Name(candidate)) {
+                return image
+            }
+        }
+        return nil
+    }
+
+    private var fallbackOuterColor: Color {
+        if isCharging || isPluggedIn {
+            return Color(white: 0.62)
+        }
+        if clampedLevel <= 10 {
+            return Color(red: 0.62, green: 0.12, blue: 0.18)
+        }
+        return Color(red: 0.16, green: 0.48, blue: 0.24)
+    }
+
+    private var fallbackInnerColor: Color {
+        if isCharging || isPluggedIn {
+            return Color(red: 0.46, green: 0.96, blue: 0.56)
+        }
+        if clampedLevel <= 10 {
+            return Color(red: 1.0, green: 0.33, blue: 0.40)
+        }
+        return Color(red: 0.46, green: 0.93, blue: 0.52)
+    }
+
+    private var fallbackTerminalColor: Color {
+        if isCharging || isPluggedIn {
+            return Color(white: 0.62)
+        }
+        if clampedLevel <= 10 {
+            return Color(red: 0.68, green: 0.14, blue: 0.20)
+        }
+        return Color(red: 0.20, green: 0.56, blue: 0.28)
+    }
+
+    var body: some View {
+        Group {
+            if let resolvedImage {
+                Image(nsImage: resolvedImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                IOSBatteryGlyph(
+                    level: CGFloat(clampedLevel) / 100.0,
+                    outerColor: fallbackOuterColor,
+                    innerColor: fallbackInnerColor,
+                    terminalColor: fallbackTerminalColor,
+                    chargingSegmentColor: Color(white: 0.58),
+                    isCharging: isCharging
+                )
+            }
+        }
+        .frame(width: width, height: height)
+    }
+}
+
 /// iOS-style battery glyph (body + right cap), without embedded percentage text.
 struct IOSBatteryGlyph: View {
     let level: CGFloat          // 0...1
@@ -100,11 +218,17 @@ struct BatteryHUDView: View {
         batteryInnerColor
     }
 
+    private var shouldUseCriticalLowBatteryColor: Bool {
+        !batteryManager.isCharging &&
+            !batteryManager.isPluggedIn &&
+            batteryManager.batteryLevel <= 10
+    }
+
     private var batteryOuterColor: Color {
         if batteryManager.isCharging || batteryManager.isPluggedIn {
             return Color(white: 0.62)
         }
-        if batteryManager.isLowBattery {
+        if shouldUseCriticalLowBatteryColor {
             return Color(red: 0.62, green: 0.12, blue: 0.18)
         }
         return Color(red: 0.16, green: 0.48, blue: 0.24)
@@ -114,7 +238,7 @@ struct BatteryHUDView: View {
         if batteryManager.isCharging || batteryManager.isPluggedIn {
             return Color(red: 0.46, green: 0.96, blue: 0.56)
         }
-        if batteryManager.isLowBattery {
+        if shouldUseCriticalLowBatteryColor {
             return Color(red: 1.0, green: 0.33, blue: 0.40)
         }
         return Color(red: 0.46, green: 0.93, blue: 0.52)
@@ -124,7 +248,7 @@ struct BatteryHUDView: View {
         if batteryManager.isCharging || batteryManager.isPluggedIn {
             return Color(white: 0.62)
         }
-        if batteryManager.isLowBattery {
+        if shouldUseCriticalLowBatteryColor {
             return Color(red: 0.68, green: 0.14, blue: 0.20)
         }
         return Color(red: 0.20, green: 0.56, blue: 0.28)
@@ -141,13 +265,6 @@ struct BatteryHUDView: View {
         return max(24, iconSize * 1.38)
     }
 
-    private func glyphBodyHeight(for iconSize: CGFloat) -> CGFloat {
-        if layout.isDynamicIslandMode {
-            return max(10.5, iconSize * 0.68)
-        }
-        return max(13, iconSize * 0.78)
-    }
-
     private func glyphFrameWidth(for iconSize: CGFloat) -> CGFloat {
         glyphBodyWidth(for: iconSize) + 6
     }
@@ -157,22 +274,17 @@ struct BatteryHUDView: View {
             if layout.isDynamicIslandMode {
                 // DYNAMIC ISLAND: Icon on left edge, percentage on right edge
                 let iconSize = layout.iconSize
-                let bodyWidth = glyphBodyWidth(for: iconSize)
-                let bodyHeight = glyphBodyHeight(for: iconSize)
                 let iconFrameWidth = glyphFrameWidth(for: iconSize)
                 let symmetricPadding = layout.symmetricPadding(for: iconSize)
                 
                 HStack {
                     // Battery icon - .leading alignment within frame for edge alignment
-                    IOSBatteryGlyph(
-                        level: CGFloat(batteryManager.batteryLevel) / 100.0,
-                        outerColor: batteryOuterColor,
-                        innerColor: batteryInnerColor,
-                        terminalColor: batteryTerminalColor,
-                        chargingSegmentColor: batteryChargingSegmentColor,
-                        isCharging: batteryManager.isCharging || batteryManager.isPluggedIn,
-                        bodyWidth: bodyWidth,
-                        bodyHeight: bodyHeight
+                    SystemBatteryAssetIcon(
+                        level: batteryManager.batteryLevel,
+                        isCharging: batteryManager.isCharging,
+                        isPluggedIn: batteryManager.isPluggedIn,
+                        width: iconFrameWidth,
+                        height: iconSize
                     )
                         .frame(width: iconFrameWidth, height: iconSize, alignment: .leading)
                     
@@ -180,7 +292,7 @@ struct BatteryHUDView: View {
                     
                     // Percentage
                     Text("\(batteryManager.batteryLevel)%")
-                        .font(.system(size: layout.labelFontSize, weight: .semibold))
+                        .font(.system(size: layout.labelFontSize * 0.8, weight: .semibold))
                         .foregroundStyle(accentColor)
                         .monospacedDigit()
                         .contentTransition(.numericText(value: Double(batteryManager.batteryLevel)))
@@ -190,8 +302,6 @@ struct BatteryHUDView: View {
             } else {
                 // NOTCH MODE: Two wings separated by the notch space
                 let iconSize = layout.iconSize
-                let bodyWidth = glyphBodyWidth(for: iconSize)
-                let bodyHeight = glyphBodyHeight(for: iconSize)
                 let iconFrameWidth = glyphFrameWidth(for: iconSize)
                 let symmetricPadding = layout.symmetricPadding(for: iconSize)
                 let wingWidth = layout.wingWidth(for: hudWidth)
@@ -199,15 +309,12 @@ struct BatteryHUDView: View {
                 HStack(spacing: 0) {
                     // Left wing: Battery icon near left edge
                     HStack {
-                        IOSBatteryGlyph(
-                            level: CGFloat(batteryManager.batteryLevel) / 100.0,
-                            outerColor: batteryOuterColor,
-                            innerColor: batteryInnerColor,
-                            terminalColor: batteryTerminalColor,
-                            chargingSegmentColor: batteryChargingSegmentColor,
-                            isCharging: batteryManager.isCharging || batteryManager.isPluggedIn,
-                            bodyWidth: bodyWidth,
-                            bodyHeight: bodyHeight
+                        SystemBatteryAssetIcon(
+                            level: batteryManager.batteryLevel,
+                            isCharging: batteryManager.isCharging,
+                            isPluggedIn: batteryManager.isPluggedIn,
+                            width: iconFrameWidth,
+                            height: iconSize
                         )
                             .frame(width: iconFrameWidth, height: iconSize, alignment: .leading)
                         Spacer(minLength: 0)
@@ -223,7 +330,7 @@ struct BatteryHUDView: View {
                     HStack {
                         Spacer(minLength: 0)
                         Text("\(batteryManager.batteryLevel)%")
-                            .font(.system(size: layout.labelFontSize, weight: .semibold))
+                            .font(.system(size: layout.labelFontSize * 0.8, weight: .semibold))
                             .foregroundStyle(accentColor)
                             .monospacedDigit()
                             .contentTransition(.numericText(value: Double(batteryManager.batteryLevel)))

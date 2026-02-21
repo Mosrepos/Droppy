@@ -39,6 +39,7 @@ struct InlineHUDView: View {
     let value: CGFloat
     var isMuted: Bool = false  // PREMIUM: Explicit mute state from VolumeManager
     var isCharging: Bool = false  // Battery charging state for modern battery glyphs
+    var isPluggedIn: Bool = false
     var symbolOverride: String? = nil
     var useAdaptiveForegrounds: Bool = false
     @ObservedObject private var volumeManager = VolumeManager.shared
@@ -173,15 +174,12 @@ struct InlineHUDView: View {
                         .symbolEffect(.bounce.up, value: boolTrigger)
                         .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                 case .battery:
-                    IOSBatteryGlyph(
-                        level: value,
-                        outerColor: batteryOuterColor,
-                        innerColor: batteryInnerColor,
-                        terminalColor: batteryTerminalColor,
-                        chargingSegmentColor: batteryChargingSegmentColor,
+                    SystemBatteryAssetIcon(
+                        level: Int((max(0, min(1, value)) * 100).rounded()),
                         isCharging: isCharging,
-                        bodyWidth: 21,
-                        bodyHeight: 12
+                        isPluggedIn: isPluggedIn,
+                        width: 26,
+                        height: 16
                     )
                 case .lockScreen:
                     Image(systemName: iconSymbol)

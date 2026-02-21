@@ -10,6 +10,7 @@ import AppKit
 import CoreFoundation
 import CoreGraphics
 import Foundation
+import OSLog
 
 /// Media key types from IOKit
 private let NX_KEYTYPE_SOUND_UP: UInt32 = 0
@@ -31,6 +32,10 @@ private let NX_KEYTYPE_PREVIOUS: UInt32 = 19   // Previous track (other keyboard
 final class MediaKeyInterceptor {
     static let shared = MediaKeyInterceptor()
     private static let systemVolumeFeedbackKey = "com.apple.sound.beep.feedback" as CFString
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Droppy",
+        category: "MediaKeyInterceptor"
+    )
     
     static func shouldRunForCurrentPreferences() -> Bool {
         let defaults = UserDefaults.standard
@@ -53,10 +58,25 @@ final class MediaKeyInterceptor {
     var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isRunning = false
+    fileprivate var activeTapLocation: CGEventTapLocation?
     
     // Dedicated background queue for event tap (prevents main thread contention on M4 Macs)
     private var eventTapQueue: DispatchQueue?
     private var eventTapRunLoop: CFRunLoop?
+
+    private var fineStepOverrideEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.enableMediaKeyFineStepOverride,
+            default: PreferenceDefault.enableMediaKeyFineStepOverride
+        )
+    }
+
+    private var debugLogsEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.enableMediaKeyInterceptionDebugLogs,
+            default: PreferenceDefault.enableMediaKeyInterceptionDebugLogs
+        )
+    }
     
     /// Callbacks for key events
     var onVolumeUp: (() -> Void)?
@@ -66,43 +86,136 @@ final class MediaKeyInterceptor {
     var onBrightnessDown: (() -> Void)?
     
     private init() {}
+
+    private func emitLog(_ message: String, always: Bool = false) {
+        guard always || debugLogsEnabled else { return }
+        let rendered = "MediaKeyInterceptor: \(message)"
+        NSLog("%@", rendered)
+        Self.logger.notice("\(rendered, privacy: .public)")
+    }
+
+    fileprivate func debugLog(_ message: String) {
+        emitLog(message)
+    }
+
+    fileprivate static func tapLocationName(_ location: CGEventTapLocation?) -> String {
+        guard let location else { return "unknown" }
+        switch location {
+        case .cghidEventTap: return "cghidEventTap"
+        case .cgSessionEventTap: return "cgSessionEventTap"
+        case .cgAnnotatedSessionEventTap: return "cgAnnotatedSessionEventTap"
+        @unknown default: return "unknown(\(location.rawValue))"
+        }
+    }
+
+    fileprivate static func mediaKeyName(_ keyCode: UInt32) -> String {
+        switch keyCode {
+        case NX_KEYTYPE_SOUND_UP: return "sound_up"
+        case NX_KEYTYPE_SOUND_DOWN: return "sound_down"
+        case NX_KEYTYPE_MUTE: return "mute"
+        case NX_KEYTYPE_BRIGHTNESS_UP: return "brightness_up"
+        case NX_KEYTYPE_BRIGHTNESS_DOWN: return "brightness_down"
+        case NX_KEYTYPE_PLAY: return "play_pause"
+        case NX_KEYTYPE_FAST: return "next"
+        case NX_KEYTYPE_REWIND: return "rewind"
+        case NX_KEYTYPE_PREVIOUS: return "previous"
+        default: return "key_\(keyCode)"
+        }
+    }
     
     /// Start intercepting media keys
     /// Returns true if successfully started, false if permissions denied
     @discardableResult
     func start() -> Bool {
-        guard !isRunning else { return true }
-        
-        // Check for Accessibility permissions using cached grant
-        // Avoids false negatives when TCC hasn't synced yet
-        guard PermissionManager.shared.isAccessibilityGranted else {
-            print("MediaKeyInterceptor: Accessibility permissions not granted. Grant in System Settings > Privacy & Security > Accessibility")
+        if isRunning {
+            emitLog("start() skipped; already running", always: true)
+            return true
+        }
+        let hudEnabled = UserDefaults.standard.preference(
+            AppPreferenceKey.enableHUDReplacement,
+            default: PreferenceDefault.enableHUDReplacement
+        )
+        let volumeEnabled = UserDefaults.standard.preference(
+            AppPreferenceKey.enableVolumeHUDReplacement,
+            default: PreferenceDefault.enableVolumeHUDReplacement
+        )
+        let brightnessEnabled = UserDefaults.standard.preference(
+            AppPreferenceKey.enableBrightnessHUDReplacement,
+            default: PreferenceDefault.enableBrightnessHUDReplacement
+        )
+        let axLiveTrusted = AXIsProcessTrusted()
+        let axEffectiveTrusted = PermissionManager.shared.isAccessibilityGranted
+        let inputMonitoringPreflight = PermissionManager.shared.preflightListenEventAccess()
+        let axCache = UserDefaults.standard.bool(forKey: "accessibilityGranted")
+        emitLog(
+            "start() requested; hud=\(hudEnabled), volume=\(volumeEnabled), brightness=\(brightnessEnabled), debug=\(debugLogsEnabled), fineStepOverride=\(fineStepOverrideEnabled)",
+            always: true
+        )
+        emitLog(
+            "permission snapshot: AXIsProcessTrusted=\(axLiveTrusted), isAccessibilityGranted=\(axEffectiveTrusted), accessibilityCache=\(axCache), CGPreflightListenEventAccess=\(inputMonitoringPreflight)",
+            always: true
+        )
+
+        // Event taps require live TCC trust, not cached fallback state.
+        guard axLiveTrusted else {
+            emitLog(
+                "AXIsProcessTrusted=false. Re-grant Accessibility for this Droppy binary in System Settings > Privacy & Security > Accessibility",
+                always: true
+            )
             return false
         }
-        
+        guard inputMonitoringPreflight else {
+            emitLog(
+                "CGPreflightListenEventAccess=false. Enable Input Monitoring for Droppy in System Settings > Privacy & Security > Input Monitoring",
+                always: true
+            )
+            return false
+        }
+
         // Create event tap for system-defined events (media keys)
         // CGEventType.systemDefined is raw value 14
         let systemDefinedType = CGEventType(rawValue: 14)!
         let eventMask: CGEventMask = (1 << systemDefinedType.rawValue)
-        
-        // NOTE: Using cgSessionEventTap (not cgAnnotatedSessionEventTap)
-        // The annotated tap breaks transport controls (play/pause/next/previous) on macOS Tahoe
-        // by intercepting events before they reach the media subsystem, even when we passthrough.
-        // cgSessionEventTap works correctly for all keys in v9.2 and earlier.
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: eventMask,
-            callback: mediaKeyCallback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else {
-            print("MediaKeyInterceptor: Failed to create event tap")
+
+        let tapLocations: [CGEventTapLocation] = [
+            .cghidEventTap,
+            .cgSessionEventTap
+        ]
+
+        var createdTap: CFMachPort?
+        var createdTapLocation: CGEventTapLocation?
+        for location in tapLocations {
+            debugLog("Attempting event tap at \(Self.tapLocationName(location))")
+            if let tap = CGEvent.tapCreate(
+                tap: location,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: eventMask,
+                callback: mediaKeyCallback,
+                userInfo: Unmanaged.passUnretained(self).toOpaque()
+            ) {
+                createdTap = tap
+                createdTapLocation = location
+                debugLog("Created event tap at \(Self.tapLocationName(location))")
+                break
+            } else {
+                debugLog("Failed to create event tap at \(Self.tapLocationName(location))")
+            }
+        }
+
+        guard let tap = createdTap, let tapLocation = createdTapLocation else {
+            emitLog(
+                "Failed to create event tap (AXIsProcessTrusted=\(AXIsProcessTrusted()), CGPreflightListenEventAccess=\(PermissionManager.shared.preflightListenEventAccess()))",
+                always: true
+            )
             return false
         }
-        
+
         eventTap = tap
-        print("MediaKeyInterceptor: Using session event tap")
+        activeTapLocation = tapLocation
+        let tapLabel = tapLocation == .cghidEventTap ? "HID" : "session"
+        emitLog("Using \(tapLabel) event tap", always: true)
+        debugLog("Active tap location: \(Self.tapLocationName(tapLocation))")
         return setupEventTapRunLoop(tap: tap)
     }
     
@@ -111,7 +224,7 @@ final class MediaKeyInterceptor {
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         
         guard let source = runLoopSource else {
-            print("MediaKeyInterceptor: Failed to create run loop source")
+            emitLog("Failed to create run loop source", always: true)
             return false
         }
         
@@ -130,16 +243,16 @@ final class MediaKeyInterceptor {
             
             // Verify tap is enabled (BUG #84 additional check)
             if CFMachPortIsValid(tap) {
-                print("MediaKeyInterceptor: Event tap verified as valid and enabled")
+                self.emitLog("Event tap verified as valid and enabled", always: true)
             } else {
-                print("⚠️ MediaKeyInterceptor: Event tap created but not valid!")
+                self.emitLog("Event tap created but not valid", always: true)
             }
             
             CFRunLoopRun()
         }
         
         isRunning = true
-        print("MediaKeyInterceptor: Started successfully on dedicated queue")
+        emitLog("Started successfully on dedicated queue", always: true)
         return true
     }
     
@@ -164,12 +277,15 @@ final class MediaKeyInterceptor {
         runLoopSource = nil
         eventTapQueue = nil
         eventTapRunLoop = nil
+        activeTapLocation = nil
         isRunning = false
-        print("MediaKeyInterceptor: Stopped")
+        emitLog("Stopped", always: true)
     }
     
     func refreshForCurrentPreferences() {
-        if Self.shouldRunForCurrentPreferences() {
+        let shouldRun = Self.shouldRunForCurrentPreferences()
+        emitLog("refreshForCurrentPreferences() shouldRun=\(shouldRun)", always: true)
+        if shouldRun {
             _ = start()
         } else {
             stop()
@@ -215,6 +331,10 @@ final class MediaKeyInterceptor {
     }
 
     private func stepDivisor(for modifierFlags: NSEvent.ModifierFlags) -> Float {
+        if fineStepOverrideEnabled {
+            return 4.0
+        }
+
         let normalized = modifierFlags.intersection(.deviceIndependentFlagsMask)
         let usesFineControl = normalized.contains(.option) && normalized.contains(.shift)
         return usesFineControl ? 4.0 : 1.0
@@ -251,11 +371,13 @@ final class MediaKeyInterceptor {
                           keyCode == NX_KEYTYPE_MUTE
         
         if isVolumeKey && (!hudEnabled || !volumeReplacementEnabled) {
+            debugLog("Pass-through \(Self.mediaKeyName(keyCode)): volume replacement disabled (hudEnabled=\(hudEnabled), volumeEnabled=\(volumeReplacementEnabled))")
             return false
         }
         
         if isVolumeKey && !VolumeManager.shared.supportsVolumeControl {
             // Let the system handle volume for USB devices without software volume control
+            debugLog("Pass-through \(Self.mediaKeyName(keyCode)): device reports unsupported software volume control")
             return false
         }
 
@@ -263,6 +385,7 @@ final class MediaKeyInterceptor {
                               keyCode == NX_KEYTYPE_BRIGHTNESS_DOWN
         
         if isBrightnessKey && (!hudEnabled || !brightnessReplacementEnabled) {
+            debugLog("Pass-through \(Self.mediaKeyName(keyCode)): brightness replacement disabled (hudEnabled=\(hudEnabled), brightnessEnabled=\(brightnessReplacementEnabled))")
             return false
         }
         
@@ -271,17 +394,20 @@ final class MediaKeyInterceptor {
             // let BetterDisplay/system process brightness keys, then Droppy mirrors the
             // resulting brightness via polling-based HUD bridge in BrightnessManager.
             if BrightnessManager.shared.shouldPassthroughBrightnessKeyToSystem(on: screenUnderMouse) {
+                debugLog("Pass-through \(Self.mediaKeyName(keyCode)): BrightnessManager requested system passthrough (BetterDisplay compatibility)")
                 return false
             }
             
             // Let system handle brightness when Droppy cannot control the selected target.
             if !BrightnessManager.shared.canHandleBrightness(on: screenUnderMouse) {
+                debugLog("Pass-through \(Self.mediaKeyName(keyCode)): BrightnessManager cannot handle target display")
                 return false
             }
         }
         
         // Only act on key down events
         guard keyDown else { return true }
+        debugLog("Intercepting \(Self.mediaKeyName(keyCode)) with stepDivisor=\(stepDivisor)")
         
         DispatchQueue.main.async {
             switch keyCode {
@@ -331,6 +457,9 @@ private func mediaKeyCallback(
     
     // Handle tap being disabled (system temporarily disables if we take too long)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        MediaKeyInterceptor.shared.debugLog(
+            "Event tap disabled (\(type.rawValue)); location=\(MediaKeyInterceptor.tapLocationName(MediaKeyInterceptor.shared.activeTapLocation))"
+        )
         // CRITICAL CHECK: Before re-enabling, verify we still have permission.
         // If the user revoked permissions, the system disables the tap.
         // If we blindly re-enable it here without checking, we create a tight loop
@@ -440,6 +569,7 @@ private func mediaKeyCallback(
         // Return nil to suppress system HUD
         return nil
     }
+    interceptor.debugLog("Passthrough after handleMediaKey for \(MediaKeyInterceptor.mediaKeyName(keyCode)) (event reaches system/native OSD)")
     
     // Let event pass through
     return Unmanaged.passUnretained(event)

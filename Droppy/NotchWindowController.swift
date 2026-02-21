@@ -166,6 +166,60 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Monitor for global right-click events (context menu access in idle state) - Issue #57 fix
     private var globalRightClickMonitor: Any?
 
+    /// Global shortcut for quickly opening the media surface.
+    private var mediaQuickOpenHotKey: GlobalHotKey?
+    private var mediaQuickOpenShortcutSignature = ""
+
+    /// Displays explicitly activated by a shelf hotkey.
+    /// When collapsed and not status-driven, non-hotkey displays stay ordered out.
+    private var hotkeyActivatedDisplays: Set<CGDirectDisplayID> = []
+
+    /// Per-display transient reveal windows for non-HUD status updates
+    /// (volume/brightness/playback pulses).
+    private var transientStatusRevealDeadlines: [CGDirectDisplayID: Date] = [:]
+
+    /// Deferred re-evaluation for transient reveal expiry.
+    private var pendingTransientRevealExpiryWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]
+
+    /// Deferred orderOut work to let close animations complete before hiding the window.
+    private var pendingWindowOrderOutWorkItems: [CGDirectDisplayID: DispatchWorkItem] = [:]
+
+    /// Last pointer activity time per display for delayed orderOut while cursor is active.
+    private var recentPointerActivityByDisplay: [CGDirectDisplayID: Date] = [:]
+
+    /// Displays that should use an extended orderOut delay for playback-specific motion.
+    private var playbackOrderOutGraceUntil: [CGDirectDisplayID: Date] = [:]
+
+    /// Base fork timing for auto-collapse.
+    /// When order-out mode is enabled, we apply minimum/buffer overrides to this value.
+    private let forkAutoCollapseBaseDelay: TimeInterval = PreferenceDefault.autoCollapseDelay
+
+    private let orderOutOverrideAnimationBuffer: TimeInterval = 0.32
+    private let orderOutOverrideMinimumDelay: TimeInterval = 0.42
+
+    /// Slightly longer delay for playback surface collapse.
+    private let playbackWindowOrderOutDelay: TimeInterval = 3.0
+
+    /// Require brief pointer idle before finally ordering out.
+    private let windowOrderOutPointerIdleDuration: TimeInterval = 0.55
+
+    /// Temporary reveal duration for playback metadata/state updates.
+    private let playbackStatusRevealDuration: TimeInterval = 2.2
+
+    /// Faster hover-to-expand used only for status-driven transient reveals when
+    /// global hover auto-expand is disabled.
+    private let statusHoverAutoExpandDelay: TimeInterval = 0.14
+
+    /// While cursor activity is over the revealed status surface, extend the reveal
+    /// to avoid racing the orderOut pipeline.
+    private let statusHoverRevealHoldDuration: TimeInterval = 1.1
+
+    /// Last active-space transition timestamp to stabilize post-transition interaction.
+    private var lastActiveSpaceTransitionAt: Date = .distantPast
+
+    /// Short grace window after space changes so visible notch surfaces remain interactive.
+    private let activeSpaceInteractionGraceDuration: TimeInterval = 1.0
+
     /// Last timestamp when a mouse-move event was processed.
     private var lastMouseMoveProcessTime: TimeInterval = 0
 
@@ -272,9 +326,12 @@ final class NotchWindowController: NSObject, ObservableObject {
     private override init() {
         super.init()
         setupSystemObservers()
+        reloadMediaQuickOpenShortcutMonitoring()
     }
     
     deinit {
+        mediaQuickOpenHotKey = nil
+        cancelAllPendingWindowOrderOut()
         stopMonitors()
         stopWatchdog()
         removeSystemObservers()
@@ -688,6 +745,7 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Closes all notch windows
     func closeWindow() {
         stopMonitors()
+        cancelAllPendingWindowOrderOut()
         for window in notchWindows.values {
             window.isValid = false
             window.close()
@@ -705,6 +763,8 @@ final class NotchWindowController: NSObject, ObservableObject {
         UserDefaults.standard.set(hidden, forKey: AppPreferenceKey.isNotchHidden)
         
         if hidden {
+            cancelAllPendingWindowOrderOut()
+
             // Stop intercepting media keys so system HUDs can appear
             // This ensures volume/brightness indicators show when notch is hidden
             MediaKeyInterceptor.shared.stop()
@@ -728,6 +788,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                 window.ignoresMouseEvents = false
             }
             startMonitors()
+            applyWindowOrderingPolicy()
         }
     }
     
@@ -846,8 +907,16 @@ final class NotchWindowController: NSObject, ObservableObject {
                     window.isValid = false
                     window.close()
                 }
+                cancelPendingTransientRevealExpiry(for: displayID)
+                cancelPendingWindowOrderOut(for: displayID)
+                hotkeyActivatedDisplays.remove(displayID)
+                transientStatusRevealDeadlines.removeValue(forKey: displayID)
+                recentPointerActivityByDisplay.removeValue(forKey: displayID)
+                playbackOrderOutGraceUntil.removeValue(forKey: displayID)
             }
         }
+
+        applyWindowOrderingPolicy()
     }
 
     private func shouldShowOnScreen(_ screen: NSScreen, hideOnExternal: Bool) -> Bool {
@@ -871,11 +940,522 @@ final class NotchWindowController: NSObject, ObservableObject {
         }
         return rules[String(displayID)] ?? true
     }
-    
+
+    private var isOrderOutWhenInactiveEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.enableOrderOutWhenInactive,
+            default: PreferenceDefault.enableOrderOutWhenInactive
+        )
+    }
+
+    private var isMediaQuickOpenShortcutEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.enableMediaQuickOpenShortcut,
+            default: PreferenceDefault.enableMediaQuickOpenShortcut
+        )
+    }
+
+    /// Explicitly marks a display as hotkey-activated and wakes its shelf window.
+    func activateShelfWindowFromHotkey(for displayID: CGDirectDisplayID) {
+        hotkeyActivatedDisplays.insert(displayID)
+        applyWindowOrderingPolicy()
+    }
+
+    func reloadMediaQuickOpenShortcutMonitoring() {
+        setupMediaQuickOpenShortcutMonitor()
+    }
+
+    private func setupMediaQuickOpenShortcutMonitor() {
+        guard isMediaQuickOpenShortcutEnabled else {
+            mediaQuickOpenShortcutSignature = "disabled"
+            mediaQuickOpenHotKey = nil
+            return
+        }
+
+        guard let data = UserDefaults.standard.data(forKey: AppPreferenceKey.mediaQuickOpenShortcut),
+              let savedShortcut = try? JSONDecoder().decode(SavedShortcut.self, from: data) else {
+            mediaQuickOpenShortcutSignature = "none"
+            mediaQuickOpenHotKey = nil
+            return
+        }
+
+        let normalizedShortcut = normalizedMediaQuickOpenShortcut(savedShortcut)
+        let signature = "\(normalizedShortcut.keyCode):\(normalizedShortcut.modifiers)"
+        guard signature != mediaQuickOpenShortcutSignature else { return }
+        mediaQuickOpenShortcutSignature = signature
+
+        mediaQuickOpenHotKey = nil
+        mediaQuickOpenHotKey = GlobalHotKey(
+            keyCode: normalizedShortcut.keyCode,
+            modifiers: normalizedShortcut.modifiers,
+            enableIOHIDFallback: false
+        ) { [weak self] in
+            self?.handleMediaQuickOpenShortcutTriggered()
+        }
+    }
+
+    private func normalizedMediaQuickOpenShortcut(_ shortcut: SavedShortcut) -> SavedShortcut {
+        let allowedFlags = NSEvent.ModifierFlags(rawValue: shortcut.modifiers)
+            .intersection([.command, .shift, .option, .control])
+        return SavedShortcut(keyCode: shortcut.keyCode, modifiers: allowedFlags.rawValue)
+    }
+
+    private func handleMediaQuickOpenShortcutTriggered() {
+        let shelfEnabled = UserDefaults.standard.preference(
+            AppPreferenceKey.enableNotchShelf,
+            default: PreferenceDefault.enableNotchShelf
+        )
+        guard shelfEnabled else {
+            DispatchQueue.main.async {
+                SettingsWindowController.shared.showSettings(tab: .huds)
+            }
+            return
+        }
+
+        setupNotchWindow()
+
+        let targetDisplayID = DroppyState.shared.expandedDisplayID
+            ?? NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) })?.displayID
+            ?? NSScreen.main?.displayID
+
+        guard let targetDisplayID else { return }
+
+        DispatchQueue.main.async {
+            self.activateShelfWindowFromHotkey(for: targetDisplayID)
+            withAnimation(DroppyAnimation.interactive) {
+                DroppyState.shared.expandShelf(for: targetDisplayID)
+            }
+            NotificationCenter.default.post(
+                name: .mediaQuickOpenRequested,
+                object: nil,
+                userInfo: ["displayID": NSNumber(value: targetDisplayID)]
+            )
+            self.forceRecalculateAllWindowSizes()
+            self.applyWindowOrderingPolicy()
+        }
+    }
+
+    private func handleActiveSpaceDidChange() {
+        lastActiveSpaceTransitionAt = Date()
+        checkFullscreenState()
+
+        let requiredBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        for window in notchWindows.values {
+            window.collectionBehavior.formUnion(requiredBehavior)
+        }
+
+        repositionNotchWindow()
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.applyWindowOrderingPolicy()
+            for (displayID, window) in self.notchWindows where self.shouldOrderWindowFront(on: displayID) {
+                window.orderFrontRegardless()
+            }
+            self.updateAllWindowsMouseEventHandling()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            self.applyWindowOrderingPolicy()
+            self.updateAllWindowsMouseEventHandling()
+        }
+    }
+
+    fileprivate func shouldProcessPointerShelfActivation(on displayID: CGDirectDisplayID) -> Bool {
+        if DroppyState.shared.isExpanded(for: displayID) || hotkeyActivatedDisplays.contains(displayID) {
+            return true
+        }
+        if let window = notchWindows[displayID], window.isVisibleForInteraction() {
+            return true
+        }
+        return Date().timeIntervalSince(lastActiveSpaceTransitionAt) <= activeSpaceInteractionGraceDuration &&
+            (notchWindows[displayID]?.isVisible == true)
+    }
+
+    private func isStatusWindowTriggerActive(on displayID: CGDirectDisplayID) -> Bool {
+        guard let activeHUD = HUDManager.shared.activeHUD else { return false }
+        return activeHUD.displayID == displayID
+    }
+
+    private func shouldAllowStatusDrivenHoverExpand(on displayID: CGDirectDisplayID?) -> Bool {
+        guard let displayID else { return false }
+        let now = Date()
+        return isStatusWindowTriggerActive(on: displayID) ||
+            isTransientStatusRevealActive(on: displayID, now: now)
+    }
+
+    private func shouldForceMediaOnStatusDrivenHoverExpand(on displayID: CGDirectDisplayID?) -> Bool {
+        guard shouldAllowStatusDrivenHoverExpand(on: displayID) else { return false }
+        let showMediaPlayer = UserDefaults.standard.preference(
+            AppPreferenceKey.showMediaPlayer,
+            default: PreferenceDefault.showMediaPlayer
+        )
+        guard showMediaPlayer else { return false }
+        let music = MusicManager.shared
+        return music.isMediaAvailable && !music.isPlayerIdle
+    }
+
+    private func isTransientStatusRevealActive(on displayID: CGDirectDisplayID, now: Date) -> Bool {
+        guard let deadline = transientStatusRevealDeadlines[displayID] else { return false }
+        if deadline > now {
+            return true
+        }
+        transientStatusRevealDeadlines.removeValue(forKey: displayID)
+        return false
+    }
+
+    private func shouldOrderWindowFront(on displayID: CGDirectDisplayID) -> Bool {
+        guard !isTemporarilyHidden else { return false }
+        let now = Date()
+        return isStatusWindowTriggerActive(on: displayID) ||
+            isTransientStatusRevealActive(on: displayID, now: now) ||
+            DroppyState.shared.isExpanded(for: displayID) ||
+            hotkeyActivatedDisplays.contains(displayID)
+    }
+
+    private func pruneHotkeyActivatedDisplays() {
+        hotkeyActivatedDisplays = hotkeyActivatedDisplays.filter { displayID in
+            DroppyState.shared.isExpanded(for: displayID)
+        }
+    }
+
+    private func pruneTransientStatusRevealDeadlines(now: Date = Date()) {
+        transientStatusRevealDeadlines = transientStatusRevealDeadlines.filter { displayID, deadline in
+            notchWindows[displayID] != nil && deadline > now
+        }
+    }
+
+    private func pruneRecentPointerActivity(now: Date = Date()) {
+        recentPointerActivityByDisplay = recentPointerActivityByDisplay.filter { displayID, lastActivity in
+            notchWindows[displayID] != nil && now.timeIntervalSince(lastActivity) <= (windowOrderOutPointerIdleDuration * 3)
+        }
+    }
+
+    private func prunePlaybackOrderOutGrace(now: Date = Date()) {
+        playbackOrderOutGraceUntil = playbackOrderOutGraceUntil.filter { displayID, graceUntil in
+            notchWindows[displayID] != nil && graceUntil > now
+        }
+    }
+
+    private func notePointerActivity(on displayID: CGDirectDisplayID) {
+        recentPointerActivityByDisplay[displayID] = Date()
+    }
+
+    private func refreshTransientStatusRevealForPointer(on displayID: CGDirectDisplayID, now: Date = Date()) {
+        guard shouldAllowStatusDrivenHoverExpand(on: displayID) else { return }
+        let extendedDeadline = now.addingTimeInterval(statusHoverRevealHoldDuration)
+        if let existingDeadline = transientStatusRevealDeadlines[displayID], existingDeadline >= extendedDeadline {
+            return
+        }
+
+        transientStatusRevealDeadlines[displayID] = extendedDeadline
+        scheduleTransientRevealExpiryEvaluation(for: displayID, at: extendedDeadline)
+    }
+
+    private func isPointerActivityFresh(on displayID: CGDirectDisplayID, now: Date) -> Bool {
+        guard let lastActivity = recentPointerActivityByDisplay[displayID] else { return false }
+        return now.timeIntervalSince(lastActivity) < windowOrderOutPointerIdleDuration
+    }
+
+    private func cancelPendingTransientRevealExpiry(for displayID: CGDirectDisplayID) {
+        pendingTransientRevealExpiryWorkItems[displayID]?.cancel()
+        pendingTransientRevealExpiryWorkItems[displayID] = nil
+    }
+
+    private func cancelAllPendingTransientRevealExpiry() {
+        for displayID in pendingTransientRevealExpiryWorkItems.keys {
+            cancelPendingTransientRevealExpiry(for: displayID)
+        }
+    }
+
+    private func scheduleTransientRevealExpiryEvaluation(for displayID: CGDirectDisplayID, at deadline: Date) {
+        cancelPendingTransientRevealExpiry(for: displayID)
+
+        let delay = max(0, deadline.timeIntervalSinceNow) + 0.01
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingTransientRevealExpiryWorkItems[displayID] = nil
+            self.applyWindowOrderingPolicy()
+        }
+
+        pendingTransientRevealExpiryWorkItems[displayID] = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func cancelPendingWindowOrderOut(for displayID: CGDirectDisplayID) {
+        pendingWindowOrderOutWorkItems[displayID]?.cancel()
+        pendingWindowOrderOutWorkItems[displayID] = nil
+    }
+
+    private func cancelAllPendingWindowOrderOut() {
+        for displayID in pendingWindowOrderOutWorkItems.keys {
+            cancelPendingWindowOrderOut(for: displayID)
+        }
+    }
+
+    private func showWindowForInteraction(on displayID: CGDirectDisplayID) {
+        guard !isTemporarilyHidden, let window = notchWindows[displayID] else { return }
+        cancelPendingWindowOrderOut(for: displayID)
+        if !window.isVisible {
+            window.orderFrontRegardless()
+        }
+    }
+
+    private func currentOrderOutDelay(playbackActive: Bool) -> TimeInterval {
+        let collapseDelay = UserDefaults.standard.preference(
+            AppPreferenceKey.autoCollapseDelay,
+            default: forkAutoCollapseBaseDelay
+        )
+        guard isOrderOutWhenInactiveEnabled else {
+            return collapseDelay
+        }
+        if playbackActive {
+            return max(playbackWindowOrderOutDelay, collapseDelay + orderOutOverrideAnimationBuffer)
+        }
+        return max(orderOutOverrideMinimumDelay, collapseDelay + orderOutOverrideAnimationBuffer)
+    }
+
+    private func scheduleWindowOrderOut(for displayID: CGDirectDisplayID, window: NotchWindow) {
+        guard isOrderOutWhenInactiveEnabled else { return }
+        guard window.isVisible else { return }
+        guard pendingWindowOrderOutWorkItems[displayID] == nil else { return }
+        let now = Date()
+        let playbackActive = (playbackOrderOutGraceUntil[displayID] ?? .distantPast) > now
+        let delay = currentOrderOutDelay(playbackActive: playbackActive)
+
+        let workItem = DispatchWorkItem { [weak self, weak window] in
+            guard let self else { return }
+            self.pendingWindowOrderOutWorkItems[displayID] = nil
+            guard let window else { return }
+            guard !self.shouldOrderWindowFront(on: displayID) else { return }
+            let now = Date()
+            if self.isPointerActivityFresh(on: displayID, now: now) {
+                self.scheduleWindowOrderOut(for: displayID, window: window)
+                return
+            }
+            if window.isVisible {
+                window.orderOut(nil)
+            }
+            self.playbackOrderOutGraceUntil.removeValue(forKey: displayID)
+        }
+
+        pendingWindowOrderOutWorkItems[displayID] = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func resolvePreferredStatusDisplayID(
+        changedDisplayID: CGDirectDisplayID?,
+        preferMediaKeyFallback: Bool = false
+    ) -> CGDirectDisplayID? {
+        if let changedDisplayID, notchWindows[changedDisplayID] != nil {
+            return changedDisplayID
+        }
+
+        if preferMediaKeyFallback {
+            let fallbackDisplayID = NSScreen.builtIn?.displayID
+                ?? NSScreen.builtInWithNotch?.displayID
+                ?? NSScreen.main?.displayID
+            if let fallbackDisplayID, notchWindows[fallbackDisplayID] != nil {
+                return fallbackDisplayID
+            }
+        }
+
+        if let expandedDisplayID = DroppyState.shared.expandedDisplayID,
+           notchWindows[expandedDisplayID] != nil {
+            return expandedDisplayID
+        }
+        if let hoveringDisplayID = DroppyState.shared.hoveringDisplayID,
+           notchWindows[hoveringDisplayID] != nil {
+            return hoveringDisplayID
+        }
+        if let mouseDisplayID = findWindowForMouseLocation(NSEvent.mouseLocation)?.screen.displayID {
+            return mouseDisplayID
+        }
+        if let builtInDisplayID = NSScreen.builtInWithNotch?.displayID,
+           notchWindows[builtInDisplayID] != nil {
+            return builtInDisplayID
+        }
+        if let builtInDisplayID = NSScreen.builtIn?.displayID,
+           notchWindows[builtInDisplayID] != nil {
+            return builtInDisplayID
+        }
+
+        return notchWindows.keys.first
+    }
+
+    private func markTransientStatusReveal(
+        changedDisplayID: CGDirectDisplayID?,
+        duration: TimeInterval,
+        preferMediaKeyFallback: Bool = false,
+        prefersExtendedOrderOutDelay: Bool = false
+    ) {
+        guard duration > 0 else { return }
+        guard let displayID = resolvePreferredStatusDisplayID(
+            changedDisplayID: changedDisplayID,
+            preferMediaKeyFallback: preferMediaKeyFallback
+        ) else { return }
+
+        let deadline = Date().addingTimeInterval(duration)
+        if let existingDeadline = transientStatusRevealDeadlines[displayID], existingDeadline > deadline {
+            return
+        }
+        transientStatusRevealDeadlines[displayID] = deadline
+        if prefersExtendedOrderOutDelay {
+            playbackOrderOutGraceUntil[displayID] = deadline.addingTimeInterval(playbackWindowOrderOutDelay + 0.05)
+        }
+        scheduleTransientRevealExpiryEvaluation(for: displayID, at: deadline)
+        applyWindowOrderingPolicy()
+    }
+
+    private func isMouseLocationInOrderOutHoldZone(
+        _ mouseLocation: NSPoint,
+        window: NotchWindow,
+        on screen: NSScreen
+    ) -> Bool {
+        let displayID = screen.displayID
+        if DroppyState.shared.isExpanded(for: displayID) {
+            let expandedZone = expandedShelfInteractionZone(for: screen)
+            if expandedZone.contains(mouseLocation) {
+                return true
+            }
+        }
+
+        let collapsedRect = window.collapsedInteractionRect()
+        let upwardExpansion = max(0, screen.frame.maxY - collapsedRect.maxY)
+        let collapsedHoldZone = NSRect(
+            x: collapsedRect.minX - 10,
+            y: collapsedRect.minY,
+            width: collapsedRect.width + 20,
+            height: collapsedRect.height + upwardExpansion
+        )
+        if collapsedHoldZone.contains(mouseLocation) {
+            return true
+        }
+
+        if let notificationZone = notificationHUDInteractionZone(on: screen),
+           notificationZone.insetBy(dx: -8, dy: -8).contains(mouseLocation) {
+            return true
+        }
+
+        return false
+    }
+
+    private func handleVolumeStatusPulse() {
+        guard !isTemporarilyHidden else { return }
+        let enableHUDReplacement = UserDefaults.standard.preference(
+            AppPreferenceKey.enableHUDReplacement,
+            default: PreferenceDefault.enableHUDReplacement
+        )
+        let enableVolumeHUDReplacement = UserDefaults.standard.preference(
+            AppPreferenceKey.enableVolumeHUDReplacement,
+            default: PreferenceDefault.enableVolumeHUDReplacement
+        )
+        guard enableHUDReplacement, enableVolumeHUDReplacement else { return }
+        guard VolumeManager.shared.shouldShowOverlay else { return }
+
+        markTransientStatusReveal(
+            changedDisplayID: VolumeManager.shared.lastChangeDisplayID,
+            duration: VolumeManager.shared.visibleDuration,
+            preferMediaKeyFallback: true
+        )
+    }
+
+    private func handleBrightnessStatusPulse() {
+        guard !isTemporarilyHidden else { return }
+        let enableHUDReplacement = UserDefaults.standard.preference(
+            AppPreferenceKey.enableHUDReplacement,
+            default: PreferenceDefault.enableHUDReplacement
+        )
+        let enableBrightnessHUDReplacement = UserDefaults.standard.preference(
+            AppPreferenceKey.enableBrightnessHUDReplacement,
+            default: PreferenceDefault.enableBrightnessHUDReplacement
+        )
+        guard enableHUDReplacement, enableBrightnessHUDReplacement else { return }
+        guard BrightnessManager.shared.shouldShowOverlay else { return }
+
+        markTransientStatusReveal(
+            changedDisplayID: BrightnessManager.shared.lastChangeDisplayID,
+            duration: BrightnessManager.shared.visibleDuration,
+            preferMediaKeyFallback: true
+        )
+    }
+
+    private func handlePlaybackStatusPulse() {
+        guard !isTemporarilyHidden else { return }
+        let showMediaPlayer = UserDefaults.standard.preference(
+            AppPreferenceKey.showMediaPlayer,
+            default: PreferenceDefault.showMediaPlayer
+        )
+        guard showMediaPlayer else { return }
+
+        let music = MusicManager.shared
+        guard music.isMediaAvailable else { return }
+
+        let hasPlaybackState = music.isPlaying ||
+            music.wasRecentlyPlaying ||
+            !music.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasPlaybackState else { return }
+
+        markTransientStatusReveal(
+            changedDisplayID: nil,
+            duration: playbackStatusRevealDuration,
+            prefersExtendedOrderOutDelay: true
+        )
+    }
+
+    private func applyWindowOrderingPolicy() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.applyWindowOrderingPolicy()
+            }
+            return
+        }
+
+        pruneHotkeyActivatedDisplays()
+        pruneTransientStatusRevealDeadlines()
+        pruneRecentPointerActivity()
+        prunePlaybackOrderOutGrace()
+
+        if !isOrderOutWhenInactiveEnabled {
+            cancelAllPendingWindowOrderOut()
+            for window in notchWindows.values {
+                if !window.isVisible {
+                    window.orderFrontRegardless()
+                }
+                window.updateMouseEventHandling()
+            }
+            return
+        }
+
+        for (displayID, window) in notchWindows {
+            if shouldOrderWindowFront(on: displayID) {
+                cancelPendingWindowOrderOut(for: displayID)
+                if !window.isVisible {
+                    window.orderFrontRegardless()
+                }
+                window.updateMouseEventHandling()
+            } else {
+                window.ignoresMouseEvents = true
+                scheduleWindowOrderOut(for: displayID, window: window)
+            }
+        }
+    }
+
+    private func refreshWindowOrderingForCurrentState(
+        extraDelayDisplayID: CGDirectDisplayID? = nil,
+        extraDelay: TimeInterval = 0
+    ) {
+        _ = extraDelayDisplayID
+        _ = extraDelay
+        applyWindowOrderingPolicy()
+    }
+
     /// Starts monitoring mouse events to handle expands/collapses
     private func startMonitors() {
         stopMonitors() // Idempotency
         startWatchdog() // Start self-healing watchdog
+        setupMediaQuickOpenShortcutMonitor()
         
         // 0. Monitor screen configuration changes (dock/undock, resolution changes)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
@@ -893,6 +1473,8 @@ final class NotchWindowController: NSObject, ObservableObject {
             .sink { [weak self] _ in
                 // Reposition window to apply new Dynamic Island dimensions/position
                 self?.repositionNotchWindow()
+                self?.setupMediaQuickOpenShortcutMonitor()
+                self?.applyWindowOrderingPolicy()
             }
             .store(in: &cancellables)
         
@@ -900,6 +1482,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         DragMonitor.shared.$isDragging
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.applyWindowOrderingPolicy()
                 self?.updateAllWindowsMouseEventHandling()
             }
             .store(in: &cancellables)
@@ -909,7 +1492,62 @@ final class NotchWindowController: NSObject, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 notchDebugLog("🔔 NotchWindowController: Received hudStateDidChange - updating mouse event handling")
+                self?.applyWindowOrderingPolicy()
                 self?.updateAllWindowsMouseEventHandling()
+            }
+            .store(in: &cancellables)
+
+        // Volume/Brightness HUDs are local view state (non-HUDManager). Surface them
+        // as transient ordering pulses so the shelf can reveal and then auto-orderOut.
+        VolumeManager.shared.$lastChangeAt
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleVolumeStatusPulse()
+            }
+            .store(in: &cancellables)
+
+        BrightnessManager.shared.$lastChangeAt
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleBrightnessStatusPulse()
+            }
+            .store(in: &cancellables)
+
+        // Playback updates should also pulse the collapsed surface briefly.
+        MusicManager.shared.$isPlaying
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handlePlaybackStatusPulse()
+            }
+            .store(in: &cancellables)
+
+        MusicManager.shared.$songTitle
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handlePlaybackStatusPulse()
+            }
+            .store(in: &cancellables)
+
+        MusicManager.shared.$artistName
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handlePlaybackStatusPulse()
+            }
+            .store(in: &cancellables)
+
+        MusicManager.shared.$bundleIdentifier
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handlePlaybackStatusPulse()
             }
             .store(in: &cancellables)
         
@@ -1016,6 +1654,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                 let now = Date()
                 guard now.timeIntervalSince(self.lastNotchClickTime) > self.clickDebounceInterval else { return }
                 self.lastNotchClickTime = now
+                guard self.shouldProcessPointerShelfActivation(on: targetScreen.displayID) else { return }
                 
                 // Click on notch zone
                 // CRITICAL FIX: When shelf is expanded WITH ITEMS, don't intercept clicks!
@@ -1213,6 +1852,7 @@ final class NotchWindowController: NSObject, ObservableObject {
                     let now = Date()
                     guard now.timeIntervalSince(self.lastNotchClickTime) > self.clickDebounceInterval else { return event }
                     self.lastNotchClickTime = now
+                    guard self.shouldProcessPointerShelfActivation(on: targetScreen.displayID) else { return event }
 
                     // Click on notch zone
                     // CRITICAL FIX: When shelf is expanded WITH ITEMS, don't intercept clicks!
@@ -1768,6 +2408,8 @@ final class NotchWindowController: NSObject, ObservableObject {
         for window in notchWindows.values {
             window.updateMouseEventHandling()
         }
+
+        applyWindowOrderingPolicy()
     }
     
     /// Finds the notch window for the screen containing the given mouse location
@@ -1819,6 +2461,7 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Stops and releases all monitors and timers
     private func stopMonitors() {
         stopWatchdog() // Stop self-healing watchdog
+        cancelAllPendingWindowOrderOut()
         cancellables.removeAll()
         resetTransientWindowStateCache()
         
@@ -1925,8 +2568,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Immediately check fullscreen state when space changes
-            self?.checkFullscreenState()
+            self?.handleActiveSpaceDidChange()
         }
         systemObservers.append(spaceObserver)
         
@@ -2316,7 +2958,7 @@ final class NotchWindowController: NSObject, ObservableObject {
 
         // DEBUG: Log when timer is started
         notchDebugLog("🟢 startAutoExpandTimer CALLED for displayID: \(displayID?.description ?? "nil")")
-        
+
         let skipHighAlertHoverHUD = UserDefaults.standard.preference(
             AppPreferenceKey.caffeineInstantlyExpandShelfOnHover,
             default: PreferenceDefault.caffeineInstantlyExpandShelfOnHover
@@ -2327,7 +2969,6 @@ final class NotchWindowController: NSObject, ObservableObject {
         // High Alert override: by default, active High Alert blocks hover auto-expand.
         // Users can opt out via High Alert settings to expand shelf directly on hover.
         guard !highAlertBlocksAutoExpand else {
-            // If a timer was already running, stop it, but keep the one-shot latch.
             cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
             if !highAlertHoverHapticFiredDisplays.contains(hapticDisplayID) {
                 highAlertHoverHapticFiredDisplays.insert(hapticDisplayID)
@@ -2336,58 +2977,16 @@ final class NotchWindowController: NSObject, ObservableObject {
             notchDebugLog("⏰ AUTO-EXPAND BLOCKED: High Alert is active")
             return
         }
-        // High Alert is not blocking this display anymore - re-arm for future blocked-hover sessions.
         highAlertHoverHapticFiredDisplays.remove(hapticDisplayID)
-        
-        // CRITICAL: Use object() ?? true to match @AppStorage default for new users
-        guard (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true else { return }
-        
-        cancelAutoExpandTimer(resetHighAlertHoverHaptic: false) // Reset if already running
 
-        // Display-specific hover toggles.
-        if let displayID = displayID,
-           let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
-            if screen.isBuiltIn {
-                let allowMainMacAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnMainMac) as? Bool)
-                    ?? PreferenceDefault.autoExpandOnMainMac
-                guard allowMainMacAutoExpand else { return }
-            } else {
-                let allowExternalAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnExternalDisplays) as? Bool)
-                    ?? PreferenceDefault.autoExpandOnExternalDisplays
-                guard allowExternalAutoExpand else { return }
-            }
-        }
-        
-        // Use configurable delay (0.5-2.0 seconds, default 1.0s)
-        let delay = UserDefaults.standard.double(forKey: "autoExpandDelay")
-        let actualDelay = delay > 0 ? delay : 1.0  // Fallback to 1.0s if not set
-        notchDebugLog("🟢 AUTO-EXPAND TIMER STARTED with delay: \(actualDelay)s for displayID: \(displayID?.description ?? "nil")")
-        let timer = Timer(timeInterval: actualDelay, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.autoExpandTimer = nil
-            self.autoExpandTimerDisplayID = nil
+        let autoExpandEnabled = (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true
+        let statusDrivenHoverExpandAtStart = shouldAllowStatusDrivenHoverExpand(on: displayID)
+        let shouldForceMediaSurfaceFromStatus = shouldForceMediaOnStatusDrivenHoverExpand(on: displayID)
+        guard autoExpandEnabled || statusDrivenHoverExpandAtStart else { return }
 
-            // CRITICAL: Don't expand shelf when NotificationHUD is visible
-            // User needs to click the notification, not accidentally expand the shelf
-            if HUDManager.shared.isNotificationHUDVisible {
-                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: NotificationHUD is visible")
-                return
-            }
+        cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
 
-            // High Alert can toggle after timer start; re-check before expanding.
-            let skipHighAlertHoverHUD = UserDefaults.standard.preference(
-                AppPreferenceKey.caffeineInstantlyExpandShelfOnHover,
-                default: PreferenceDefault.caffeineInstantlyExpandShelfOnHover
-            )
-            if CaffeineManager.shared.isActive && !skipHighAlertHoverHUD {
-                notchDebugLog("⏰ AUTO-EXPAND BLOCKED (timer fire): High Alert is active")
-                return
-            }
-
-            // Check setting again (in case user disabled it during the delay)
-            // CRITICAL: Use object() ?? true to match @AppStorage default
-            guard (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true else { return }
-            let currentMouse = NSEvent.mouseLocation
+        if !statusDrivenHoverExpandAtStart {
             if let displayID = displayID,
                let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
                 if screen.isBuiltIn {
@@ -2400,13 +2999,51 @@ final class NotchWindowController: NSObject, ObservableObject {
                     guard allowExternalAutoExpand else { return }
                 }
             }
-            
-            // SKYLIGHT FIX: Recheck actual mouse geometry at timer fire time
-            // After SkyLight lock/unlock, the isHovering state can become stale/incorrect.
-            // Instead of trusting the state, we directly check if mouse is over the notch zone.
+        }
+
+        let configuredDelay = UserDefaults.standard.double(forKey: "autoExpandDelay")
+        let defaultDelay = configuredDelay > 0 ? configuredDelay : 1.0
+        let actualDelay = statusDrivenHoverExpandAtStart ? min(defaultDelay, statusHoverAutoExpandDelay) : defaultDelay
+        notchDebugLog("🟢 AUTO-EXPAND TIMER STARTED with delay: \(actualDelay)s for displayID: \(displayID?.description ?? "nil")")
+        let timer = Timer(timeInterval: actualDelay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.autoExpandTimer = nil
+            self.autoExpandTimerDisplayID = nil
+
+            if HUDManager.shared.isNotificationHUDVisible {
+                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: NotificationHUD is visible")
+                return
+            }
+
+            let skipHighAlertHoverHUD = UserDefaults.standard.preference(
+                AppPreferenceKey.caffeineInstantlyExpandShelfOnHover,
+                default: PreferenceDefault.caffeineInstantlyExpandShelfOnHover
+            )
+            if CaffeineManager.shared.isActive && !skipHighAlertHoverHUD {
+                notchDebugLog("⏰ AUTO-EXPAND BLOCKED (timer fire): High Alert is active")
+                return
+            }
+
+            let autoExpandEnabled = (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true
+            guard autoExpandEnabled || statusDrivenHoverExpandAtStart else { return }
+            let currentMouse = NSEvent.mouseLocation
+            if !statusDrivenHoverExpandAtStart {
+                if let displayID = displayID,
+                   let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
+                    if screen.isBuiltIn {
+                        let allowMainMacAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnMainMac) as? Bool)
+                            ?? PreferenceDefault.autoExpandOnMainMac
+                        guard allowMainMacAutoExpand else { return }
+                    } else {
+                        let allowExternalAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnExternalDisplays) as? Bool)
+                            ?? PreferenceDefault.autoExpandOnExternalDisplays
+                        guard allowExternalAutoExpand else { return }
+                    }
+                }
+            }
+
             let isExpanded = displayID.map { DroppyState.shared.isExpanded(for: $0) } ?? DroppyState.shared.isExpanded
-            
-            // Find the target screen and check if mouse is in notch zone
+
             var isMouseOverNotchZone = false
             if let targetDisplayID = displayID,
                let targetWindow = self.notchWindows[targetDisplayID],
@@ -2417,24 +3054,26 @@ final class NotchWindowController: NSObject, ObservableObject {
                     window: targetWindow
                 )
             }
-            
-            // Also check DroppyState as backup
+
             let stateHovering = displayID.map { DroppyState.shared.isHovering(for: $0) } ?? DroppyState.shared.isMouseHovering
             let shouldExpand = (isMouseOverNotchZone || stateHovering) && !isExpanded
-            
+
             notchDebugLog("⏰ AUTO-EXPAND TIMER FIRED: stateHovering=\(stateHovering), geometryHovering=\(isMouseOverNotchZone), isExpanded=\(isExpanded), shouldExpand=\(shouldExpand), displayID=\(displayID?.description ?? "nil")")
-            
-            // Expand if EITHER state or geometry says we're hovering
+
             if shouldExpand {
                 let animationScreen = displayID.flatMap { self.notchWindows[$0]?.notchScreen }
+                let shouldForceMediaSurface = shouldForceMediaSurfaceFromStatus ||
+                    (statusDrivenHoverExpandAtStart && self.shouldForceMediaOnStatusDrivenHoverExpand(on: displayID))
                 DispatchQueue.main.async {
                     withAnimation(DroppyAnimation.notchState(for: animationScreen)) {
+                        if shouldForceMediaSurface {
+                            MusicManager.shared.isMediaHUDForced = true
+                            MusicManager.shared.isMediaHUDHidden = false
+                        }
                         if let displayID = displayID {
-                            // Expand on the specific screen
                             notchDebugLog("📤 EXPANDING SHELF for displayID: \(displayID)")
                             DroppyState.shared.expandShelf(for: displayID)
                         } else {
-                            // Fallback: Find screen containing mouse and expand that
                             if let screen = NSScreen.screens.first(where: { $0.frame.contains(currentMouse) }) {
                                 notchDebugLog("📤 EXPANDING SHELF for fallback displayID: \(screen.displayID)")
                                 DroppyState.shared.expandShelf(for: screen.displayID)
@@ -2449,10 +3088,9 @@ final class NotchWindowController: NSObject, ObservableObject {
         timer.tolerance = min(0.05, actualDelay * 0.25)
         autoExpandTimer = timer
         autoExpandTimerDisplayID = displayID
-        // Keep firing even during short event-tracking mode switches.
         RunLoop.main.add(timer, forMode: .common)
     }
-    
+
     func cancelAutoExpandTimer(resetHighAlertHoverHaptic: Bool = true) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
@@ -2472,7 +3110,9 @@ final class NotchWindowController: NSObject, ObservableObject {
     }
 
     func ensureAutoExpandTimer(for displayID: CGDirectDisplayID) {
-        guard (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandShelf) as? Bool) ?? true else { return }
+        let autoExpandEnabled = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandShelf) as? Bool) ?? true
+        let statusDrivenHoverExpand = shouldAllowStatusDrivenHoverExpand(on: displayID)
+        guard autoExpandEnabled || statusDrivenHoverExpand else { return }
         guard DroppyState.shared.isHovering(for: displayID) else { return }
         guard !DroppyState.shared.isExpanded(for: displayID) else { return }
 
@@ -2552,6 +3192,11 @@ final class NotchWindowController: NSObject, ObservableObject {
                 }
                 cancelAutoExpandTimer()
                 return
+            }
+
+            if isMouseLocationInOrderOutHoldZone(mouseLocation, window: window, on: screen) {
+                notePointerActivity(on: displayID)
+                refreshTransientStatusRevealForPointer(on: displayID)
             }
             
             // Route event only to the window for this screen
@@ -2942,7 +3587,7 @@ class NotchWindow: NSPanel {
     /// Interaction visibility guard used by controller-level click/hover monitors.
     /// `targetAlpha` avoids a race where reveal starts before `alphaValue` updates.
     func isVisibleForInteraction() -> Bool {
-        alphaValue > 0.01 || targetAlpha > 0.01
+        isVisible && (alphaValue > 0.01 || targetAlpha > 0.01)
     }
 
     /// Mirrors collapsed mini-media visibility conditions closely enough for hit-testing.

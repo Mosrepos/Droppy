@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "90BoltDark.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

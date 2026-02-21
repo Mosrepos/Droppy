@@ -107,6 +107,7 @@ struct NotchShelfView: View {
     @State private var browserTrackLoadingUntil: Date = .distantPast
     @State private var mediaDebounceWorkItem: DispatchWorkItem?  // Debounce for media changes
     @State private var isMediaStable = false  // Only show media HUD after debounce delay
+    @State private var mediaQuickOpenAutoShrinkGraceUntil: Date = .distantPast
     
     // Idle face preference
     @AppStorage(AppPreferenceKey.enableIdleFace) private var enableIdleFace = PreferenceDefault.enableIdleFace
@@ -161,6 +162,9 @@ struct NotchShelfView: View {
 
     // MORPH: Namespace for album art morphing between HUD and expanded player
     @Namespace private var albumArtNamespace
+
+    /// Prevent immediate collapse right after media hotkey open, regardless of user auto-collapse delay.
+    private let mediaQuickOpenAutoShrinkMinimumDelay: TimeInterval = 3.4
     
     // Removed isDropTargeted state as we use shared state now
     
@@ -1796,6 +1800,7 @@ struct NotchShelfView: View {
     private var shelfContentWithObservers: some View {
         shelfContentWithStateObservers
             .onReceive(NotificationCenter.default.publisher(for: .todoQuickOpenRequested), perform: handleTodoQuickOpenRequested)
+            .onReceive(NotificationCenter.default.publisher(for: .mediaQuickOpenRequested), perform: handleMediaQuickOpenRequested)
             .onChange(of: isTerminalViewVisible) { _, _ in
                 recalculateAllNotchWindowSizes()
             }
@@ -1871,6 +1876,22 @@ struct NotchShelfView: View {
             isTodoListExpanded = true
         }
         todoManager.isShelfListExpanded = true
+        recalculateAllNotchWindowSizes()
+    }
+
+    private func handleMediaQuickOpenRequested(_ notification: Notification) {
+        guard let requestedIDValue = notification.userInfo?["displayID"] as? NSNumber else { return }
+        let requestedDisplayID = CGDirectDisplayID(requestedIDValue.uint32Value)
+        guard requestedDisplayID == thisDisplayID else { return }
+
+        if !isExpandedOnThisScreen {
+            withAnimation(displayExpandCloseAnimation) {
+                state.expandShelf(for: requestedDisplayID)
+            }
+        }
+
+        mediaQuickOpenAutoShrinkGraceUntil = Date().addingTimeInterval(mediaQuickOpenAutoShrinkMinimumDelay)
+        cancelAutoShrinkTimer()
         recalculateAllNotchWindowSizes()
     }
 
@@ -2080,7 +2101,9 @@ struct NotchShelfView: View {
         autoShrinkWorkItem = workItem
         
         // Use 5 seconds when items are in shelf (more time to interact), otherwise use user's setting
-        let delay: Double = state.items.isEmpty ? autoCollapseDelay : 5.0
+        let baseDelay: Double = state.items.isEmpty ? autoCollapseDelay : 5.0
+        let hotkeyGraceDelay = max(0, mediaQuickOpenAutoShrinkGraceUntil.timeIntervalSinceNow)
+        let delay = max(baseDelay, hotkeyGraceDelay)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     

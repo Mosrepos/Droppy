@@ -52,6 +52,8 @@ enum AppPreferenceKey {
     static let autofadeAppRulesEnabled = "autofadeAppRulesEnabled"  // Enable app-specific rules
     static let autofadeDisplayRulesEnabled = "autofadeDisplayRulesEnabled"  // Enable display-specific rules
     static let debounceMediaChanges = "debounceMediaChanges"
+    static let enableMediaQuickOpenShortcut = "enableMediaQuickOpenShortcut"
+    static let mediaQuickOpenShortcut = "mediaQuickOpenShortcut"  // JSON-encoded SavedShortcut data
     static let enableMediaAlbumArtGlow = "enableMediaAlbumArtGlow"  // Enable album art shadow/glow in media HUD
     static let enableRealAudioVisualizer = "enableRealAudioVisualizer"
     static let enableGradientVisualizer = "enableGradientVisualizer"  // Gradient colors across visualizer bars
@@ -70,6 +72,8 @@ enum AppPreferenceKey {
     static let enableUpdateHUD = "enableUpdateHUD"
     static let enableBetterDisplayCompatibility = "enableBetterDisplayCompatibility"
     static let mediaControlTargetMode = "mediaControlTargetMode"  // "mainMacBook" or "activeDisplay"
+    static let enableMediaKeyFineStepOverride = "enableMediaKeyFineStepOverride"
+    static let enableMediaKeyInterceptionDebugLogs = "enableMediaKeyInterceptionDebugLogs"
     
     // MARK: - Lock Screen Media Widget
     static let enableLockScreenMediaWidget = "enableLockScreenMediaWidget"
@@ -83,6 +87,7 @@ enum AppPreferenceKey {
     static let autoExpandOnExternalDisplays = "autoExpandOnExternalDisplays"  // Allow hover auto-expand on external displays
     static let autoExpandDelay = "autoExpandDelay"
     static let autoOpenMediaHUDOnShelfExpand = "autoOpenMediaHUDOnShelfExpand"  // Auto-show media HUD when shelf expands
+    static let enableOrderOutWhenInactive = "enableOrderOutWhenInactive"
     static let showMediaShelfSwitchBadge = "showMediaShelfSwitchBadge"  // Show top-left switch badge in shelf/media views
     static let autoShrinkShelf = "autoShrinkShelf"  // Legacy
     static let autoShrinkDelay = "autoShrinkDelay"  // Legacy
@@ -276,6 +281,7 @@ enum PreferenceDefault {
     static let autofadeAppRulesEnabled = false  // App-specific rules disabled by default
     static let autofadeDisplayRulesEnabled = false  // Display-specific rules disabled by default
     static let debounceMediaChanges = false
+    static let enableMediaQuickOpenShortcut = false  // Off by default: keep hotkey-triggered open as opt-in
     static let enableMediaAlbumArtGlow = true
     static let enableRealAudioVisualizer = false  // Opt-in: requires Screen Recording
     static let enableGradientVisualizer = true    // Keep one visualizer mode enabled by default
@@ -294,6 +300,8 @@ enum PreferenceDefault {
     static let enableUpdateHUD = true  // Show HUD when update is available
     static let enableBetterDisplayCompatibility = true  // Allow BetterDisplay to own brightness keys while Droppy mirrors HUD updates
     static let mediaControlTargetMode = "activeDisplay"  // Follow pointer display by default so external monitors work out of the box
+    static let enableMediaKeyFineStepOverride = false  // Off by default: preserve Option+Shift fine-step behavior
+    static let enableMediaKeyInterceptionDebugLogs = false
     
     // MARK: - Lock Screen Media Widget
     static let enableLockScreenMediaWidget = false  // Uses private APIs, opt-in
@@ -308,6 +316,7 @@ enum PreferenceDefault {
     static let autoExpandOnExternalDisplays = true  // Keep legacy behavior by default; users can disable if it conflicts with menu bar usage
     static let autoExpandDelay: Double = 0.25
     static let autoOpenMediaHUDOnShelfExpand = false  // Auto-open media HUD when shelf expands (opt-in)
+    static let enableOrderOutWhenInactive = false  // Off by default: keep shelf window ordering behavior unchanged
     static let showMediaShelfSwitchBadge = true  // Keep media/shelf switch badge visible by default
     static let autoShrinkShelf = true  // Legacy
     static let autoShrinkDelay = 3  // Legacy

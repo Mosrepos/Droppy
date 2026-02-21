@@ -256,6 +256,7 @@ struct MediaPlayerView: View {
     @State private var inlineHUDValue: CGFloat = 0.5
     @State private var inlineHUDMuted: Bool = false  // PREMIUM: Explicit mute state for volume
     @State private var inlineHUDBatteryCharging: Bool = false
+    @State private var inlineHUDBatteryPluggedIn: Bool = false
     @State private var inlineHUDSymbolOverride: String? = nil
     @State private var inlineHUDHideWorkItem: DispatchWorkItem?
 
@@ -473,7 +474,8 @@ struct MediaPlayerView: View {
                     triggerInlineHUD(
                         .battery,
                         value: CGFloat(batteryManager.batteryLevel) / 100.0,
-                        isCharging: batteryManager.isCharging || batteryManager.isPluggedIn
+                        isCharging: batteryManager.isCharging,
+                        isPluggedIn: batteryManager.isPluggedIn
                     )
                 }
                 .onChange(of: capsLockManager.lastChangeAt) { _, _ in
@@ -604,6 +606,7 @@ struct MediaPlayerView: View {
         value: CGFloat,
         muted: Bool = false,
         isCharging: Bool = false,
+        isPluggedIn: Bool = false,
         symbolOverride: String? = nil
     ) {
         // Cancel any pending hide
@@ -614,6 +617,7 @@ struct MediaPlayerView: View {
         inlineHUDValue = value
         inlineHUDMuted = muted
         inlineHUDBatteryCharging = isCharging
+        inlineHUDBatteryPluggedIn = isPluggedIn
         inlineHUDSymbolOverride = symbolOverride
         
         // Animate visibility on (same as regular HUD: spring 0.3, 0.7)
@@ -1029,6 +1033,7 @@ struct MediaPlayerView: View {
                     value: inlineHUDValue,
                     isMuted: inlineHUDMuted,
                     isCharging: inlineHUDBatteryCharging,
+                    isPluggedIn: inlineHUDBatteryPluggedIn,
                     symbolOverride: inlineHUDSymbolOverride,
                     useAdaptiveForegrounds: useAdaptiveForegrounds
                 )
@@ -1129,7 +1134,18 @@ struct MediaPlayerView: View {
                     }
                 }
                 
-                // Love button (Apple Music only - Spotify requires OAuth)
+                // Love button (Spotify and Apple Music)
+                if isSpotify {
+                    SpotifyControlButton(
+                        icon: spotify.isCurrentTrackLiked ? "heart.fill" : "heart",
+                        isActive: spotify.isCurrentTrackLiked,
+                        accentColor: spotifyGreen,
+                        size: 16
+                    ) {
+                        spotify.toggleLike()
+                    }
+                }
+
                 if isAppleMusic {
                     SpotifyControlButton(
                         icon: appleMusic.isCurrentTrackLoved ? "heart.fill" : "heart",
@@ -1151,6 +1167,7 @@ struct MediaPlayerView: View {
                     value: inlineHUDValue,
                     isMuted: inlineHUDMuted,
                     isCharging: inlineHUDBatteryCharging,
+                    isPluggedIn: inlineHUDBatteryPluggedIn,
                     symbolOverride: inlineHUDSymbolOverride,
                     useAdaptiveForegrounds: useAdaptiveForegrounds
                 )

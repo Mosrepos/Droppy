@@ -16,6 +16,26 @@ private func hudPercentageText(_ value: CGFloat) -> String {
     return percent >= 100 ? "MAX" : "\(percent)%"
 }
 
+private let compactVolumeOutputSymbols: Set<String> = [
+    "airpodspro",
+    "airpods",
+    "airpodsmax",
+    "airpods.gen3",
+    "headphones",
+    "beats.headphones",
+    "earbuds"
+]
+
+private func hudIconScale(hudType: HUDContentType, symbol: String) -> CGFloat {
+    if hudType == .brightness || hudType == .backlight {
+        return 0.8
+    }
+    if hudType == .volume || hudType == .mute {
+        return compactVolumeOutputSymbols.contains(symbol) ? 0.8 : 1.0
+    }
+    return 1.0
+}
+
 /// Embedded HUD view that appears inside the expanded notch
 /// Icon on left wing, percentage on right wing, slider at bottom (full width)
 /// Layout matches MediaHUDView for consistent positioning
@@ -99,14 +119,16 @@ struct NotchHUDView: View {
                 HStack(spacing: 12) {
                     // Left side: Icon with BUTTERY SMOOTH SCALING
                     // Icon scales from 0.85x (0%) to 1.15x (100%) for premium feel
+                    let symbol = iconSymbol(for: value)
                     let iconScale = 0.85 + (value * 0.30)
+                    let accessoryScale = hudIconScale(hudType: hudType, symbol: symbol)
                     
                     // Volume: adaptive neutral icon | Brightness: yellow icon
-                    Image(systemName: iconSymbol(for: value))
+                    Image(systemName: symbol)
                         .font(.system(size: iconSize, weight: .semibold))
                         .foregroundStyle(hudType == .brightness ? Color(red: 1.0, green: 0.85, blue: 0.0) : neutralForeground)
                         .contentTransition(.symbolEffect(.replace.byLayer))
-                        .scaleEffect(iconScale)
+                        .scaleEffect(iconScale * accessoryScale)
                         .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: value)
                         .frame(width: 28, height: iconSize, alignment: .center)  // Fixed width - fits max scale
                     
@@ -135,14 +157,16 @@ struct NotchHUDView: View {
                     HStack(spacing: 12) {  // Matches slider-to-percentage spacing
                         // Icon with BUTTERY SMOOTH SCALING
                         // Icon scales from 0.85x (0%) to 1.15x (100%) for premium feel
+                        let symbol = iconSymbol(for: value)
                         let iconScale = 0.85 + (value * 0.30)
+                        let accessoryScale = hudIconScale(hudType: hudType, symbol: symbol)
                         
                         // Volume: adaptive neutral icon | Brightness: yellow icon
-                        Image(systemName: iconSymbol(for: value))
+                        Image(systemName: symbol)
                             .font(.system(size: iconSize, weight: .semibold))
                             .foregroundStyle(hudType == .brightness ? Color(red: 1.0, green: 0.85, blue: 0.0) : neutralForeground)
                             .contentTransition(.symbolEffect(.replace.byLayer))
-                            .scaleEffect(iconScale)
+                            .scaleEffect(iconScale * accessoryScale)
                             .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: value)
                             .frame(width: iconSize + 10, alignment: .center)  // Fixed width - fits max scale
                         
@@ -207,13 +231,16 @@ struct HUDOverlayView: View {
     }
     
     var body: some View {
+        let symbol = iconSymbol(for: value)
+        let accessoryScale = hudIconScale(hudType: hudType, symbol: symbol)
         HStack(spacing: 14) {
             // Icon with dynamic symbol
-            Image(systemName: iconSymbol(for: value))
+            Image(systemName: symbol)
                 .font(.system(size: HUDLayoutCalculator.dynamicIslandIconSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .contentTransition(.interpolate)
                 .symbolVariant(.fill)
+                .scaleEffect(accessoryScale)
                 .frame(width: 22, height: HUDLayoutCalculator.dynamicIslandIconSize)
             
             // Slider

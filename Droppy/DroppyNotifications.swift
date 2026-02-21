@@ -60,6 +60,9 @@ extension Notification.Name {
     /// Posted when the Reminders quick-open shortcut is triggered
     static let todoQuickOpenRequested = Notification.Name("todoQuickOpenRequested")
 
+    /// Posted when the media quick-open shortcut is triggered
+    static let mediaQuickOpenRequested = Notification.Name("mediaQuickOpenRequested")
+
     // MARK: - Licensing
 
     /// Posted when Gumroad license activation state changes

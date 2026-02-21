@@ -44,6 +44,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.enableVolumeHUDReplacement) private var enableVolumeHUDReplacement = PreferenceDefault.enableVolumeHUDReplacement
     @AppStorage(AppPreferenceKey.enableBrightnessHUDReplacement) private var enableBrightnessHUDReplacement = PreferenceDefault.enableBrightnessHUDReplacement
     @AppStorage(AppPreferenceKey.enableVolumeKeyFeedbackSound) private var enableVolumeKeyFeedbackSound = PreferenceDefault.enableVolumeKeyFeedbackSound
+    @AppStorage(AppPreferenceKey.enableMediaKeyFineStepOverride) private var enableMediaKeyFineStepOverride = PreferenceDefault.enableMediaKeyFineStepOverride
     @AppStorage(AppPreferenceKey.enableBatteryHUD) private var enableBatteryHUD = PreferenceDefault.enableBatteryHUD
     @AppStorage(AppPreferenceKey.enableCapsLockHUD) private var enableCapsLockHUD = PreferenceDefault.enableCapsLockHUD
     @AppStorage(AppPreferenceKey.enableAirPodsHUD) private var enableAirPodsHUD = PreferenceDefault.enableAirPodsHUD
@@ -66,6 +67,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.cameraPreferredDeviceID) private var cameraPreferredDeviceID = PreferenceDefault.cameraPreferredDeviceID
     @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
     @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
+    @AppStorage(AppPreferenceKey.enableMediaQuickOpenShortcut) private var enableMediaQuickOpenShortcut = PreferenceDefault.enableMediaQuickOpenShortcut
     @AppStorage(AppPreferenceKey.showExternalMouseSwitchButton) private var showExternalMouseSwitchButton = PreferenceDefault.showExternalMouseSwitchButton
     @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
     @AppStorage(AppPreferenceKey.debounceMediaChanges) private var debounceMediaChanges = PreferenceDefault.debounceMediaChanges
@@ -84,6 +86,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.autoExpandOnExternalDisplays) private var autoExpandOnExternalDisplays = PreferenceDefault.autoExpandOnExternalDisplays
     @AppStorage(AppPreferenceKey.autoExpandDelay) private var autoExpandDelay = PreferenceDefault.autoExpandDelay
     @AppStorage(AppPreferenceKey.autoOpenMediaHUDOnShelfExpand) private var autoOpenMediaHUDOnShelfExpand = PreferenceDefault.autoOpenMediaHUDOnShelfExpand
+    @AppStorage(AppPreferenceKey.enableOrderOutWhenInactive) private var enableOrderOutWhenInactive = PreferenceDefault.enableOrderOutWhenInactive
     @AppStorage(AppPreferenceKey.autoHideOnFullscreen) private var autoHideOnFullscreen = PreferenceDefault.autoHideOnFullscreen
     @AppStorage(AppPreferenceKey.hideMediaOnlyOnFullscreen) private var hideMediaOnlyOnFullscreen = PreferenceDefault.hideMediaOnlyOnFullscreen
     @AppStorage(AppPreferenceKey.enableFinderServices) private var enableFinderServices = PreferenceDefault.enableFinderServices
@@ -103,6 +106,7 @@ struct SettingsView: View {
     @State private var showQuickActionsWarning = false  // Warning when enabling Quick Actions
     @State private var basketDragRevealShortcut: SavedShortcut?
     @State private var basketSwitcherShortcut: SavedShortcut?
+    @State private var mediaQuickOpenShortcut: SavedShortcut?
     
     // Hover states for special buttons
     @State private var isCoffeeHovering = false
@@ -206,6 +210,25 @@ struct SettingsView: View {
         }
         // Reload the shortcut monitor to pick up new binding
         BasketSwitcherWindowController.shared.reloadShortcutConfiguration()
+    }
+
+    private func loadMediaQuickOpenShortcut() {
+        guard let data = UserDefaults.standard.data(forKey: AppPreferenceKey.mediaQuickOpenShortcut),
+              let decoded = try? JSONDecoder().decode(SavedShortcut.self, from: data) else {
+            mediaQuickOpenShortcut = nil
+            return
+        }
+        mediaQuickOpenShortcut = sanitizeShortcut(decoded)
+    }
+
+    private func saveMediaQuickOpenShortcut(_ shortcut: SavedShortcut?) {
+        let sanitizedShortcut = sanitizeShortcut(shortcut)
+        if let sanitizedShortcut, let encoded = try? JSONEncoder().encode(sanitizedShortcut) {
+            UserDefaults.standard.set(encoded, forKey: AppPreferenceKey.mediaQuickOpenShortcut)
+        } else {
+            UserDefaults.standard.removeObject(forKey: AppPreferenceKey.mediaQuickOpenShortcut)
+        }
+        NotchWindowController.shared.reloadMediaQuickOpenShortcutMonitoring()
     }
 
     private func setMultiBasketMode(_ isEnabled: Bool) {
@@ -656,6 +679,8 @@ struct SettingsView: View {
             }
             loadBasketDragRevealShortcut()
             loadBasketSwitcherShortcut()
+            loadMediaQuickOpenShortcut()
+            NotchWindowController.shared.reloadMediaQuickOpenShortcutMonitoring()
             // Check if there's a pending tab to open (e.g., from menu bar "Manage Uploads")
             if let pendingTab = SettingsWindowController.shared.pendingTabToOpen {
                 selectedTab = pendingTab
@@ -689,6 +714,9 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openSmartExportSettings)) { _ in
             // Navigate to General tab where Smart Export is located
             selectedTab = .general
+        }
+        .onChange(of: enableMediaQuickOpenShortcut) { _, _ in
+            NotchWindowController.shared.reloadMediaQuickOpenShortcutMonitoring()
         }
         .onChange(of: showIdleNotchOnExternalDisplays) { _, newValue in
             if newValue {
@@ -1312,6 +1340,15 @@ struct SettingsView: View {
                             }
                             Slider(value: $autoExpandDelay, in: 0.1...2.0, step: 0.05)
                                 .sliderHaptics(value: autoExpandDelay, range: 0.1...2.0)
+                        }
+                    }
+
+                    Toggle(isOn: $enableOrderOutWhenInactive) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Order Out When Inactive")
+                            Text("Hide shelf windows when idle and reveal them on interaction")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 } header: {
@@ -2198,6 +2235,45 @@ struct SettingsView: View {
                     }
                     
                     if showMediaPlayer {
+                        Toggle(isOn: $enableMediaQuickOpenShortcut) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Media Quick Open Shortcut")
+                                Text("Enable a global hotkey to open Now Playing")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if enableMediaQuickOpenShortcut {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Shortcut")
+                                    Text("Use any key combination to open the media surface")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                KeyShortcutRecorder(shortcut: Binding(
+                                    get: { mediaQuickOpenShortcut },
+                                    set: { newValue in
+                                        mediaQuickOpenShortcut = newValue
+                                        saveMediaQuickOpenShortcut(newValue)
+                                    }
+                                ))
+
+                                if mediaQuickOpenShortcut != nil {
+                                    Button {
+                                        mediaQuickOpenShortcut = nil
+                                        saveMediaQuickOpenShortcut(nil)
+                                    } label: {
+                                        Image(systemName: "arrow.counterclockwise")
+                                    }
+                                    .buttonStyle(DroppyCircleButtonStyle(size: 32))
+                                    .help("Reset Shortcut")
+                                }
+                            }
+                        }
+
                         // Advanced Auto-Fade settings (Issue #79)
                         AdvancedAutofadeSettingsRow()
 
@@ -2422,6 +2498,15 @@ struct SettingsView: View {
                             }
                         }
                         .fixedSize(horizontal: true, vertical: false)
+                    }
+
+                    Toggle(isOn: $enableMediaKeyFineStepOverride) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Fine Step Override")
+                            Text("Always use fine volume and brightness increments")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 
@@ -3161,10 +3246,19 @@ struct SettingsView: View {
                         Slider(value: $autoExpandDelay, in: 0.1...2.0, step: 0.05)
                             .sliderHaptics(value: autoExpandDelay, range: 0.1...2.0)
                     }
+                    }
+
+                    Toggle(isOn: $enableOrderOutWhenInactive) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Order Out When Inactive")
+                            Text("Hide shelf windows when idle and reveal them on interaction")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Shelf Behavior")
                 }
-            } header: {
-                Text("Shelf Behavior")
-            }
             
             // MARK: Indicators (merged from Accessibility tab)
             indicatorsSettings
