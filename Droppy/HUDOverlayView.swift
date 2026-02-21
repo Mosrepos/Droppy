@@ -26,12 +26,19 @@ private let compactVolumeOutputSymbols: Set<String> = [
     "earbuds"
 ]
 
+private let compactVolumeSpeakerSymbols: Set<String> = [
+    "speaker.slash.fill",
+    "speaker.wave.1.fill",
+    "speaker.wave.2.fill",
+    "speaker.wave.3.fill"
+]
+
 private func hudIconScale(hudType: HUDContentType, symbol: String) -> CGFloat {
     if hudType == .brightness || hudType == .backlight {
         return 0.8
     }
     if hudType == .volume || hudType == .mute {
-        return compactVolumeOutputSymbols.contains(symbol) ? 0.8 : 1.0
+        return (compactVolumeOutputSymbols.contains(symbol) || compactVolumeSpeakerSymbols.contains(symbol)) ? 0.8 : 1.0
     }
     return 1.0
 }

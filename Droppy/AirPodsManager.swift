@@ -272,57 +272,55 @@ final class AirPodsManager {
     
     // MARK: - Battery Level Extraction (Private API)
     
+    private func normalizedBatteryPercent(from rawValue: Any?) -> Int? {
+        switch rawValue {
+        case let value as Int:
+            return (0...100).contains(value) ? value : nil
+        case let value as NSNumber:
+            let intValue = value.intValue
+            return (0...100).contains(intValue) ? intValue : nil
+        case let value as String:
+            guard let intValue = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
+            return (0...100).contains(intValue) ? intValue : nil
+        default:
+            return nil
+        }
+    }
+
+    private func readBatteryPercent(from device: IOBluetoothDevice, key: String) -> Int? {
+        guard device.responds(to: Selector((key))) else { return nil }
+        return normalizedBatteryPercent(from: device.value(forKey: key))
+    }
+
     /// Extract battery levels using IOBluetoothDevice's private selectors
     /// These are undocumented but used by apps like AirBuddy
     private func getBatteryLevels(from device: IOBluetoothDevice, type: ConnectedAirPods.DeviceType) -> (combined: Int, left: Int?, right: Int?, case: Int?) {
-        var leftBattery: Int?
-        var rightBattery: Int?
-        var caseBattery: Int?
-        var singleBattery: Int?
-        
-        // Try to get individual battery levels using private selectors
-        // These selectors exist in IOBluetoothDevice but are not publicly documented
-        
-        // Left earbud battery
-        if device.responds(to: Selector(("batteryPercentLeft"))) {
-            if let value = device.value(forKey: "batteryPercentLeft") as? Int, value >= 0, value <= 100 {
-                leftBattery = value
-            }
-        }
-        
-        // Right earbud battery
-        if device.responds(to: Selector(("batteryPercentRight"))) {
-            if let value = device.value(forKey: "batteryPercentRight") as? Int, value >= 0, value <= 100 {
-                rightBattery = value
-            }
-        }
-        
-        // Case battery
-        if device.responds(to: Selector(("batteryPercentCase"))) {
-            if let value = device.value(forKey: "batteryPercentCase") as? Int, value >= 0, value <= 100 {
-                caseBattery = value
-            }
-        }
-        
-        // Single battery (for AirPods Max or when left/right not available)
-        if device.responds(to: Selector(("batteryPercentSingle"))) {
-            if let value = device.value(forKey: "batteryPercentSingle") as? Int, value >= 0, value <= 100 {
-                singleBattery = value
-            }
-        }
-
-        // Some Bluetooth headsets expose only a generic batteryPercent key.
-        if singleBattery == nil && device.responds(to: Selector(("batteryPercent"))) {
-            if let value = device.value(forKey: "batteryPercent") as? Int, value >= 0, value <= 100 {
-                singleBattery = value
-            }
-        }
+        let leftBattery = readBatteryPercent(from: device, key: "batteryPercentLeft")
+        let rightBattery = readBatteryPercent(from: device, key: "batteryPercentRight")
+        let caseBattery = readBatteryPercent(from: device, key: "batteryPercentCase")
+        let singleBattery =
+            readBatteryPercent(from: device, key: "batteryPercentSingle") ??
+            readBatteryPercent(from: device, key: "batteryPercent") ??
+            readBatteryPercent(from: device, key: "batteryPercentMain") ??
+            readBatteryPercent(from: device, key: "batteryPercentCombined")
         
         // Calculate combined battery display value
         let combined: Int
         if type == .airpodsMax || type == .headphones {
             // AirPods Max and over-ear headphones use single battery
-            combined = singleBattery ?? 100
+            if let single = singleBattery {
+                combined = single
+            } else if let left = leftBattery, let right = rightBattery {
+                combined = (left + right) / 2
+            } else if let left = leftBattery {
+                combined = left
+            } else if let right = rightBattery {
+                combined = right
+            } else if let caseBattery {
+                combined = caseBattery
+            } else {
+                combined = 100
+            }
         } else if let left = leftBattery, let right = rightBattery {
             // Average of left and right for regular AirPods
             combined = (left + right) / 2
@@ -332,6 +330,8 @@ final class AirPodsManager {
             combined = left
         } else if let right = rightBattery {
             combined = right
+        } else if let caseBattery {
+            combined = caseBattery
         } else {
             // Fallback: no battery info available
             combined = 100
