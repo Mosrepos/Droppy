@@ -86,8 +86,8 @@ struct HUDLayoutCalculator {
         return !externalUseDI
     }
     
-    /// Whether transparent Dynamic Island mode is enabled
-    /// Uses the MAIN "Transparent Background" setting - one toggle controls all transparency
+    /// Whether Liquid Dynamic Island mode is enabled
+    /// Uses the MAIN "Liquid mode" setting - one toggle controls all transparency
     var isTransparentDynamicIsland: Bool {
         isDynamicIslandMode && UserDefaults.standard.bool(forKey: "useTransparentBackground")
     }
@@ -130,7 +130,7 @@ struct HUDLayoutCalculator {
     
     // MARK: - Color Helpers
     
-    /// Accent color adjusted for transparent Dynamic Island mode
+    /// Accent color adjusted for Liquid Dynamic Island mode
     func adjustedColor(_ baseColor: Color) -> Color {
         isTransparentDynamicIsland ? .white : baseColor
     }

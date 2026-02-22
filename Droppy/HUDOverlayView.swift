@@ -58,6 +58,7 @@ struct NotchHUDView: View {
     var onValueChange: ((CGFloat) -> Void)?
     @ObservedObject private var volumeManager = VolumeManager.shared
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.enableCompactHUDIconScaling) private var enableCompactHUDIconScaling = PreferenceDefault.enableCompactHUDIconScaling
     
     /// SSOT: Use HUDLayoutCalculator for consistent padding across all HUDs
     private var layout: HUDLayoutCalculator {
@@ -126,17 +127,20 @@ struct NotchHUDView: View {
                 HStack(spacing: 12) {
                     // Left side: Icon with BUTTERY SMOOTH SCALING
                     // Icon scales from 0.85x (0%) to 1.15x (100%) for premium feel
-                    let symbol = iconSymbol(for: value)
                     let iconScale = 0.85 + (value * 0.30)
-                    let accessoryScale = hudIconScale(hudType: hudType, symbol: symbol)
+                    let accessoryScale = hudIconScale(hudType: hudType, symbol: iconSymbol(for: value))
+                    let compactScale = enableCompactHUDIconScaling
+                        ? accessoryScale
+                        : 1.0
                     
                     // Volume: adaptive neutral icon | Brightness: yellow icon
-                    Image(systemName: symbol)
+                    Image(systemName: iconSymbol(for: value))
                         .font(.system(size: iconSize, weight: .semibold))
                         .foregroundStyle(hudType == .brightness ? Color(red: 1.0, green: 0.85, blue: 0.0) : neutralForeground)
                         .contentTransition(.symbolEffect(.replace.byLayer))
-                        .scaleEffect(iconScale * accessoryScale)
-                        .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: value)
+                        .scaleEffect(iconScale)
+                        .scaleEffect(compactScale)
+                        .animation(DroppyAnimation.tracking, value: value)
                         .frame(width: 28, height: iconSize, alignment: .center)  // Fixed width - fits max scale
                     
                     // Right side: Slider takes remaining width
@@ -164,17 +168,20 @@ struct NotchHUDView: View {
                     HStack(spacing: 12) {  // Matches slider-to-percentage spacing
                         // Icon with BUTTERY SMOOTH SCALING
                         // Icon scales from 0.85x (0%) to 1.15x (100%) for premium feel
-                        let symbol = iconSymbol(for: value)
                         let iconScale = 0.85 + (value * 0.30)
-                        let accessoryScale = hudIconScale(hudType: hudType, symbol: symbol)
+                        let accessoryScale = hudIconScale(hudType: hudType, symbol: iconSymbol(for: value))
+                        let compactScale = enableCompactHUDIconScaling
+                            ? accessoryScale
+                            : 1.0
                         
                         // Volume: adaptive neutral icon | Brightness: yellow icon
-                        Image(systemName: symbol)
+                        Image(systemName: iconSymbol(for: value))
                             .font(.system(size: iconSize, weight: .semibold))
                             .foregroundStyle(hudType == .brightness ? Color(red: 1.0, green: 0.85, blue: 0.0) : neutralForeground)
                             .contentTransition(.symbolEffect(.replace.byLayer))
-                            .scaleEffect(iconScale * accessoryScale)
-                            .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: value)
+                            .scaleEffect(iconScale)
+                            .scaleEffect(compactScale)
+                            .animation(DroppyAnimation.tracking, value: value)
                             .frame(width: iconSize + 10, alignment: .center)  // Fixed width - fits max scale
                         
                         Text(hudType == .brightness ? "Brightness" : "Volume")
@@ -227,6 +234,7 @@ struct HUDOverlayView: View {
     
     @State private var animatedValue: CGFloat = 0
     @ObservedObject private var volumeManager = VolumeManager.shared
+    @AppStorage(AppPreferenceKey.enableCompactHUDIconScaling) private var enableCompactHUDIconScaling = PreferenceDefault.enableCompactHUDIconScaling
     
     private func iconSymbol(for value: CGFloat) -> String {
         switch hudType {
@@ -238,16 +246,19 @@ struct HUDOverlayView: View {
     }
     
     var body: some View {
-        let symbol = iconSymbol(for: value)
-        let accessoryScale = hudIconScale(hudType: hudType, symbol: symbol)
+        let accessoryScale = hudIconScale(hudType: hudType, symbol: iconSymbol(for: value))
         HStack(spacing: 14) {
             // Icon with dynamic symbol
-            Image(systemName: symbol)
+            Image(systemName: iconSymbol(for: value))
                 .font(.system(size: HUDLayoutCalculator.dynamicIslandIconSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .contentTransition(.interpolate)
                 .symbolVariant(.fill)
-                .scaleEffect(accessoryScale)
+                .scaleEffect(
+                    enableCompactHUDIconScaling
+                        ? accessoryScale
+                        : 1.0
+                )
                 .frame(width: 22, height: HUDLayoutCalculator.dynamicIslandIconSize)
             
             // Slider

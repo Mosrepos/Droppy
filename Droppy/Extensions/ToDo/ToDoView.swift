@@ -106,6 +106,7 @@ struct ToDoView: View {
     @State private var showingNewDueDatePicker = false
     @State private var activeListMentionQuery: String?
     @State private var showingMentionPicker = false
+    @State private var deferredOpenSyncWorkItem: DispatchWorkItem?
     @AppStorage(AppPreferenceKey.todoHideUndatedReminders) private var hideUndatedReminders = PreferenceDefault.todoHideUndatedReminders
     
     var body: some View {
@@ -114,7 +115,7 @@ struct ToDoView: View {
             HStack(spacing: 10) {
                 // Back to Shelf
                 Button(action: {
-                    withAnimation {
+                    withAnimation(DroppyAnimation.state) {
                         manager.isVisible = false
                     }
                 }) {
@@ -131,7 +132,7 @@ struct ToDoView: View {
                 // Priority Toggle (Glowing Dot)
                 Button {
                     HapticFeedback.medium.perform()
-                    withAnimation {
+                    withAnimation(DroppyAnimation.state) {
                          switch manager.newItemPriority {
                          case .normal: manager.newItemPriority = .high
                          case .high: manager.newItemPriority = .medium
@@ -218,7 +219,7 @@ struct ToDoView: View {
                     }
                 } label: {
                     Image(systemName: hideUndatedReminders ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                        .foregroundColor(hideUndatedReminders ? .blue : .secondary)
+                        .foregroundColor(hideUndatedReminders ? AdaptiveColors.selectionBlueAuto : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Filter options")
@@ -226,7 +227,7 @@ struct ToDoView: View {
                 // Submit Button
                 Button(action: submitTask) {
                     Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AdaptiveColors.selectionBlueAuto)
                 }
                 .buttonStyle(.plain)
                 .disabled(manager.newItemText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -299,7 +300,7 @@ struct ToDoView: View {
                                 Text("Upcoming Events")
                                     .font(.system(size: 11, weight: .semibold))
                                     .contentTransition(.interpolate)
-                                    .animation(.smooth(duration: 0.22), value: upcomingCalendarItems.count)
+                                    .animation(DroppyAnimation.smooth(duration: 0.22), value: upcomingCalendarItems.count)
                                 Spacer(minLength: 0)
                             }
                             .foregroundStyle(AdaptiveColors.secondaryTextAuto.opacity(0.85))
@@ -339,7 +340,7 @@ struct ToDoView: View {
                         manager.restoreLastDeletedItem()
                     },
                     onDismiss: {
-                        withAnimation {
+                        withAnimation(DroppyAnimation.transition) {
                             manager.showUndoToast = false
                         }
                     }
@@ -351,7 +352,7 @@ struct ToDoView: View {
         .overlay(alignment: .top) {
             if manager.showCleanupToast {
                 ToDoCleanupToast(count: manager.cleanupCount) {
-                    withAnimation(.smooth(duration: 0.25)) {
+                    withAnimation(DroppyAnimation.smooth(duration: 0.25)) {
                         manager.showCleanupToast = false
                     }
                 }
@@ -359,11 +360,11 @@ struct ToDoView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.showUndoToast)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: manager.showCleanupToast)
-        .animation(.smooth(duration: 0.25), value: manager.items.isEmpty)
-        .animation(.smooth(duration: 0.28), value: manager.overviewTaskItemsAnimationSignature)
-        .animation(.smooth(duration: 0.28), value: manager.upcomingCalendarItemsAnimationSignature)
+        .animation(DroppyAnimation.transition, value: manager.showUndoToast)
+        .animation(DroppyAnimation.transition, value: manager.showCleanupToast)
+        .animation(DroppyAnimation.smooth(duration: 0.25), value: manager.items.isEmpty)
+        .animation(DroppyAnimation.smooth(duration: 0.28), value: manager.overviewTaskItemsAnimationSignature)
+        .animation(DroppyAnimation.smooth(duration: 0.28), value: manager.upcomingCalendarItemsAnimationSignature)
         .onChange(of: isInputFocused) { _, focused in
             manager.isEditingText = focused
         }
@@ -379,14 +380,10 @@ struct ToDoView: View {
         .onAppear {
             manager.isVisible = true
             isInputFocused = true
-            if manager.isRemindersSyncEnabled || manager.isCalendarSyncEnabled {
-                manager.syncExternalSourcesNow()
-            }
-            if manager.isRemindersSyncEnabled {
-                manager.refreshReminderListsNow()
-            }
+            scheduleDeferredOpenSyncIfNeeded()
         }
         .onDisappear {
+            deferredOpenSyncWorkItem?.cancel()
             manager.isVisible = false
             manager.isEditingText = false
             manager.isInteractingWithPopover = false
@@ -420,6 +417,20 @@ struct ToDoView: View {
 
     private var shouldShowMentionTooltip: Bool {
         !mentionOptions.isEmpty
+    }
+
+    private func scheduleDeferredOpenSyncIfNeeded() {
+        deferredOpenSyncWorkItem?.cancel()
+        guard manager.isRemindersSyncEnabled || manager.isCalendarSyncEnabled else { return }
+
+        let workItem = DispatchWorkItem {
+            if manager.isRemindersSyncEnabled {
+                manager.refreshReminderListsNow()
+            }
+            manager.syncExternalSourcesNow(minimumInterval: 1.0)
+        }
+        deferredOpenSyncWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 
     private func refreshListMentionState(for text: String) {
@@ -591,7 +602,7 @@ private struct ToDoDueDatePopoverContentView: View {
                     Button(primaryButtonTitle) {
                         onPrimary?()
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 }
             }
         }
@@ -798,7 +809,7 @@ struct ToDoRow: View {
                     )
                     .lineLimit(1)
                     .contentTransition(.interpolate)
-                    .animation(.smooth(duration: 0.22), value: item.title)
+                    .animation(DroppyAnimation.smooth(duration: 0.22), value: item.title)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
@@ -836,7 +847,7 @@ struct ToDoRow: View {
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                             .contentTransition(.interpolate)
-                            .animation(.smooth(duration: 0.22), value: dueDate.timeIntervalSinceReferenceDate)
+                            .animation(DroppyAnimation.smooth(duration: 0.22), value: dueDate.timeIntervalSinceReferenceDate)
                     }
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(
@@ -864,7 +875,7 @@ struct ToDoRow: View {
                     }
                     .buttonStyle(.plain)
                     .opacity(isHovering ? 1.0 : 0.0) // Keep layout space, fade in
-                    .animation(.easeInOut(duration: 0.2), value: isHovering)
+                    .animation(DroppyAnimation.hover, value: isHovering)
                     .accessibilityLabel(String(localized: "action.delete_task"))
                 }
             }
@@ -891,7 +902,7 @@ struct ToDoRow: View {
         // Removed vertical padding of 2
         .onHover { hovering in
             if hovering { HapticFeedback.hover() }
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(DroppyAnimation.hoverQuick) {
                 isHovering = hovering
             }
         }
@@ -965,7 +976,7 @@ struct ToDoRow: View {
                         Text(String(localized: "action.save"))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                     .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -1149,7 +1160,7 @@ struct ToDoRow: View {
                 .foregroundStyle(AdaptiveColors.primaryTextAuto)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.interpolate)
-                .animation(.smooth(duration: 0.22), value: item.title)
+                .animation(DroppyAnimation.smooth(duration: 0.22), value: item.title)
 
             infoDetailRow(icon: "square.stack.3d.up", label: "Source", value: sourceDetailsLabel)
 

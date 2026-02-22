@@ -220,7 +220,7 @@ final class ToDoManager {
     // MARK: - Actions
     
     func toggleVisibility() {
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             isVisible.toggle()
         }
         if isVisible {
@@ -232,7 +232,7 @@ final class ToDoManager {
                 self.syncExternalSourcesNow(minimumInterval: 1.5)
             }
             openRefreshWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: workItem)
         } else {
             openRefreshWorkItem?.cancel()
             isShelfListExpanded = false
@@ -241,7 +241,7 @@ final class ToDoManager {
     
     func hide() {
         openRefreshWorkItem?.cancel()
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             isVisible = false
         }
         isShelfListExpanded = false
@@ -291,7 +291,7 @@ final class ToDoManager {
             isCompleted: false
         )
         
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items.insert(newItem, at: 0)
         }
         
@@ -1152,6 +1152,7 @@ final class ToDoManager {
         let calendarEnabled = isCalendarSyncEnabled
         let now = Date()
         var didMutateItems = false
+        var mergedItems = items
 
         var payloadByKey: [String: ExternalTaskPayload] = [:]
         payloadByKey.reserveCapacity(reminderPayloads.count + calendarPayloads.count)
@@ -1159,14 +1160,14 @@ final class ToDoManager {
             payloadByKey["\(payload.source.rawValue)::\(payload.identifier)"] = payload
         }
 
-        for index in items.indices {
-            guard let source = items[index].externalSource, let externalID = items[index].externalIdentifier else { continue }
+        for index in mergedItems.indices {
+            guard let source = mergedItems[index].externalSource, let externalID = mergedItems[index].externalIdentifier else { continue }
             let keepSource = (source == .reminders && remindersEnabled) || (source == .calendar && calendarEnabled)
             guard keepSource else { continue }
 
             let key = "\(source.rawValue)::\(externalID)"
             if let payload = payloadByKey.removeValue(forKey: key) {
-                var current = items[index]
+                var current = mergedItems[index]
                 var changed = false
 
                 if current.title != payload.title {
@@ -1209,14 +1210,15 @@ final class ToDoManager {
                 }
 
                 if changed {
-                    items[index] = current
+                    mergedItems[index] = current
                     didMutateItems = true
                 }
             }
         }
 
-        for payload in payloadByKey.values {
-            let item = ToDoItem(
+        if !payloadByKey.isEmpty {
+            let insertedItems = payloadByKey.values.map { payload in
+                ToDoItem(
                 title: payload.title,
                 priority: .normal,
                 dueDate: payload.dueDate,
@@ -1231,32 +1233,42 @@ final class ToDoManager {
                 completedAt: payload.isCompleted ? now : nil,
                 isCompleted: payload.isCompleted
             )
-            items.insert(item, at: 0)
+            }
+            mergedItems.insert(contentsOf: insertedItems, at: 0)
             didMutateItems = true
         }
 
         // Remove stale external items from enabled sources when they no longer exist upstream.
         let activeKeys = Set((reminderPayloads + calendarPayloads).map { "\($0.source.rawValue)::\($0.identifier)" })
-        let beforePruneCount = items.count
-        items.removeAll { item in
+        let beforePruneCount = mergedItems.count
+        mergedItems.removeAll { item in
             guard let source = item.externalSource, let externalID = item.externalIdentifier else { return false }
             let sourceEnabled = (source == .reminders && remindersEnabled) || (source == .calendar && calendarEnabled)
             guard sourceEnabled else { return false }
             let key = "\(source.rawValue)::\(externalID)"
             return !activeKeys.contains(key)
         }
-        if items.count != beforePruneCount {
+        if mergedItems.count != beforePruneCount {
             didMutateItems = true
         }
 
         if !remindersEnabled {
-            didMutateItems = removeExternalItems(for: .reminders, persist: false) || didMutateItems
+            let beforeCount = mergedItems.count
+            mergedItems.removeAll { $0.externalSource == .reminders }
+            if mergedItems.count != beforeCount {
+                didMutateItems = true
+            }
         }
         if !calendarEnabled {
-            didMutateItems = removeExternalItems(for: .calendar, persist: false) || didMutateItems
+            let beforeCount = mergedItems.count
+            mergedItems.removeAll { $0.externalSource == .calendar }
+            if mergedItems.count != beforeCount {
+                didMutateItems = true
+            }
         }
 
         if didMutateItems {
+            items = mergedItems
             saveItems()
         }
     }
@@ -1264,7 +1276,7 @@ final class ToDoManager {
     @discardableResult
     private func removeExternalItems(for source: ToDoExternalSource, persist: Bool = true) -> Bool {
         let beforeCount = items.count
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items.removeAll { $0.externalSource == source }
         }
         let changed = items.count != beforeCount
@@ -1466,7 +1478,7 @@ final class ToDoManager {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         guard items[index].externalSource != .calendar else { return }
         
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items[index].isCompleted.toggle()
             if items[index].isCompleted {
                 items[index].completedAt = Date()
@@ -1489,7 +1501,7 @@ final class ToDoManager {
     func updatePriority(for item: ToDoItem, to priority: ToDoPriority) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         guard items[index].externalSource != .calendar else { return }
-        withAnimation {
+        withAnimation(DroppyAnimation.state) {
             items[index].priority = priority
         }
         saveItems()
@@ -1500,7 +1512,7 @@ final class ToDoManager {
         guard !trimmed.isEmpty else { return }
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         guard items[index].externalSource != .calendar else { return }
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items[index].title = trimmed
         }
         saveItems()
@@ -1511,7 +1523,7 @@ final class ToDoManager {
     func updateDueDate(for item: ToDoItem, to dueDate: Date?) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         guard items[index].externalSource != .calendar else { return }
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items[index].dueDate = dueDate
         }
         saveItems()
@@ -1524,7 +1536,7 @@ final class ToDoManager {
         guard items[index].externalSource != .calendar else { return }
 
         let selectedList = reminderListID.flatMap { reminderListOption(withID: $0) }
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items[index].externalListIdentifier = selectedList?.id
             items[index].externalListTitle = selectedList?.title
             items[index].externalListColorHex = selectedList?.colorHex
@@ -1557,7 +1569,7 @@ final class ToDoManager {
             deletedSnapshot.externalMeetingURL = nil
         }
 
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items.removeAll { $0.id == item.id }
             deletedItems.append(deletedSnapshot)
             showUndoToast = true
@@ -1567,7 +1579,7 @@ final class ToDoManager {
         // Reset auto-dismiss timer on each deletion.
         undoTimer?.invalidate()
         undoTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
-            withAnimation {
+            withAnimation(DroppyAnimation.state) {
                 self?.showUndoToast = false
                 self?.deletedItems.removeAll()
             }
@@ -1579,7 +1591,7 @@ final class ToDoManager {
     func restoreLastDeletedItem() {
         guard let item = deletedItems.popLast() else { return }
         
-        withAnimation(.smooth) {
+        withAnimation(DroppyAnimation.smoothContent) {
             items.append(item)
             if deletedItems.isEmpty {
                 showUndoToast = false
@@ -1813,7 +1825,7 @@ final class ToDoManager {
 
         let originalCount = items.count
 
-        withAnimation {
+        withAnimation(DroppyAnimation.state) {
             items.removeAll { item in
                 guard item.isCompleted, let completedAt = item.completedAt else { return false }
                 return now.timeIntervalSince(completedAt) > cleanupInterval
@@ -1825,13 +1837,13 @@ final class ToDoManager {
             saveItems()
             
             cleanupCount = removedCount
-            withAnimation(.smooth) {
+            withAnimation(DroppyAnimation.smoothContent) {
                 showCleanupToast = true
             }
             
             cleanupToastTimer?.invalidate()
             cleanupToastTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
-                withAnimation(.smooth) {
+                withAnimation(DroppyAnimation.smoothContent) {
                     self?.showCleanupToast = false
                 }
             }

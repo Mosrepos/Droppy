@@ -11,11 +11,10 @@ import AppKit
 struct NotificationHUDInfoView: View {
     private var manager = NotificationHUDManager.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
 
-    @State private var showReviewsSheet = false
 
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,9 +45,6 @@ struct NotificationHUDInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .notificationHUD)
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             manager.recheckAccess()
         }
@@ -82,27 +78,6 @@ struct NotificationHUDInfoView: View {
                 }
                 .foregroundStyle(.secondary)
 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
 
                 Text("Productivity")
                     .font(.caption.weight(.semibold))
@@ -426,7 +401,7 @@ struct NotificationHUDInfoView: View {
     private var buttonSection: some View {
         HStack(spacing: 10) {
             Button {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             } label: {
                 Text("Close")
             }

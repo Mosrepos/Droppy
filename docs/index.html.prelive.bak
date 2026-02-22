@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Droppy — The native productivity layer macOS is missing</title>
+    <meta name="description"
+        content="Droppy is the native productivity layer for macOS: notch shelf, floating basket, clipboard intelligence, premium HUDs, and modular extensions in one app.">
+    <link rel="icon" type="image/png" href="assets/app-icon.png">
+    <link rel="stylesheet" href="assets/css/landing.css">
+</head>
+
+<body id="top">
+    <header class="site-header">
+        <div class="site-header__inner">
+            <a class="brand" href="#top">
+                <img src="assets/images/droppy-icon-dark.png" alt="Droppy icon">
+                <span>Droppy</span>
+            </a>
+            <nav class="main-nav">
+                <a data-nav-link href="#top" class="is-active">Home</a>
+                <a data-nav-link href="#native-layer">Native Layer</a>
+                <a data-nav-link href="#core-features">Core Features</a>
+                <a data-nav-link href="#extensions">Extensions</a>
+                <a data-nav-link href="#pricing">Pricing</a>
+                <a data-nav-link href="#faq">FAQ</a>
+            </nav>
+            <button class="header-download" data-open-download>Get Droppy</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="section hero" id="top">
+            <div class="hero-shell glass reveal">
+                <div class="hero-grid">
+                    <div>
+                        <div class="hero-meta"><i></i> 100% Swift · Signed &amp; Notarized · Source-Available</div>
+                        <h1>The <span>native</span> productivity layer macOS is missing.</h1>
+                        <p>
+                            Drag, stage, recall, and control from one notch-first interface. Droppy combines file flow,
+                            clipboard memory, system HUDs, and modular power tools into one clean daily workflow.
+                        </p>
+                        <div class="hero-price">
+                            <span>One-time payment</span>
+                            <strong>€6.99 · Lifetime updates</strong>
+                        </div>
+                        <div class="hero-actions">
+                            <button class="btn-primary" data-open-download>Buy &amp; Download</button>
+                            <a class="btn-secondary" href="#extensions">Explore Extensions</a>
+                        </div>
+                    </div>
+                    <div class="hero-media reveal" data-parallax="0.025">
+                        <video autoplay loop muted playsinline controls>
+                            <source src="https://github.com/user-attachments/assets/813c3eea-6588-4f23-880f-135833d26a16"
+                                type="video/mp4">
+                        </video>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="native-layer">
+            <header class="section-head reveal">
+                <p class="section-eyebrow">Native Productivity Layer</p>
+                <h2 class="section-title">Designed to sit inside your flow, not around it.</h2>
+                <p class="section-desc">
+                    Droppy is not a folder, launcher, or single widget. It is a native layer that captures active work,
+                    keeps context close, and makes recurring actions immediate.
+                </p>
+            </header>
+            <div id="native-layer-grid" class="native-grid"></div>
+        </section>
+
+        <section class="section" id="core-features">
+            <header class="section-head reveal">
+                <p class="section-eyebrow">Core Features</p>
+                <h2 class="section-title">The four pillars that make Droppy feel essential.</h2>
+                <p class="section-desc">
+                    Every major workflow in Droppy builds on these core capabilities: capture, stage, recall, and control.
+                    Each one is tuned for speed and clarity rather than gimmicks.
+                </p>
+            </header>
+            <div id="core-feature-list" class="core-stack"></div>
+        </section>
+
+        <section class="section" id="latest-release">
+            <div class="release-panel glass reveal">
+                <header class="section-head">
+                    <p class="section-eyebrow">Latest Release</p>
+                    <h2 class="section-title" id="latest-release-title">What's New</h2>
+                    <p class="section-desc" id="latest-release-description">Loading latest release notes from GitHub...</p>
+                    <p class="section-desc" style="font-size: 14px; margin-top: 6px;">
+                        <a id="latest-release-link" href="https://github.com/iordv/Droppy/releases/latest" target="_blank"
+                            rel="noopener noreferrer">View full release notes on GitHub</a>
+                    </p>
+                </header>
+                <div class="release-grid">
+                    <article class="release-card">
+                        <h3>New Features</h3>
+                        <ul id="latest-release-new">
+                            <li>Loading...</li>
+                        </ul>
+                    </article>
+                    <article class="release-card">
+                        <h3>Bug Fixes + Performance</h3>
+                        <ul id="latest-release-fixes">
+                            <li>Loading...</li>
+                        </ul>
+                    </article>
+                </div>
+                <div id="latest-release-status" class="status-row" data-state="loading">
+                    <span data-status-text>Syncing release notes...</span>
+                    <button id="latest-release-retry" data-status-retry style="display: none;">Retry</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="extensions">
+            <div class="extensions-shell glass reveal">
+                <header class="section-head">
+                    <p class="section-eyebrow">Modular Extensions</p>
+                    <h2 class="section-title">Install only what your workflow needs.</h2>
+                    <p class="section-desc">
+                        All extensions are included in your license. Filter by use case, search instantly, and open full
+                        details with install stats and direct deep links.
+                    </p>
+                </header>
+                <div class="extensions-controls">
+                    <label class="search-wrap" for="extension-search">
+                        <input id="extension-search" type="text" placeholder="Search extensions by name, category, or tag...">
+                    </label>
+                    <div id="extension-chip-list" class="chip-list" aria-label="Extension categories"></div>
+                </div>
+                <div id="extension-stats-status" class="status-row" data-state="loading">
+                    <span data-status-text>Loading live extension stats...</span>
+                    <button id="retry-extension-stats" data-status-retry style="display: none;">Retry</button>
+                </div>
+                <div id="extensions-grid" class="extensions-grid"></div>
+            </div>
+        </section>
+
+        <section class="section" id="pricing">
+            <div class="pricing-wrap glass reveal">
+                <header class="section-head">
+                    <p class="section-eyebrow">Simple Pricing</p>
+                    <h2 class="section-title">One price. Everything included.</h2>
+                </header>
+                <article class="pricing-card">
+                    <p class="value">€6.99</p>
+                    <p class="label">One-time payment · Lifetime</p>
+                    <ul class="pricing-list">
+                        <li>All core features included</li>
+                        <li>All 16+ extensions included</li>
+                        <li>All future updates included</li>
+                        <li>No subscriptions, no recurring fees</li>
+                    </ul>
+                    <div class="hero-actions" style="justify-content: center; margin-top: 0;">
+                        <a class="btn-primary" href="https://iordv.gumroad.com/l/Droppy" target="_blank"
+                            rel="noopener noreferrer">Buy License</a>
+                        <button class="btn-secondary" data-open-download>Download Droppy</button>
+                    </div>
+                    <p class="pricing-note">
+                        Then download Droppy and activate with your key.
+                    </p>
+                </article>
+            </div>
+        </section>
+
+        <section class="section" id="faq">
+            <header class="section-head reveal">
+                <p class="section-eyebrow">FAQ</p>
+                <h2 class="section-title">Clear answers before you install.</h2>
+            </header>
+            <div class="faq-grid reveal">
+                <details class="faq-item" open>
+                    <summary>Is Droppy a subscription?</summary>
+                    <p>No. Droppy is a one-time purchase of €6.99 with lifetime updates.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>Are extensions sold separately?</summary>
+                    <p>No. Every extension is included with your Droppy license.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>Does Droppy send my files to the cloud?</summary>
+                    <p>No. Core workflows run locally on your Mac. Extensions clearly indicate if they connect externally.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>Will this work on Macs without a notch?</summary>
+                    <p>Yes. Droppy supports Dynamic Island style behavior on Macs without a physical notch.</p>
+                </details>
+                <details class="faq-item">
+                    <summary>Can I open an extension directly from the website?</summary>
+                    <p>Yes. In extension details, use "Open in Droppy" to deep link directly into the app.</p>
+                </details>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <p>Made with care in The Netherlands</p>
+        <nav>
+            <a href="https://github.com/iordv/Droppy" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://discord.gg/YCMDFV5M7d" target="_blank" rel="noopener noreferrer">Discord</a>
+            <a href="#extensions">Extensions</a>
+            <a href="#pricing">Pricing</a>
+        </nav>
+    </footer>
+
+    <div class="sticky-cta" id="sticky-cta">
+        <button data-open-download>Download</button>
+        <a href="#extensions">Extensions</a>
+        <a href="#pricing">Pricing</a>
+    </div>
+
+    <div class="modal-overlay" id="download-modal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Get Droppy">
+            <button id="close-download-modal" class="modal-close" aria-label="Close download modal">✕</button>
+            <h2 style="font-size: 30px; margin-top: 12px; margin-bottom: 6px;">Get Droppy</h2>
+            <p style="color: var(--ink-2); margin-bottom: 14px; font-size: 14px;">€6.99 · One-time payment · Lifetime</p>
+            <p class="modal-description">
+                Droppy is a one-time purchase that unlocks every feature, every extension, and every future update —
+                forever. No subscriptions, no recurring fees.
+            </p>
+            <p class="modal-description">
+                Your purchase directly supports an indie developer and ensures Droppy keeps getting better with new
+                features, performance improvements, and macOS compatibility updates.
+            </p>
+            <ul class="pricing-list" style="margin-top: 0;">
+                <li>All core features &amp; 16+ extensions</li>
+                <li>Lifetime updates, no extra cost</li>
+                <li>Supports continued development</li>
+                <li>100% local &amp; private — no telemetry</li>
+            </ul>
+            <div id="download-status" class="status-row" data-state="loading" style="margin-top: 0; margin-bottom: 14px;">
+                Resolving latest DMG from GitHub...
+            </div>
+            <button id="retry-dmg" class="btn-secondary" style="display: none; margin-bottom: 12px;">Retry DMG Lookup</button>
+            <div class="modal-actions">
+                <a href="https://iordv.gumroad.com/l/Droppy" target="_blank" rel="noopener noreferrer"
+                    class="btn-primary">Buy License — €6.99</a>
+                <a href="https://github.com/iordv/Droppy/releases/latest" data-direct-download class="btn-secondary">Download Droppy</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="extension-modal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Extension details">
+            <button id="close-extension-modal" class="modal-close" aria-label="Close extension modal">✕</button>
+            <div class="modal-head">
+                <img id="extension-modal-icon" src="" alt="">
+                <div>
+                    <h3 id="extension-modal-title">Extension</h3>
+                    <p id="extension-modal-category">Category</p>
+                    <div class="modal-stats">
+                        <span><strong id="extension-modal-installs">0</strong> installs</span>
+                        <span><strong id="extension-modal-rating">—</strong> (<span id="extension-modal-rating-count">0</span> reviews)</span>
+                    </div>
+                </div>
+            </div>
+            <p class="modal-description" id="extension-modal-description"></p>
+            <img class="modal-screenshot" id="extension-modal-screenshot" src="" alt="Extension screenshot"
+                style="display: none;">
+            <div class="modal-features">
+                <h4>Features</h4>
+                <ul id="extension-modal-features"></ul>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" type="button">Included with Droppy</button>
+                <a class="btn-primary" id="extension-modal-link" href="#">Open in Droppy</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/landing-data.js"></script>
+    <script src="assets/js/release-notes.js"></script>
+    <script src="assets/js/landing.js"></script>
+</body>
+
+</html>

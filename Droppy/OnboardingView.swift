@@ -18,7 +18,6 @@ enum OnboardingPage: Int, CaseIterable {
     case basket
     case clipboard
     case media
-    case lockScreen
     case extensions
     case ready
 }
@@ -53,7 +52,6 @@ struct OnboardingView: View {
     
     // Lock Screen
     @AppStorage(AppPreferenceKey.enableLockScreenHUD) private var enableLockScreenHUD = PreferenceDefault.enableLockScreenHUD
-    @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
     
     // Appearance
     @AppStorage(AppPreferenceKey.useDynamicIslandStyle) private var useDynamicIslandStyle = PreferenceDefault.useDynamicIslandStyle
@@ -235,7 +233,7 @@ struct OnboardingView: View {
                         .font(.system(size: 11, weight: .semibold))
                 }
             }
-            .buttonStyle(DroppyAccentButtonStyle(color: currentPage == .ready ? .green : .blue, size: .small))
+            .buttonStyle(DroppyAccentButtonStyle(color: currentPage == .ready ? .green : AdaptiveColors.selectionBlueAuto, size: .small))
         }
         .padding(.horizontal, 30)
     }
@@ -266,7 +264,6 @@ struct OnboardingView: View {
         case .basket: return "Floating Basket"
         case .clipboard: return "Clipboard Manager"
         case .media: return "Media & HUDs"
-        case .lockScreen: return "Lock Screen HUD"
         case .extensions: return "Extensions"
         case .ready: return "You're All Set!"
         }
@@ -279,7 +276,6 @@ struct OnboardingView: View {
         case .basket: return "Floating basket with Quick Actions while dragging"
         case .clipboard: return "Your complete clipboard history at your fingertips"
         case .media: return "Now Playing plus system HUDs, all in one place"
-        case .lockScreen: return "Show smooth lock and unlock animations"
         case .extensions: return "Turn on extra tools in Settings > Extensions"
         case .ready: return "Droppy is ready to make your Mac more productive"
         }
@@ -306,12 +302,8 @@ struct OnboardingView: View {
                 enableCapsLockHUD: $enableCapsLockHUD,
                 enableAirPodsHUD: $enableAirPodsHUD,
                 enableDNDHUD: $enableDNDHUD,
-                enableUpdateHUD: $enableUpdateHUD
-            )
-        case .lockScreen:
-            LockScreenContent(
-                enableLockScreenHUD: $enableLockScreenHUD,
-                enableLockScreenMediaWidget: $enableLockScreenMediaWidget
+                enableUpdateHUD: $enableUpdateHUD,
+                enableLockScreenHUD: $enableLockScreenHUD
             )
         case .extensions:
             ExtensionsContent()
@@ -629,10 +621,11 @@ private struct MediaContent: View {
     @Binding var enableAirPodsHUD: Bool
     @Binding var enableDNDHUD: Bool
     @Binding var enableUpdateHUD: Bool
+    @Binding var enableLockScreenHUD: Bool
     
     var body: some View {
         VStack(spacing: 14) {
-            // HUD toggles - 7 HUDs in organized grid
+            // HUD toggles
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     HUDToggle(icon: "music.note", title: "Now Playing", color: .green, isOn: $showMediaPlayer, available: isMediaAvailable)
@@ -653,6 +646,8 @@ private struct MediaContent: View {
                     HUDToggle(icon: "moon.fill", title: "Focus Mode", color: .purple, isOn: $enableDNDHUD, available: true)
                     HUDToggle(icon: "arrow.down.circle.fill", title: "Droppy Updates", color: .blue, isOn: $enableUpdateHUD, available: true)
                 }
+                
+                HUDToggle(icon: "lock.fill", title: "Lock/Unlock Animation", color: .indigo, isOn: $enableLockScreenHUD, available: true)
             }
             .frame(width: 400)
             
@@ -739,6 +734,10 @@ private struct HUDToggle: View {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(available ? .primary : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+                    .allowsTightening(true)
+                    .layoutPriority(1)
                 
                 Spacer()
                 
@@ -855,115 +854,6 @@ private struct OnboardingMediaPreview: View {
                 progress = 0.3
             }
         }
-    }
-}
-
-// MARK: - Page 6: Lock Screen Widgets
-
-private struct LockScreenContent: View {
-    @Binding var enableLockScreenHUD: Bool
-    @Binding var enableLockScreenMediaWidget: Bool
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            // Lock Screen HUD toggle
-            LockScreenToggle(
-                icon: { LockScreenHUDIcon() },
-                title: "Lock and Unlock Animation",
-                subtitle: "Show animation when screen locks and unlocks",
-                isOn: $enableLockScreenHUD,
-                accentColor: .purple
-            )
-            
-            // Now Playing widget toggle
-            LockScreenToggle(
-                icon: { NowPlayingIcon() },
-                title: "Now Playing",
-                subtitle: "Show notch & music controls on the lock screen",
-                isOn: $enableLockScreenMediaWidget,
-                accentColor: .green,
-                isNew: true
-            )
-            
-            Text("These features work best with a physical notch display")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-    }
-}
-
-/// Lock screen toggle button with hover animation matching OnboardingToggle
-private struct LockScreenToggle<Icon: View>: View {
-    let icon: () -> Icon
-    let title: String
-    let subtitle: String
-    @Binding var isOn: Bool
-    let accentColor: Color
-    var isNew: Bool = false
-    
-    @State private var isHovering = false
-    @State private var iconBounce = false
-    
-    var body: some View {
-        Button {
-            // Trigger bounce animation
-            withAnimation(DroppyAnimation.onboardingPop) {
-                iconBounce = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                withAnimation(DroppyAnimation.stateEmphasis) {
-                    iconBounce = false
-                    isOn.toggle()
-                }
-            }
-        } label: {
-            HStack(spacing: 14) {
-                icon()
-                    .scaleEffect(iconBounce ? 1.15 : 1.0)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .medium))
-                        if isNew {
-                            Text("new")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.droppyAccent))
-                        }
-                    }
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundStyle(isOn ? .green : .secondary.opacity(0.5))
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(AdaptiveColors.overlayAuto(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
-                    .stroke(isOn ? accentColor.opacity(0.3) : AdaptiveColors.overlayAuto(0.06), lineWidth: 1)
-            )
-            .scaleEffect(isHovering ? 1.02 : 1.0)
-        }
-        .buttonStyle(DroppySelectableButtonStyle(isSelected: isOn))
-        .onHover { hovering in
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
-        }
-        .frame(width: 420)
     }
 }
 

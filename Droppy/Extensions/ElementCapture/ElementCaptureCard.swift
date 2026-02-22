@@ -12,7 +12,6 @@ struct ElementCaptureCard: View {
     @State private var currentShortcut: SavedShortcut?
     @State private var showInfoSheet = false
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,7 +32,7 @@ struct ElementCaptureCard: View {
                 
                 Spacer()
                 
-                // Stats row: installs + rating + badge
+                // Stats row: installs + badge
                 HStack(spacing: 8) {
                     // Installs (always visible)
                     HStack(spacing: 3) {
@@ -44,20 +43,6 @@ struct ElementCaptureCard: View {
                     }
                     .foregroundStyle(.secondary)
                     
-                    // Rating (always visible)
-                    HStack(spacing: 2) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption2.weight(.medium))
-                        } else {
-                            Text("–")
-                                .font(.caption2.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
                     
                     // Category badge - shows "Installed" if configured
                     Text(currentShortcut != nil ? "Installed" : "Productivity")
@@ -117,7 +102,7 @@ struct ElementCaptureCard: View {
             loadShortcut()
         }
         .sheet(isPresented: $showInfoSheet) {
-            ElementCaptureInfoView(currentShortcut: $currentShortcut, installCount: installCount, rating: rating)
+            ElementCaptureInfoView(currentShortcut: $currentShortcut, installCount: installCount)
         }
     }
     

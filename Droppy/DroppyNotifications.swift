@@ -45,6 +45,9 @@ extension Notification.Name {
     
     /// Posted when navigating to Smart Export settings from an extension
     static let openSmartExportSettings = Notification.Name("openSmartExportSettings")
+
+    /// Posted when a settings-attached sheet (extension detail) is presented/dismissed.
+    static let settingsAttachedSheetPresentationChanged = Notification.Name("settingsAttachedSheetPresentationChanged")
     
     // MARK: - Shortcuts
     

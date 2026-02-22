@@ -10,19 +10,19 @@ func clearSharingServicesCache() {
     sharingServicesCache.removeAll()
 }
 
-/// Wrapper function that uses the deprecated sharingServices(forItems:) API.
-/// Apple recommends NSSharingServicePicker.standardShareMenuItem but that doesn't work
-/// with SwiftUI context menus which require explicit ForEach over services.
-/// This wrapper isolates the API call to one location.
-///
-/// The deprecation warning is suppressed using nonisolated(unsafe) function pointer storage.
-private nonisolated(unsafe) let _getSharingServices: ([Any]) -> [NSSharingService] = {
-    // This closure captures the deprecated API at initialization time,
-    // suppressing the warning at call sites
-    NSSharingService.sharingServices(forItems:)
-}()
+private func resolvedSharingServices(for items: [Any]) -> [NSSharingService] {
+    // Use Objective-C dynamic dispatch to avoid deprecation warnings while preserving
+    // NSSharingService-based context menu behavior.
+    let selector = NSSelectorFromString("sharingServicesForItems:")
+    guard NSSharingService.responds(to: selector),
+          let unmanagedResult = NSSharingService.perform(selector, with: items),
+          let services = unmanagedResult.takeUnretainedValue() as? [NSSharingService] else {
+        return []
+    }
+    return services
+}
 
-/// Get sharing services for items with caching. Uses deprecated API but no alternative exists for context menus.
+/// Get sharing services for items with caching.
 func sharingServicesForItems(_ items: [Any]) -> [NSSharingService] {
     let now = Date()
     sharingServicesCache = sharingServicesCache.filter {
@@ -46,17 +46,27 @@ func sharingServicesForItems(_ items: [Any]) -> [NSSharingService] {
            now.timeIntervalSince(cached.timestamp) < sharingServicesCacheTTL {
             return cached.services
         }
-        let services = _getSharingServices(items)
+        let services = resolvedSharingServices(for: items)
         sharingServicesCache[ext] = (services: services, timestamp: now)
         return services
     }
-    return _getSharingServices(items)
+    return resolvedSharingServices(for: items)
 }
 
 // MARK: - Magic Processing Overlay
 /// Subtle animated overlay for background removal processing
 struct MagicProcessingOverlay: View {
+    let progress: Double?
     @State private var rotation: Double = 0
+
+    init(progress: Double? = nil) {
+        self.progress = progress
+    }
+
+    private var clampedProgress: Double {
+        guard let progress else { return 0 }
+        return min(max(progress, 0), 1)
+    }
     
     var body: some View {
         ZStack {
@@ -64,23 +74,45 @@ struct MagicProcessingOverlay: View {
             RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                 .fill(.black.opacity(0.5))
             
-            // Subtle rotating circle
-            Circle()
-                .trim(from: 0, to: 0.7)
-                .stroke(
-                    LinearGradient(
-                        colors: [.white.opacity(0.8), .white.opacity(0.2)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-                )
-                .frame(width: 24, height: 24)
-                .rotationEffect(.degrees(rotation))
+            if progress != nil {
+                Circle()
+                    .stroke(.white.opacity(0.2), lineWidth: 2.5)
+                    .frame(width: 24, height: 24)
+
+                Circle()
+                    .trim(from: 0, to: max(0.03, clampedProgress))
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.95), .white.opacity(0.55)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
+                    .frame(width: 24, height: 24)
+                    .rotationEffect(.degrees(-90))
+                    .animation(DroppyAnimation.viewChange, value: clampedProgress)
+            } else {
+                // Subtle rotating circle for indeterminate/background processing.
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.8), .white.opacity(0.2)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
+                    .frame(width: 24, height: 24)
+                    .rotationEffect(.degrees(rotation))
+            }
         }
         .onAppear {
-            withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                rotation = 360
+            if progress == nil {
+                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+                    rotation = 360
+                }
             }
         }
         .onDisappear {

@@ -395,6 +395,44 @@ enum MenuBarStatusWindowCache {
         windowEntries(maxAge: maxAge).keys.sorted()
     }
 
+    static func ownerPIDs(
+        maxAge: TimeInterval = 0.2,
+        excludingCurrentProcess: Bool = true
+    ) -> Set<pid_t> {
+        let currentPID = getpid()
+        var owners = Set<pid_t>()
+        for entry in windowEntries(maxAge: maxAge).values {
+            if excludingCurrentProcess, entry.ownerPID == currentPID {
+                continue
+            }
+            guard entry.ownerPID > 0 else { continue }
+            owners.insert(entry.ownerPID)
+        }
+        return owners
+    }
+
+    static func ownerBundleIDs(
+        maxAge: TimeInterval = 0.2,
+        excludingCurrentProcess: Bool = true
+    ) -> Set<String> {
+        let ownerPIDs = ownerPIDs(
+            maxAge: maxAge,
+            excludingCurrentProcess: excludingCurrentProcess
+        )
+        guard !ownerPIDs.isEmpty else { return [] }
+
+        var bundleIDs = Set<String>()
+        bundleIDs.reserveCapacity(ownerPIDs.count)
+        for pid in ownerPIDs {
+            if let application = NSRunningApplication(processIdentifier: pid),
+               let bundleID = application.bundleIdentifier,
+               !bundleID.isEmpty {
+                bundleIDs.insert(bundleID)
+            }
+        }
+        return bundleIDs
+    }
+
     static func containsStatusItem(at quartzPoint: CGPoint, maxAge: TimeInterval = 0.2) -> Bool {
         let currentPID = getpid()
         for entry in windowEntries(maxAge: maxAge).values {

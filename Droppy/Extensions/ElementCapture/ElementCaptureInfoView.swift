@@ -10,12 +10,10 @@ import SwiftUI
 struct ElementCaptureInfoView: View {
     @Binding var currentShortcut: SavedShortcut?
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     @State private var isHoveringAction = false
     @State private var isHoveringClose = false
-    @State private var showReviewsSheet = false
-    @State private var isHoveringReviews = false
     @State private var showOCRInfo = false
     
     // Recording state per capture mode
@@ -40,6 +38,7 @@ struct ElementCaptureInfoView: View {
     @AppStorage(AppPreferenceKey.elementCaptureEditorDefaultColor) private var defaultEditorColorToken = PreferenceDefault.elementCaptureEditorDefaultColor
     @AppStorage(AppPreferenceKey.elementCaptureEditorPrefer100Zoom) private var prefer100Zoom = PreferenceDefault.elementCaptureEditorPrefer100Zoom
     @AppStorage(AppPreferenceKey.elementCaptureEditorPinchZoomEnabled) private var pinchZoomEnabled = PreferenceDefault.elementCaptureEditorPinchZoomEnabled
+    @AppStorage(AppPreferenceKey.elementCaptureOpenEditorInstantly) private var openEditorInstantly = PreferenceDefault.elementCaptureOpenEditorInstantly
 
     private struct EditorColorOption: Identifiable {
         let token: String
@@ -100,9 +99,6 @@ struct ElementCaptureInfoView: View {
         .onDisappear {
             stopRecording()
         }
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .elementCapture)
-        }
     }
     
     private var headerSection: some View {
@@ -125,7 +121,7 @@ struct ElementCaptureInfoView: View {
                 .font(.title2.bold())
                 .foregroundStyle(.primary)
             
-            // Stats row: installs + rating + category badge
+            // Stats row: installs + category badge
             HStack(spacing: 12) {
                 // Installs
                 HStack(spacing: 4) {
@@ -136,28 +132,6 @@ struct ElementCaptureInfoView: View {
                 }
                 .foregroundStyle(.secondary)
                 
-                // Rating (clickable)
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
                 
                 // Category badge
                 Text("Productivity")
@@ -470,6 +444,21 @@ struct ElementCaptureInfoView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Open editor instantly")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
+                        Text("Skip preview and jump straight to Screenshot Editor after capture.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $openEditorInstantly)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
             .padding(12)
             .background(AdaptiveColors.buttonBackgroundAuto)
@@ -641,7 +630,7 @@ struct ElementCaptureInfoView: View {
     private var buttonSection: some View {
         HStack(spacing: 10) {
             Button {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             } label: {
                 Text("Close")
             }

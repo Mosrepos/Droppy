@@ -124,7 +124,7 @@ struct UpdateView: View {
                     } label: {
                         Text("OK")
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 } else {
                     Button {
                         UpdateWindowController.shared.closeWindow()
@@ -146,7 +146,7 @@ struct UpdateView: View {
                             Text("Update & Restart")
                         }
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 }
             }
             .padding(DroppySpacing.lg)

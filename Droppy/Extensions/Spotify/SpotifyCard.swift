@@ -12,7 +12,6 @@ struct SpotifyExtensionCard: View {
     // Uses tracking key set when Spotify is first used (not OAuth which is optional)
     private var isInstalled: Bool { UserDefaults.standard.bool(forKey: "spotifyTracked") }
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,7 +32,7 @@ struct SpotifyExtensionCard: View {
                 
                 Spacer()
                 
-                // Stats row: installs + rating + badge
+                // Stats row: installs + badge
                 HStack(spacing: 8) {
                     // Installs (always visible)
                     HStack(spacing: 3) {
@@ -44,20 +43,6 @@ struct SpotifyExtensionCard: View {
                     }
                     .foregroundStyle(.secondary)
                     
-                    // Rating (always visible)
-                    HStack(spacing: 2) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption2.weight(.medium))
-                        } else {
-                            Text("–")
-                                .font(.caption2.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
                     
                     // Category badge - shows "Installed" if authenticated
                     Text(isInstalled ? "Installed" : "Media")
@@ -105,7 +90,7 @@ struct SpotifyExtensionCard: View {
             showInfoSheet = true
         }
         .sheet(isPresented: $showInfoSheet) {
-            ExtensionInfoView(extensionType: .spotify, installCount: installCount, rating: rating)
+            ExtensionInfoView(extensionType: .spotify, installCount: installCount)
         }
     }
 }

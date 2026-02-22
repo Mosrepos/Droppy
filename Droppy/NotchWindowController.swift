@@ -249,12 +249,23 @@ final class NotchWindowController: NSObject, ObservableObject {
         let isDropTargeted: Bool
         let shelfDisplaySlotCount: Int
         let todoListExpanded: Bool
+        let todoHasItems: Bool
         let todoItemCount: Int
         let todoShowsUndoToast: Bool
     }
 
     /// Last applied size signature. Updated when scheduling a size pass.
     private var lastWindowSizeSignature: WindowSizeSignature?
+
+    /// Signature for mouse-event handling updates so unrelated state mutations
+    /// (for example ToDo item data changes) do not trigger redundant work.
+    private struct MouseEventHandlingSignature: Equatable {
+        let isExpanded: Bool
+        let hoveringDisplayID: CGDirectDisplayID?
+        let isDropTargeted: Bool
+    }
+
+    private var lastMouseEventHandlingSignature: MouseEventHandlingSignature?
     
     /// Last click time for debounce (prevents rapid toggle storms)
     private var lastNotchClickTime: Date = .distantPast
@@ -410,9 +421,25 @@ final class NotchWindowController: NSObject, ObservableObject {
     private let mediaAppleMusicExtraWidth: CGFloat = 50
     private let interactionWidthPadding: CGFloat = 80
     private let stableInteractionWindowWidth: CGFloat = 1000
+    private var isUnlockingHandoffActive: Bool {
+        LockScreenManager.shared.transitionPhase == .unlockingHandoff
+    }
+    fileprivate var isLockHandoffActive: Bool {
+        isUnlockingHandoffActive
+    }
 
     private func effectiveShelfCenterX(for screen: NSScreen) -> CGFloat {
         screen.notchAlignedCenterX
+    }
+
+    private func pinWindowTopEdgesToScreens() {
+        for (displayID, window) in notchWindows {
+            guard let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { continue }
+            let expectedTop = screen.frame.maxY
+            if abs(window.frame.maxY - expectedTop) > 0.5 {
+                window.setFrameTopLeftPoint(NSPoint(x: window.frame.origin.x, y: expectedTop))
+            }
+        }
     }
 
     fileprivate func currentExpandedShelfWidth(on screen: NSScreen) -> CGFloat {
@@ -551,6 +578,10 @@ final class NotchWindowController: NSObject, ObservableObject {
 
     func isMouseInsideExpandedShelfInteractionZone(on screen: NSScreen, at location: NSPoint = NSEvent.mouseLocation) -> Bool {
         expandedShelfInteractionZone(for: screen).contains(location)
+    }
+
+    func windowFrame(for displayID: CGDirectDisplayID) -> NSRect? {
+        notchWindows[displayID]?.frame
     }
 
     private func currentInteractionWindowWidth() -> CGFloat {
@@ -711,7 +742,8 @@ final class NotchWindowController: NSObject, ObservableObject {
         // CRITICAL: Raise window level to Shielding to be visible above lock screen wallpaper
         // Also ensure collection behavior allows it to persist
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.collectionBehavior.formUnion([.ignoresCycle])
         
         // CRITICAL: Bring to front of the shielding level
         window.orderFrontRegardless()
@@ -731,7 +763,8 @@ final class NotchWindowController: NSObject, ObservableObject {
             // Restore standard desktop window properties (recycling the window)
             // This prevents SwiftUI view recreation and the associated 'jump' animations
             window.level = .statusBar
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            window.collectionBehavior.formUnion([.ignoresCycle])
             window.isOnLockScreen = false
             window.ignoresMouseEvents = true // Reset to safe idle state
             
@@ -851,6 +884,11 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Also adds/removes windows for screens based on current settings
     /// NOTE: Resolution changes require recreating windows because SwiftUI caches the targetScreen reference
     private func repositionNotchWindow() {
+        if isUnlockingHandoffActive {
+            pinWindowTopEdgesToScreens()
+            return
+        }
+
         let hideOnExternal = UserDefaults.standard.bool(forKey: "hideNotchOnExternalDisplays")
         let connectedDisplayIDs = Set(NSScreen.screens.map { $0.displayID })
         
@@ -1068,6 +1106,11 @@ final class NotchWindowController: NSObject, ObservableObject {
     fileprivate func shouldProcessPointerShelfActivation(on displayID: CGDirectDisplayID) -> Bool {
         if DroppyState.shared.isExpanded(for: displayID) || hotkeyActivatedDisplays.contains(displayID) {
             return true
+        }
+        if isOrderOutWhenInactiveEnabled,
+           let window = notchWindows[displayID],
+           !window.isVisible {
+            return Date().timeIntervalSince(lastActiveSpaceTransitionAt) <= activeSpaceInteractionGraceDuration
         }
         if let window = notchWindows[displayID], window.isVisibleForInteraction() {
             return true
@@ -1478,6 +1521,21 @@ final class NotchWindowController: NSObject, ObservableObject {
                 self?.repositionNotchWindow()
                 self?.setupMediaQuickOpenShortcutMonitor()
                 self?.applyWindowOrderingPolicy()
+            }
+            .store(in: &cancellables)
+
+        LockScreenManager.shared.$transitionPhase
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] phase in
+                guard let self else { return }
+                if phase == .unlockingHandoff {
+                    self.cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
+                    self.pinWindowTopEdgesToScreens()
+                } else {
+                    self.pinWindowTopEdgesToScreens()
+                    self.updateAllWindowsMouseEventHandling()
+                }
             }
             .store(in: &cancellables)
         
@@ -2225,8 +2283,18 @@ final class NotchWindowController: NSObject, ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 // Skip if hidden - prevents stale events and observation buildup
                 guard let self = self, !self.isTemporarilyHidden else { return }
-                
-                self.updateAllWindowsMouseEventHandling()
+                if self.isUnlockingHandoffActive {
+                    self.cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
+                    self.pinWindowTopEdgesToScreens()
+                    self.setupStateObservation()
+                    return
+                }
+
+                let nextMouseSignature = self.currentMouseEventHandlingSignature()
+                if nextMouseSignature != self.lastMouseEventHandlingSignature {
+                    self.lastMouseEventHandlingSignature = nextMouseSignature
+                    self.updateAllWindowsMouseEventHandling()
+                }
 
                 let nextSizeSignature = self.currentWindowSizeSignature()
                 let shouldRecalculateSizes = nextSizeSignature != self.lastWindowSizeSignature
@@ -2261,8 +2329,17 @@ final class NotchWindowController: NSObject, ObservableObject {
             isDropTargeted: DroppyState.shared.isDropTargeted,
             shelfDisplaySlotCount: DroppyState.shared.shelfDisplaySlotCount,
             todoListExpanded: ToDoManager.shared.isShelfListExpanded,
+            todoHasItems: !ToDoManager.shared.items.isEmpty,
             todoItemCount: ToDoManager.shared.items.count,
             todoShowsUndoToast: ToDoManager.shared.showUndoToast
+        )
+    }
+
+    private func currentMouseEventHandlingSignature() -> MouseEventHandlingSignature {
+        MouseEventHandlingSignature(
+            isExpanded: DroppyState.shared.isExpanded,
+            hoveringDisplayID: DroppyState.shared.hoveringDisplayID,
+            isDropTargeted: DroppyState.shared.isDropTargeted
         )
     }
     
@@ -2272,6 +2349,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Layer 3: Coalesced deferred updates → Layer 4: Frame application
     /// Layer 5: Immediate validation → Watchdog backup
     private func updateAllWindowsSize() {
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
         for (displayID, _) in notchWindows {
             scheduleSizeUpdate(for: displayID)
         }
@@ -2279,6 +2360,11 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Schedules a size update for a specific window with throttling and coalescing
     private func scheduleSizeUpdate(for displayID: CGDirectDisplayID) {
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
+
         // Cancel any pending update for this display
         pendingSizeUpdates[displayID]?.cancel()
         
@@ -2323,6 +2409,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Applies a size update to a window (the actual frame change)
     /// LAYER 4: Frame application + LAYER 5: Immediate validation
     private func applySizeUpdate(for displayID: CGDirectDisplayID, height newHeight: CGFloat) {
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
         guard let window = notchWindows[displayID],
               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
         
@@ -2359,6 +2449,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     
     /// Validates that a window matches its expected size, self-heals if not
     private func validateSizeForWindow(displayID: CGDirectDisplayID) {
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
         guard let window = notchWindows[displayID],
               let expectedHeight = expectedWindowSizes[displayID],
               let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
@@ -2386,6 +2480,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     /// Forces an immediate size recalculation and application for all windows
     /// Call this any time you need guaranteed correct sizing
     func forceRecalculateAllWindowSizes() {
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
         for displayID in notchWindows.keys {
             guard let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { continue }
             let correctHeight = calculateCorrectWindowHeight(for: screen)
@@ -2407,6 +2505,12 @@ final class NotchWindowController: NSObject, ObservableObject {
     private func updateAllWindowsMouseEventHandling() {
         // Don't update if hidden - preserves ignoresMouseEvents = true state
         guard !isTemporarilyHidden else { return }
+        guard !isUnlockingHandoffActive else {
+            for window in notchWindows.values where !window.ignoresMouseEvents {
+                window.ignoresMouseEvents = true
+            }
+            return
+        }
         
         for window in notchWindows.values {
             window.updateMouseEventHandling()
@@ -2692,7 +2796,8 @@ final class NotchWindowController: NSObject, ObservableObject {
                 window.level = .statusBar
                 window.ignoresMouseEvents = true
                 window.ignoresMouseEvents = false
-                window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+                window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+                window.collectionBehavior.formUnion([.ignoresCycle])
                 window.orderFrontRegardless()
                 window.updateMouseEventHandling()
             }
@@ -2732,6 +2837,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     private func handleSystemTransition() {
         // Skip if intentionally hidden
         guard !isTemporarilyHidden else { return }
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
         
         // Force re-validation of all window states
         for window in notchWindows.values {
@@ -2770,6 +2879,10 @@ final class NotchWindowController: NSObject, ObservableObject {
     private func validateWindowState() {
         // Skip if intentionally hidden
         guard !isTemporarilyHidden else { return }
+        guard !isUnlockingHandoffActive else {
+            pinWindowTopEdgesToScreens()
+            return
+        }
         
         // Check if any window is incorrectly ignoring mouse events
         let enableNotchShelf = (UserDefaults.standard.object(forKey: "enableNotchShelf") as? Bool) ?? true
@@ -2959,38 +3072,115 @@ final class NotchWindowController: NSObject, ObservableObject {
             }
             return
         }
+        if isUnlockingHandoffActive {
+            cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
+            return
+        }
 
         // DEBUG: Log when timer is started
         notchDebugLog("🟢 startAutoExpandTimer CALLED for displayID: \(displayID?.description ?? "nil")")
+
+        let statusDrivenHoverExpandAtStart = isOrderOutWhenInactiveEnabled && shouldAllowStatusDrivenHoverExpand(on: displayID)
+        if statusDrivenHoverExpandAtStart {
+            startStatusDrivenAutoExpandTimer(for: displayID)
+            return
+        }
 
         let skipHighAlertHoverHUD = UserDefaults.standard.preference(
             AppPreferenceKey.caffeineInstantlyExpandShelfOnHover,
             default: PreferenceDefault.caffeineInstantlyExpandShelfOnHover
         )
+        let skipPomodoroHoverHUD = UserDefaults.standard.preference(
+            AppPreferenceKey.pomodoroInstantlyExpandShelfOnHover,
+            default: PreferenceDefault.pomodoroInstantlyExpandShelfOnHover
+        )
         let hapticDisplayID = displayID ?? 0
         let highAlertBlocksAutoExpand = CaffeineManager.shared.isActive && !skipHighAlertHoverHUD
+        let pomodoroBlocksAutoExpand = PomodoroManager.shared.isActive && !skipPomodoroHoverHUD
 
-        // High Alert override: by default, active High Alert blocks hover auto-expand.
-        // Users can opt out via High Alert settings to expand shelf directly on hover.
-        guard !highAlertBlocksAutoExpand else {
+        // Timer override: active High Alert/Pomodoro blocks hover auto-expand by default.
+        // Users can opt out per extension to expand shelf directly on hover.
+        guard !(highAlertBlocksAutoExpand || pomodoroBlocksAutoExpand) else {
+            // If a timer was already running, stop it, but keep the one-shot latch.
             cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
             if !highAlertHoverHapticFiredDisplays.contains(hapticDisplayID) {
                 highAlertHoverHapticFiredDisplays.insert(hapticDisplayID)
                 HapticFeedback.hover()
             }
-            notchDebugLog("⏰ AUTO-EXPAND BLOCKED: High Alert is active")
+            if highAlertBlocksAutoExpand && pomodoroBlocksAutoExpand {
+                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: High Alert and Pomodoro are active")
+            } else if highAlertBlocksAutoExpand {
+                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: High Alert is active")
+            } else {
+                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: Pomodoro is active")
+            }
             return
         }
+        // High Alert is not blocking this display anymore - re-arm for future blocked-hover sessions.
         highAlertHoverHapticFiredDisplays.remove(hapticDisplayID)
 
-        let autoExpandEnabled = (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true
-        let statusDrivenHoverExpandAtStart = shouldAllowStatusDrivenHoverExpand(on: displayID)
-        let shouldForceMediaSurfaceFromStatus = shouldForceMediaOnStatusDrivenHoverExpand(on: displayID)
-        guard autoExpandEnabled || statusDrivenHoverExpandAtStart else { return }
+        // CRITICAL: Use object() ?? true to match @AppStorage default for new users
+        guard (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true else { return }
 
-        cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
+        cancelAutoExpandTimer(resetHighAlertHoverHaptic: false) // Reset if already running
 
-        if !statusDrivenHoverExpandAtStart {
+        // Display-specific hover toggles.
+        if let displayID = displayID,
+           let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
+            if screen.isBuiltIn {
+                let allowMainMacAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnMainMac) as? Bool)
+                    ?? PreferenceDefault.autoExpandOnMainMac
+                guard allowMainMacAutoExpand else { return }
+            } else {
+                let allowExternalAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnExternalDisplays) as? Bool)
+                    ?? PreferenceDefault.autoExpandOnExternalDisplays
+                guard allowExternalAutoExpand else { return }
+            }
+        }
+
+        // Use configurable delay (0.5-2.0 seconds, default 1.0s)
+        let delay = UserDefaults.standard.double(forKey: "autoExpandDelay")
+        let actualDelay = delay > 0 ? delay : 1.0  // Fallback to 1.0s if not set
+        notchDebugLog("🟢 AUTO-EXPAND TIMER STARTED with delay: \(actualDelay)s for displayID: \(displayID?.description ?? "nil")")
+        let timer = Timer(timeInterval: actualDelay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            guard !self.isUnlockingHandoffActive else { return }
+            self.autoExpandTimer = nil
+            self.autoExpandTimerDisplayID = nil
+
+            // CRITICAL: Don't expand shelf when NotificationHUD is visible
+            // User needs to click the notification, not accidentally expand the shelf
+            if HUDManager.shared.isNotificationHUDVisible {
+                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: NotificationHUD is visible")
+                return
+            }
+
+            // High Alert can toggle after timer start; re-check before expanding.
+            let skipHighAlertHoverHUD = UserDefaults.standard.preference(
+                AppPreferenceKey.caffeineInstantlyExpandShelfOnHover,
+                default: PreferenceDefault.caffeineInstantlyExpandShelfOnHover
+            )
+            let skipPomodoroHoverHUD = UserDefaults.standard.preference(
+                AppPreferenceKey.pomodoroInstantlyExpandShelfOnHover,
+                default: PreferenceDefault.pomodoroInstantlyExpandShelfOnHover
+            )
+            let highAlertBlocksAutoExpand = CaffeineManager.shared.isActive && !skipHighAlertHoverHUD
+            let pomodoroBlocksAutoExpand = PomodoroManager.shared.isActive && !skipPomodoroHoverHUD
+            if highAlertBlocksAutoExpand || pomodoroBlocksAutoExpand {
+                if highAlertBlocksAutoExpand && pomodoroBlocksAutoExpand {
+                    notchDebugLog("⏰ AUTO-EXPAND BLOCKED (timer fire): High Alert and Pomodoro are active")
+                } else if highAlertBlocksAutoExpand {
+                    notchDebugLog("⏰ AUTO-EXPAND BLOCKED (timer fire): High Alert is active")
+                } else {
+                    notchDebugLog("⏰ AUTO-EXPAND BLOCKED (timer fire): Pomodoro is active")
+                }
+                return
+            }
+
+            // Check setting again (in case user disabled it during the delay)
+            // CRITICAL: Use object() ?? true to match @AppStorage default
+            guard (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true else { return }
+            let currentMouse = NSEvent.mouseLocation
             if let displayID = displayID,
                let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
                 if screen.isBuiltIn {
@@ -3003,49 +3193,83 @@ final class NotchWindowController: NSObject, ObservableObject {
                     guard allowExternalAutoExpand else { return }
                 }
             }
-        }
 
-        let configuredDelay = UserDefaults.standard.double(forKey: "autoExpandDelay")
-        let defaultDelay = configuredDelay > 0 ? configuredDelay : 1.0
-        let actualDelay = statusDrivenHoverExpandAtStart ? min(defaultDelay, statusHoverAutoExpandDelay) : defaultDelay
-        notchDebugLog("🟢 AUTO-EXPAND TIMER STARTED with delay: \(actualDelay)s for displayID: \(displayID?.description ?? "nil")")
-        let timer = Timer(timeInterval: actualDelay, repeats: false) { [weak self] _ in
+            // SKYLIGHT FIX: Recheck actual mouse geometry at timer fire time
+            // After SkyLight lock/unlock, the isHovering state can become stale/incorrect.
+            // Instead of trusting the state, we directly check if mouse is over the notch zone.
+            let isExpanded = displayID.map { DroppyState.shared.isExpanded(for: $0) } ?? DroppyState.shared.isExpanded
+
+            // Find the target screen and check if mouse is in notch zone
+            var isMouseOverNotchZone = false
+            if let targetDisplayID = displayID,
+               let targetWindow = self.notchWindows[targetDisplayID],
+               let targetScreen = targetWindow.notchScreen,
+               self.shouldAllowShelfInteractions(for: targetWindow, on: targetScreen) {
+                isMouseOverNotchZone = self.isMouseInAutoExpandIntentZone(
+                    mouseLocation: currentMouse,
+                    window: targetWindow
+                )
+            }
+
+            // Also check DroppyState as backup
+            let stateHovering = displayID.map { DroppyState.shared.isHovering(for: $0) } ?? DroppyState.shared.isMouseHovering
+            let shouldExpand = (isMouseOverNotchZone || stateHovering) && !isExpanded
+
+            notchDebugLog("⏰ AUTO-EXPAND TIMER FIRED: stateHovering=\(stateHovering), geometryHovering=\(isMouseOverNotchZone), isExpanded=\(isExpanded), shouldExpand=\(shouldExpand), displayID=\(displayID?.description ?? "nil")")
+
+            // Expand if EITHER state or geometry says we're hovering
+            if shouldExpand {
+                let animationScreen = displayID.flatMap { self.notchWindows[$0]?.notchScreen }
+                DispatchQueue.main.async {
+                    withAnimation(DroppyAnimation.notchState(for: animationScreen)) {
+                        if let displayID = displayID {
+                            // Expand on the specific screen
+                            notchDebugLog("📤 EXPANDING SHELF for displayID: \(displayID)")
+                            DroppyState.shared.expandShelf(for: displayID)
+                        } else {
+                            // Fallback: Find screen containing mouse and expand that
+                            if let screen = NSScreen.screens.first(where: { $0.frame.contains(currentMouse) }) {
+                                notchDebugLog("📤 EXPANDING SHELF for fallback displayID: \(screen.displayID)")
+                                DroppyState.shared.expandShelf(for: screen.displayID)
+                            }
+                        }
+                    }
+                }
+            } else {
+                notchDebugLog("⏰ AUTO-EXPAND SKIPPED: stateHovering=\(stateHovering), geometryHovering=\(isMouseOverNotchZone), isExpanded=\(isExpanded)")
+            }
+        }
+        timer.tolerance = min(0.05, actualDelay * 0.25)
+        autoExpandTimer = timer
+        autoExpandTimerDisplayID = displayID
+        // Keep firing even during short event-tracking mode switches.
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func startStatusDrivenAutoExpandTimer(for displayID: CGDirectDisplayID?) {
+        cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
+
+        // Use configurable delay but clamp to a faster status-driven hover threshold.
+        let delay = UserDefaults.standard.double(forKey: "autoExpandDelay")
+        let actualDelay = delay > 0 ? delay : 1.0
+        let timerDelay = min(actualDelay, statusHoverAutoExpandDelay)
+        let shouldForceMediaSurfaceFromStatus = shouldForceMediaOnStatusDrivenHoverExpand(on: displayID)
+
+        notchDebugLog("🟢 STATUS AUTO-EXPAND TIMER STARTED with delay: \(timerDelay)s for displayID: \(displayID?.description ?? "nil")")
+        let timer = Timer(timeInterval: timerDelay, repeats: false) { [weak self] _ in
             guard let self else { return }
+            guard !self.isUnlockingHandoffActive else { return }
             self.autoExpandTimer = nil
             self.autoExpandTimerDisplayID = nil
 
             if HUDManager.shared.isNotificationHUDVisible {
-                notchDebugLog("⏰ AUTO-EXPAND BLOCKED: NotificationHUD is visible")
+                notchDebugLog("⏰ STATUS AUTO-EXPAND BLOCKED: NotificationHUD is visible")
                 return
             }
 
-            let skipHighAlertHoverHUD = UserDefaults.standard.preference(
-                AppPreferenceKey.caffeineInstantlyExpandShelfOnHover,
-                default: PreferenceDefault.caffeineInstantlyExpandShelfOnHover
-            )
-            if CaffeineManager.shared.isActive && !skipHighAlertHoverHUD {
-                notchDebugLog("⏰ AUTO-EXPAND BLOCKED (timer fire): High Alert is active")
-                return
-            }
+            guard self.shouldAllowStatusDrivenHoverExpand(on: displayID) else { return }
 
-            let autoExpandEnabled = (UserDefaults.standard.object(forKey: "autoExpandShelf") as? Bool) ?? true
-            guard autoExpandEnabled || statusDrivenHoverExpandAtStart else { return }
             let currentMouse = NSEvent.mouseLocation
-            if !statusDrivenHoverExpandAtStart {
-                if let displayID = displayID,
-                   let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
-                    if screen.isBuiltIn {
-                        let allowMainMacAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnMainMac) as? Bool)
-                            ?? PreferenceDefault.autoExpandOnMainMac
-                        guard allowMainMacAutoExpand else { return }
-                    } else {
-                        let allowExternalAutoExpand = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandOnExternalDisplays) as? Bool)
-                            ?? PreferenceDefault.autoExpandOnExternalDisplays
-                        guard allowExternalAutoExpand else { return }
-                    }
-                }
-            }
-
             let isExpanded = displayID.map { DroppyState.shared.isExpanded(for: $0) } ?? DroppyState.shared.isExpanded
 
             var isMouseOverNotchZone = false
@@ -3061,35 +3285,24 @@ final class NotchWindowController: NSObject, ObservableObject {
 
             let stateHovering = displayID.map { DroppyState.shared.isHovering(for: $0) } ?? DroppyState.shared.isMouseHovering
             let shouldExpand = (isMouseOverNotchZone || stateHovering) && !isExpanded
+            guard shouldExpand else { return }
 
-            notchDebugLog("⏰ AUTO-EXPAND TIMER FIRED: stateHovering=\(stateHovering), geometryHovering=\(isMouseOverNotchZone), isExpanded=\(isExpanded), shouldExpand=\(shouldExpand), displayID=\(displayID?.description ?? "nil")")
-
-            if shouldExpand {
-                let animationScreen = displayID.flatMap { self.notchWindows[$0]?.notchScreen }
-                let shouldForceMediaSurface = shouldForceMediaSurfaceFromStatus ||
-                    (statusDrivenHoverExpandAtStart && self.shouldForceMediaOnStatusDrivenHoverExpand(on: displayID))
-                DispatchQueue.main.async {
-                    withAnimation(DroppyAnimation.notchState(for: animationScreen)) {
-                        if shouldForceMediaSurface {
-                            MusicManager.shared.isMediaHUDForced = true
-                            MusicManager.shared.isMediaHUDHidden = false
-                        }
-                        if let displayID = displayID {
-                            notchDebugLog("📤 EXPANDING SHELF for displayID: \(displayID)")
-                            DroppyState.shared.expandShelf(for: displayID)
-                        } else {
-                            if let screen = NSScreen.screens.first(where: { $0.frame.contains(currentMouse) }) {
-                                notchDebugLog("📤 EXPANDING SHELF for fallback displayID: \(screen.displayID)")
-                                DroppyState.shared.expandShelf(for: screen.displayID)
-                            }
-                        }
+            let animationScreen = displayID.flatMap { self.notchWindows[$0]?.notchScreen }
+            DispatchQueue.main.async {
+                withAnimation(DroppyAnimation.notchState(for: animationScreen)) {
+                    if shouldForceMediaSurfaceFromStatus || self.shouldForceMediaOnStatusDrivenHoverExpand(on: displayID) {
+                        MusicManager.shared.isMediaHUDForced = true
+                        MusicManager.shared.isMediaHUDHidden = false
+                    }
+                    if let displayID = displayID {
+                        DroppyState.shared.expandShelf(for: displayID)
+                    } else if let screen = NSScreen.screens.first(where: { $0.frame.contains(currentMouse) }) {
+                        DroppyState.shared.expandShelf(for: screen.displayID)
                     }
                 }
-            } else {
-                notchDebugLog("⏰ AUTO-EXPAND SKIPPED: stateHovering=\(stateHovering), geometryHovering=\(isMouseOverNotchZone), isExpanded=\(isExpanded)")
             }
         }
-        timer.tolerance = min(0.05, actualDelay * 0.25)
+        timer.tolerance = min(0.05, timerDelay * 0.25)
         autoExpandTimer = timer
         autoExpandTimerDisplayID = displayID
         RunLoop.main.add(timer, forMode: .common)
@@ -3114,9 +3327,22 @@ final class NotchWindowController: NSObject, ObservableObject {
     }
 
     func ensureAutoExpandTimer(for displayID: CGDirectDisplayID) {
-        let autoExpandEnabled = (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandShelf) as? Bool) ?? true
-        let statusDrivenHoverExpand = shouldAllowStatusDrivenHoverExpand(on: displayID)
-        guard autoExpandEnabled || statusDrivenHoverExpand else { return }
+        guard !isUnlockingHandoffActive else { return }
+        let statusDrivenHoverExpand = isOrderOutWhenInactiveEnabled && shouldAllowStatusDrivenHoverExpand(on: displayID)
+        if statusDrivenHoverExpand {
+            guard DroppyState.shared.isHovering(for: displayID) else { return }
+            guard !DroppyState.shared.isExpanded(for: displayID) else { return }
+
+            if let timer = autoExpandTimer,
+               timer.isValid,
+               autoExpandTimerDisplayID == displayID {
+                return
+            }
+
+            startAutoExpandTimer(for: displayID)
+            return
+        }
+        guard (UserDefaults.standard.object(forKey: AppPreferenceKey.autoExpandShelf) as? Bool) ?? true else { return }
         guard DroppyState.shared.isHovering(for: displayID) else { return }
         guard !DroppyState.shared.isExpanded(for: displayID) else { return }
 
@@ -3591,7 +3817,7 @@ class NotchWindow: NSPanel {
     /// Interaction visibility guard used by controller-level click/hover monitors.
     /// `targetAlpha` avoids a race where reveal starts before `alphaValue` updates.
     func isVisibleForInteraction() -> Bool {
-        isVisible && (alphaValue > 0.01 || targetAlpha > 0.01)
+        alphaValue > 0.01 || targetAlpha > 0.01
     }
 
     /// Mirrors collapsed mini-media visibility conditions closely enough for hit-testing.
@@ -3649,7 +3875,8 @@ class NotchWindow: NSPanel {
         self.backgroundColor = .clear
         self.hasShadow = false
         self.level = .statusBar
-        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        self.collectionBehavior.formUnion([.ignoresCycle])
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
         
@@ -3678,6 +3905,11 @@ class NotchWindow: NSPanel {
     }
     
     func handleGlobalMouseEvent(_ event: NSEvent) {
+        if NotchWindowController.shared.isLockHandoffActive {
+            NotchWindowController.shared.cancelAutoExpandTimer(resetHighAlertHoverHaptic: false)
+            return
+        }
+
         if notchMotionDebugLogs {
             // DEBUG: Log to verify this function is being called after unlock
             struct DebugCounter { static var count = 0; static var lastLog = Date.distantPast }
@@ -4019,6 +4251,12 @@ class NotchWindow: NSPanel {
             }
             return
         }
+        if NotchWindowController.shared.isLockHandoffActive {
+            if !self.ignoresMouseEvents {
+                self.ignoresMouseEvents = true
+            }
+            return
+        }
 
         // Fullscreen hidden state: never allow an invisible notch window to intercept clicks.
         if !isVisibleForInteraction() {
@@ -4311,6 +4549,7 @@ class NotchWindow: NSPanel {
     func revealInFullscreen() {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().alphaValue = 1.0
         }
         targetAlpha = 1.0
@@ -4319,7 +4558,8 @@ class NotchWindow: NSPanel {
     /// Hide the window when user stops hovering in fullscreen mode
     func hideAfterFullscreenReveal() {
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0.0
         }
         targetAlpha = 0.0

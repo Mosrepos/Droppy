@@ -11,7 +11,6 @@ struct FFmpegVideoCompressionCard: View {
     @State private var showInfoSheet = false
     @ObservedObject private var manager = FFmpegInstallManager.shared
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -32,7 +31,7 @@ struct FFmpegVideoCompressionCard: View {
                 
                 Spacer()
                 
-                // Stats row: installs + rating + badge
+                // Stats row: installs + badge
                 HStack(spacing: 8) {
                     // Installs
                     HStack(spacing: 3) {
@@ -43,20 +42,6 @@ struct FFmpegVideoCompressionCard: View {
                     }
                     .foregroundStyle(.secondary)
                     
-                    // Rating
-                    HStack(spacing: 2) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption2.weight(.medium))
-                        } else {
-                            Text("–")
-                                .font(.caption2.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
                     
                     // Category badge
                     Text(manager.isInstalled ? "Installed" : "Media")
@@ -116,7 +101,7 @@ struct FFmpegVideoCompressionCard: View {
             showInfoSheet = true
         }
         .sheet(isPresented: $showInfoSheet) {
-            FFmpegInstallView(installCount: installCount, rating: rating)
+            FFmpegInstallView(installCount: installCount)
         }
     }
 }

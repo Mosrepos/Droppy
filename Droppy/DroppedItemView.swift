@@ -136,7 +136,12 @@ struct DroppedItemView: View {
                                 let outputURL = try await item.removeBackground()
                                 NSWorkspace.shared.selectFile(outputURL.path, inFileViewerRootedAtPath: outputURL.deletingLastPathComponent().path)
                             } catch {
-                                print("Background removal failed: \(error.localizedDescription)")
+                                let message = error.localizedDescription
+                                await MainActor.run { HapticFeedback.error() }
+                                await DroppyAlertController.shared.showError(
+                                    title: "Background Removal Failed",
+                                    message: message
+                                )
                             }
                         }
                     } label: {

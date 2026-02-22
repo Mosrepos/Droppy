@@ -309,7 +309,12 @@ private struct StickerLayout {
 }
 
 private enum StickerToolRenderer {
-    private static let preparedImageCache = NSCache<NSString, NSImage>()
+    private static let preparedImageCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 80
+        cache.totalCostLimit = 8 * 1024 * 1024
+        return cache
+    }()
 
     static func symbolCandidates(for tool: AnnotationTool) -> [String] {
         switch tool {
@@ -707,7 +712,7 @@ struct ScreenshotEditorView: View {
     private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .purple, .black, .white]
     private let strokeWidths: [(CGFloat, String)] = [(2, "S"), (4, "M"), (6, "L")]
     
-    // Transparent mode preference
+    // Liquid mode preference
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.elementCaptureEditorDefaultColor) private var defaultEditorColorToken = PreferenceDefault.elementCaptureEditorDefaultColor
     @AppStorage(AppPreferenceKey.elementCaptureEditorPrefer100Zoom) private var prefer100Zoom = PreferenceDefault.elementCaptureEditorPrefer100Zoom
@@ -723,7 +728,7 @@ struct ScreenshotEditorView: View {
     @AppStorage(AppPreferenceKey.elementCaptureEditorBackgroundCornerRadius) private var editorBackgroundCornerRadius = PreferenceDefault.elementCaptureEditorBackgroundCornerRadius
     @AppStorage(AppPreferenceKey.elementCaptureEditorScreenshotCornerRadius) private var editorScreenshotCornerRadius = PreferenceDefault.elementCaptureEditorScreenshotCornerRadius
     @AppStorage(AppPreferenceKey.elementCaptureEditorScreenshotShadowStrength) private var editorScreenshotShadowStrength = PreferenceDefault.elementCaptureEditorScreenshotShadowStrength
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Title bar (draggable area)
@@ -737,6 +742,7 @@ struct ScreenshotEditorView: View {
         .frame(minHeight: 400, idealHeight: 600, maxHeight: .infinity)
         .droppyTransparentBackground(useTransparentBackground)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .id(useTransparentBackground)
         .sheet(isPresented: $showingTextInput) {
             textInputSheet
         }
@@ -867,7 +873,7 @@ struct ScreenshotEditorView: View {
                 editorFittedImageSize = newValue
             }
         }
-        .background(useTransparentBackground ? Color.clear : AdaptiveColors.panelBackgroundAuto)
+        .background(Color.clear)
     }
     
     // MARK: - Keyboard Shortcuts
@@ -1082,95 +1088,93 @@ struct ScreenshotEditorView: View {
     // MARK: - Title Bar (Draggable)
     
     private var titleBar: some View {
-        HStack {
-            // Close button
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Text("Edit Screenshot")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.88))
+
+            Spacer(minLength: 0)
+
+            titleBarTrailingActions
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .overlay(alignment: .leading) {
             Button(action: onCancel) {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
             }
             .buttonStyle(DroppyCircleButtonStyle(size: 28))
-            
-            Spacer()
-            
-            // Title (drag handle area)
-            Text("Edit Screenshot")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.secondary)
-            
-            Spacer()
-            
-            // Output menu + Done
-            HStack(spacing: 10) {
-                // Output options menu
-                Menu {
-                    Button {
-                        saveToFile()
-                    } label: {
-                        Label("Save to File…", systemImage: "square.and.arrow.down")
-                    }
-                    
-                    if !ExtensionType.quickshare.isRemoved {
-                        Button {
-                            shareViaQuickshare()
-                        } label: {
-                            Label("Quickshare", systemImage: "drop.fill")
-                        }
-                    }
-                    
-                    Button {
-                        addToShelf()
-                    } label: {
-                        Label("Add to Shelf", systemImage: "tray.and.arrow.down")
-                    }
-                    
-                    Button {
-                        addToBasket()
-                    } label: {
-                        Label("Add to Basket", systemImage: "basket")
-                    }
-                    
-                    Divider()
-                    
-                    Button {
-                        saveAnnotatedImage()
-                    } label: {
-                        Label("Copy to Clipboard", systemImage: "doc.on.clipboard")
-                    }
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(AdaptiveColors.primaryTextAuto.opacity(0.85))
-                        .frame(width: 28, height: 28)
-                        .background(AdaptiveColors.overlayAuto(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                
-                // Done button
-                Button(action: saveAnnotatedImage) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("Done")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                }
-                .buttonStyle(DroppyAccentButtonStyle(color: .green, size: .small))
-            }
+            .padding(.leading, 14)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
         .background(
             ZStack {
-                if useTransparentBackground {
-                    AdaptiveColors.overlayAuto(0.06)
-                } else {
-                    AdaptiveColors.buttonBackgroundAuto
-                }
                 WindowDragView()
             }
         )
+    }
+
+    private var titleBarTrailingActions: some View {
+        HStack(spacing: 10) {
+            // Output options menu
+            Menu {
+                Button {
+                    saveToFile()
+                } label: {
+                    Label("Save to File…", systemImage: "square.and.arrow.down")
+                }
+
+                if !ExtensionType.quickshare.isRemoved {
+                    Button {
+                        shareViaQuickshare()
+                    } label: {
+                        Label("Quickshare", systemImage: "drop.fill")
+                    }
+                }
+
+                Button {
+                    addToShelf()
+                } label: {
+                    Label("Add to Shelf", systemImage: "tray.and.arrow.down")
+                }
+
+                Button {
+                    addToBasket()
+                } label: {
+                    Label("Add to Basket", systemImage: "basket")
+                }
+
+                Divider()
+
+                Button {
+                    saveAnnotatedImage()
+                } label: {
+                    Label("Copy to Clipboard", systemImage: "doc.on.clipboard")
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AdaptiveColors.primaryTextAuto.opacity(0.85))
+                    .frame(width: 28, height: 28)
+                    .background(AdaptiveColors.overlayAuto(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            // Done button
+            Button(action: saveAnnotatedImage) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Done")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .buttonStyle(DroppyAccentButtonStyle(color: .green, size: .small))
+        }
     }
     
     // MARK: - Tools Bar
@@ -1382,7 +1386,7 @@ struct ScreenshotEditorView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
         }
-        .background(useTransparentBackground ? AdaptiveColors.overlayAuto(0.04) : AdaptiveColors.buttonBackgroundAuto)
+        .background(Color.clear)
     }
 
     private var numberStickerFloatingBadge: some View {
@@ -2568,7 +2572,7 @@ struct ScreenshotEditorView: View {
                         Text("Add")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .disabled(textInput.isEmpty)
                 .opacity(textInput.isEmpty ? 0.5 : 1.0)
             }

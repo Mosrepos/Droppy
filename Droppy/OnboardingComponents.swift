@@ -192,6 +192,9 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     }
     
     private var window: NSWindow?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private override init() {
         super.init()
@@ -199,16 +202,23 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     
     func show(activationMode: ActivationMode = .forceForeground) {
         guard shouldPresentWindow(for: activationMode) else { return }
+        cancelDeferredTeardown()
 
-        // If window exists and is visible, just bring to front
+        // If window exists, warm-reopen it.
         if let existingWindow = window {
             if existingWindow.isVisible {
                 existingWindow.makeKeyAndOrderFront(nil)
                 activateIfAllowed(for: activationMode)
                 return
             } else {
-                // Window exists but not visible - clear it
-                window = nil
+                AppKitMotion.prepareForPresent(existingWindow, initialScale: 1.0)
+                existingWindow.orderFront(nil)
+                DispatchQueue.main.async {
+                    self.activateIfAllowed(for: activationMode)
+                    existingWindow.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(existingWindow, initialScale: 1.0, duration: 0.2)
+                return
             }
         }
         
@@ -245,7 +255,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         newWindow.titlebarAppearsTransparent = true
         newWindow.titleVisibility = .hidden
         newWindow.title = "Welcome to Droppy"
-        newWindow.backgroundColor = .clear  // Clear to allow SwiftUI transparency mode
+        newWindow.backgroundColor = .clear  // Clear to allow SwiftUI Liquid mode
         newWindow.isOpaque = false
         newWindow.hasShadow = true
         newWindow.isMovableByWindowBackground = true
@@ -267,70 +277,45 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         
         // Store reference AFTER setup
         window = newWindow
-        
-        // PREMIUM: Start scaled down and invisible for spring animation
-        newWindow.alphaValue = 0
-        if let contentView = newWindow.contentView {
-            contentView.wantsLayer = true
-            contentView.layer?.transform = CATransform3DMakeScale(0.85, 0.85, 1.0)
-            contentView.layer?.opacity = 0
-        }
-        
-        // Show window - use deferred makeKey to avoid NotchWindow conflicts
+
+        AppKitMotion.prepareForPresent(newWindow, initialScale: 1.0)
         newWindow.orderFront(nil)
         DispatchQueue.main.async {
             self.activateIfAllowed(for: activationMode)
             newWindow.makeKeyAndOrderFront(nil)
         }
-        
-        // PREMIUM: CASpringAnimation for bouncy appear
-        if let layer = newWindow.contentView?.layer {
-            // Fade in
-            let fadeAnim = CABasicAnimation(keyPath: "opacity")
-            fadeAnim.fromValue = 0
-            fadeAnim.toValue = 1
-            fadeAnim.duration = 0.25
-            fadeAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            fadeAnim.fillMode = .forwards
-            fadeAnim.isRemovedOnCompletion = false
-            layer.add(fadeAnim, forKey: "fadeIn")
-            layer.opacity = 1
-            
-            // Scale with spring overshoot
-            let scaleAnim = CASpringAnimation(keyPath: "transform.scale")
-            scaleAnim.fromValue = 0.85
-            scaleAnim.toValue = 1.0
-            scaleAnim.mass = 1.0
-            scaleAnim.stiffness = 250  // Slightly softer for larger window
-            scaleAnim.damping = 22
-            scaleAnim.initialVelocity = 6
-            scaleAnim.duration = scaleAnim.settlingDuration
-            scaleAnim.fillMode = .forwards
-            scaleAnim.isRemovedOnCompletion = false
-            layer.add(scaleAnim, forKey: "scaleSpring")
-            layer.transform = CATransform3DIdentity
-        }
-        
-        // Fade window alpha
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            newWindow.animator().alphaValue = 1.0
-        })
+        AppKitMotion.animateIn(newWindow, initialScale: 1.0, duration: 0.2)
     }
     
     func close() {
-        guard let panel = window else { return }
-        
-        // Capture and nil reference AFTER animation to keep window alive
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            // Now safe to release - animation is done
-            self?.window = nil
+        guard let panel = window, !isClosing else { return }
+        isClosing = true
+
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+            guard let self else { return }
             panel.orderOut(nil)
-        })
+            AppKitMotion.resetPresentationState(panel)
+            self.isClosing = false
+            self.scheduleDeferredTeardown()
+        }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     // MARK: - NSWindowDelegate
@@ -338,6 +323,13 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         // Clear reference when window is closed via X button
         window = nil
+        isClosing = false
+        cancelDeferredTeardown()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        close()
+        return false
     }
 
     private func shouldPresentWindow(for activationMode: ActivationMode) -> Bool {

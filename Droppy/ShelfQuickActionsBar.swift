@@ -139,7 +139,7 @@ struct ShelfQuickActionButton: View {
             }
         ) {
             Circle()
-                // Transparent mode: use material, Dark mode: pure black
+                // Liquid mode: use material, Dark mode: pure black
                 .droppyTransparentFill(useTransparent, fallback: Color.black)
                 .frame(width: size, height: size)
                 .overlay(

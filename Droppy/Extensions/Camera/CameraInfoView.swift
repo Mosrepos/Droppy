@@ -11,15 +11,14 @@ import AppKit
 
 struct CameraInfoView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     @AppStorage(AppPreferenceKey.cameraInstalled) private var isInstalled = PreferenceDefault.cameraInstalled
     @AppStorage(AppPreferenceKey.cameraEnabled) private var isEnabled = PreferenceDefault.cameraEnabled
     @AppStorage(AppPreferenceKey.cameraPreferredDeviceID) private var preferredDeviceID = PreferenceDefault.cameraPreferredDeviceID
 
     @ObservedObject private var manager = CameraManager.shared
-    @State private var showReviewsSheet = false
 
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +30,7 @@ struct CameraInfoView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 22) {
                     featuresSection
+                    screenshotSection
                     settingsSection
                 }
                 .padding(.horizontal, 24)
@@ -47,9 +47,6 @@ struct CameraInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .camera)
-        }
         .onAppear {
             manager.refreshAvailableDevices()
         }
@@ -89,27 +86,6 @@ struct CameraInfoView: View {
                 }
                 .foregroundStyle(.secondary)
 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
 
                 Text("Productivity")
                     .font(.caption.weight(.semibold))
@@ -150,12 +126,12 @@ struct CameraInfoView: View {
                     Button("Allow Camera") {
                         manager.requestAccess()
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 } else if manager.permissionStatus == .denied || manager.permissionStatus == .restricted {
                     Button("Open Settings") {
                         openCameraPrivacySettings()
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 }
             }
             .padding(DroppySpacing.md)
@@ -167,6 +143,27 @@ struct CameraInfoView: View {
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var screenshotSection: some View {
+        if let screenshotURL = CameraExtension.screenshotURL {
+            CachedAsyncImage(url: screenshotURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                            .stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1)
+                    )
+            } placeholder: {
+                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                    .fill(AdaptiveColors.overlayAuto(0.08))
+                    .frame(height: 170)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var settingsSection: some View {
@@ -272,7 +269,7 @@ struct CameraInfoView: View {
     private var footerSection: some View {
         HStack(spacing: 10) {
             Button("Close") {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             }
             .buttonStyle(DroppyPillButtonStyle(size: .small))
 
@@ -284,7 +281,7 @@ struct CameraInfoView: View {
                 Button("Install") {
                     installExtension()
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
         }
         .padding(DroppySpacing.lg)

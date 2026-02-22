@@ -32,6 +32,7 @@ class LinkPreviewService {
     private init() {
         // Limit caches to prevent unbounded growth
         metadataCache.countLimit = 50  // ~50 URLs cached
+        metadataCache.totalCostLimit = 8 * 1024 * 1024
         imageCache.countLimit = 30     // Images are larger, keep fewer
         imageCache.totalCostLimit = 20 * 1024 * 1024
     }
@@ -84,8 +85,12 @@ class LinkPreviewService {
                         }
                     }
                 }
-                
-                self.metadataCache.setObject(CachedMetadata(rich), forKey: cacheKey)
+
+                rich.image = self.normalizedMetadataImageData(from: rich.image, maxPixelSize: 900, maxBytes: 900_000)
+                rich.icon = self.normalizedMetadataImageData(from: rich.icon, maxPixelSize: 128, maxBytes: 180_000)
+
+                let metadataCost = self.estimatedMetadataCost(rich)
+                self.metadataCache.setObject(CachedMetadata(rich), forKey: cacheKey, cost: metadataCost)
                 self.removePendingRequest(for: urlString)
                 return rich
             } catch {
@@ -198,6 +203,67 @@ class LinkPreviewService {
         let width = Int(max(image.size.width, 1))
         let height = Int(max(image.size.height, 1))
         return max(width * height * 4, 1)
+    }
+
+    private func estimatedMetadataCost(_ metadata: RichLinkMetadata) -> Int {
+        let titleBytes = metadata.title?.utf8.count ?? 0
+        let descriptionBytes = metadata.description?.utf8.count ?? 0
+        let domainBytes = metadata.domain?.utf8.count ?? 0
+        let imageBytes = metadata.image?.count ?? 0
+        let iconBytes = metadata.icon?.count ?? 0
+        return max(titleBytes + descriptionBytes + domainBytes + imageBytes + iconBytes, 1)
+    }
+
+    private func normalizedMetadataImageData(from data: Data?, maxPixelSize: CGFloat, maxBytes: Int) -> Data? {
+        guard let data else { return nil }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return data.count <= maxBytes ? data : nil
+        }
+
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? 0
+        let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0
+        let maxDimension = max(width, height)
+
+        if data.count <= maxBytes, maxDimension > 0, maxDimension <= Double(maxPixelSize) {
+            return data
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return data.count <= maxBytes ? data : nil
+        }
+
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        let qualities: [CGFloat] = [0.82, 0.68, 0.52]
+        var bestData: Data?
+
+        for quality in qualities {
+            if let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: quality]) {
+                if bestData == nil || jpeg.count < bestData!.count {
+                    bestData = jpeg
+                }
+                if jpeg.count <= maxBytes {
+                    return jpeg
+                }
+            }
+        }
+
+        if let png = rep.representation(using: .png, properties: [:]) {
+            if bestData == nil || png.count < bestData!.count {
+                bestData = png
+            }
+            if png.count <= maxBytes {
+                return png
+            }
+        }
+
+        return bestData
     }
 
     private func pendingRequest(for key: String) -> Task<RichLinkMetadata?, Never>? {

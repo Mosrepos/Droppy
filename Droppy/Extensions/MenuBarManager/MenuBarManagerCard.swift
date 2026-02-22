@@ -11,7 +11,6 @@ struct MenuBarManagerCard: View {
     @ObservedObject private var manager = MenuBarManager.shared
     @State private var showInfoSheet = false
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -32,7 +31,7 @@ struct MenuBarManagerCard: View {
                 
                 Spacer()
                 
-                // Stats row: installs + rating + badge
+                // Stats row: installs + badge
                 HStack(spacing: 8) {
                     // Installs
                     HStack(spacing: 3) {
@@ -43,20 +42,6 @@ struct MenuBarManagerCard: View {
                     }
                     .foregroundStyle(.secondary)
                     
-                    // Rating
-                    HStack(spacing: 2) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption2.weight(.medium))
-                        } else {
-                            Text("–")
-                                .font(.caption2.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
                     
                     // Category badge - shows "Installed" if enabled
                     Text(manager.isEnabled ? "Installed" : "Productivity")
@@ -112,7 +97,7 @@ struct MenuBarManagerCard: View {
             showInfoSheet = true
         }
         .sheet(isPresented: $showInfoSheet) {
-            MenuBarManagerInfoView(installCount: installCount, rating: rating)
+            MenuBarManagerInfoView(installCount: installCount)
         }
     }
 }

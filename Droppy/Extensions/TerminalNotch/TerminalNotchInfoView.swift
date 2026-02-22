@@ -11,18 +11,16 @@ struct TerminalNotchInfoView: View {
     @AppStorage(AppPreferenceKey.terminalNotchExternalApp) private var terminalNotchExternalApp = PreferenceDefault.terminalNotchExternalApp
     @ObservedObject private var manager = TerminalNotchManager.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
-    @State private var isHoveringReviews = false
     @State private var isHoveringRecord = false
     @State private var isHoveringReset = false
-    @State private var showReviewsSheet = false
     @State private var isRecordingShortcut = false
     @State private var showShortcutInfo = false
     @State private var recordMonitor: Any?
     
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -58,9 +56,6 @@ struct TerminalNotchInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .terminalNotch)
-        }
         .onDisappear {
             stopRecording()
         }
@@ -94,27 +89,6 @@ struct TerminalNotchInfoView: View {
                 }
                 .foregroundStyle(.secondary)
                 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
                 
                 Text("Productivity")
                     .font(.caption.weight(.semibold))
@@ -329,7 +303,7 @@ struct TerminalNotchInfoView: View {
     private var buttonSection: some View {
         HStack(spacing: 10) {
             Button {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             } label: {
                 Text("Close")
             }

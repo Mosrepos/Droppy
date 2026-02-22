@@ -14,15 +14,12 @@ struct ExtensionInfoView: View {
     let extensionType: ExtensionType
     var onAction: (() -> Void)?
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     @AppStorage(AppPreferenceKey.disableAnalytics) private var disableAnalytics = PreferenceDefault.disableAnalytics
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     @State private var isHoveringAction = false
     @State private var isHoveringClose = false
-    @State private var showReviewsSheet = false
-    
-    @State private var isHoveringReviews = false
-    
+
     private var isInstalled: Bool {
         extensionType.isInstalledInSystem
     }
@@ -59,9 +56,6 @@ struct ExtensionInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: extensionType)
-        }
     }
     
     // MARK: - Header
@@ -77,7 +71,7 @@ struct ExtensionInfoView: View {
                 .font(.title2.bold())
                 .foregroundStyle(.primary)
             
-            // Stats row: installs + rating + category badge
+            // Stats row: installs + category badge
             HStack(spacing: 12) {
                 if !disableAnalytics {
                     // Installs
@@ -88,29 +82,7 @@ struct ExtensionInfoView: View {
                             .font(.caption.weight(.medium))
                     }
                     .foregroundStyle(.secondary)
-                    
-                    // Rating (clickable)
-                    Button {
-                        showReviewsSheet = true
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.yellow)
-                            if let r = rating, r.ratingCount > 0 {
-                                Text(String(format: "%.1f", r.averageRating))
-                                    .font(.caption.weight(.medium))
-                                Text("(\(r.ratingCount))")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            } else {
-                                Text("–")
-                                    .font(.caption.weight(.medium))
-                            }
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
+
                 }
                 
                 if disableAnalytics {
@@ -142,7 +114,7 @@ struct ExtensionInfoView: View {
             }
             
             if disableAnalytics {
-                Text("Install/download stats and reviews are hidden.")
+                Text("Install/download stats are hidden.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -154,9 +126,6 @@ struct ExtensionInfoView: View {
         }
         .padding(.top, 24)
         .padding(.bottom, 20)
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: extensionType)
-        }
     }
     
     // MARK: - Screenshot Section (Left)
@@ -215,7 +184,7 @@ struct ExtensionInfoView: View {
         HStack(spacing: 8) {
             // Close button
             Button {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             } label: {
                 Text("Close")
             }
@@ -245,7 +214,7 @@ struct ExtensionInfoView: View {
             switch extensionType {
             case .spotify, .appleMusic:
                 return "Set Up"
-            case .finder, .finderServices, .windowSnap, .voiceTranscribe, .elementCapture, .terminalNotch, .camera, .notificationHUD, .caffeine, .menuBarManager, .todo, .teleprompty:
+            case .finder, .finderServices, .windowSnap, .voiceTranscribe, .elementCapture, .terminalNotch, .camera, .notificationHUD, .caffeine, .menuBarManager, .pomodoro, .todo, .teleprompty:
                 return "Set Up"
             case .quickshare:
                 return "Enable"
@@ -270,6 +239,7 @@ struct ExtensionInfoView: View {
         case .notificationHUD: return "Configure"
         case .caffeine: return "Configure"
         case .menuBarManager: return "Configure"
+        case .pomodoro: return "Configure"
         case .todo: return "Configure"
         case .teleprompty: return "Configure"
         }
@@ -292,6 +262,7 @@ struct ExtensionInfoView: View {
         case .notificationHUD: return "Configure"
         case .caffeine: return "Configure"
         case .menuBarManager: return "Configure"
+        case .pomodoro: return "Configure"
         case .todo: return "Configure"
         case .teleprompty: return "Configure"
         }
@@ -314,6 +285,7 @@ struct ExtensionInfoView: View {
         case .notificationHUD: return "bell.badge"
         case .caffeine: return "cup.and.saucer.fill"
         case .menuBarManager: return "menubar.rectangle"
+        case .pomodoro: return "timer"
         case .todo: return "checklist"
         case .teleprompty: return "text.bubble"
         }

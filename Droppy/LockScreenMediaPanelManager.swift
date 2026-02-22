@@ -30,6 +30,7 @@ final class LockScreenMediaPanelAnimator: ObservableObject {
 @MainActor
 final class LockScreenMediaPanelManager {
     static let shared = LockScreenMediaPanelManager()
+    private let isFeatureEnabled = false
     
     // MARK: - Window State
     private var panelWindow: NSWindow?
@@ -77,9 +78,8 @@ final class LockScreenMediaPanelManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.handleScreenGeometryChange()
+            Task { @MainActor [weak self] in
+                self?.handleScreenGeometryChange()
             }
         }
     }
@@ -89,6 +89,14 @@ final class LockScreenMediaPanelManager {
     /// Show the lock screen media panel
     /// Called by LockScreenManager when screen locks
     func showPanel() {
+        guard isFeatureEnabled else {
+            // Hard-disabled: keep any stale panel hidden without affecting other systems.
+            panelWindow?.orderOut(nil)
+            panelWindow?.contentView = nil
+            print("LockScreenMediaPanelManager: ⏭️ Lock screen media HUD is temporarily disabled")
+            return
+        }
+
         // Check if feature is enabled
         guard UserDefaults.standard.preference(
             AppPreferenceKey.enableLockScreenMediaWidget,
@@ -105,12 +113,12 @@ final class LockScreenMediaPanelManager {
             return
         }
         
-        // Get the built-in display (where lock screen appears)
-        // CRITICAL: Use builtInWithNotch, NOT main - main could be an external monitor!
-        guard let screen = NSScreen.builtInWithNotch ?? NSScreen.main else {
-            print("LockScreenMediaPanelManager: ⚠️ No built-in screen available")
+        guard let context = LockScreenDisplayContextProvider.shared.contextSnapshot()
+            ?? LockScreenDisplayContextProvider.shared.beginLockSession() else {
+            print("LockScreenMediaPanelManager: ⚠️ No lock display context available")
             return
         }
+        let screen = context.screen
         
         print("LockScreenMediaPanelManager: 🎵 Showing lock screen panel on: \(screen.localizedName)")
         
@@ -214,7 +222,7 @@ final class LockScreenMediaPanelManager {
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         window.isMovable = false
-        window.hasShadow = true
+        window.hasShadow = false
         
         return window
     }
@@ -234,8 +242,8 @@ final class LockScreenMediaPanelManager {
     
     private func handleScreenGeometryChange() {
         guard let window = panelWindow, window.isVisible else { return }
-        // Use built-in display, same as showPanel()
-        guard let screen = NSScreen.builtInWithNotch ?? NSScreen.main else { return }
+        guard let context = LockScreenDisplayContextProvider.shared.contextSnapshot() else { return }
+        let screen = context.screen
         
         let newFrame = calculatePanelFrame(for: screen)
         window.setFrame(newFrame, display: true)

@@ -22,7 +22,7 @@ struct CameraExtension: ExtensionDefinition {
         ("bolt.fill", "Low-latency startup with smooth transitions")
     ]
 
-    static let screenshotURL: URL? = nil
+    static let screenshotURL: URL? = URL(string: "https://getdroppy.app/assets/screenshots/notchface.png")
     static let previewView: AnyView? = nil
 
     static let iconURL: URL? = URL(string: "https://getdroppy.app/assets/icons/snap-camera-v2.png")

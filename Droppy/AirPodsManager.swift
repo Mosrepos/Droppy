@@ -48,12 +48,6 @@ final class AirPodsManager {
     
     /// Track devices we've already shown HUD for (to avoid re-triggering on same connection)
     private var shownDeviceAddresses: Set<String> = []
-
-    /// Per-device disconnect notifications so state can be invalidated immediately.
-    private var disconnectNotifications: [String: IOBluetoothUserNotification] = [:]
-
-    /// Address currently associated with the visible/active HUD payload.
-    private var currentHUDDeviceAddress: String?
     
     // MARK: - Initialization
     
@@ -92,10 +86,6 @@ final class AirPodsManager {
         debounceWorkItem?.cancel()
         isMonitoring = false
         shownDeviceAddresses.removeAll()
-        disconnectNotifications.values.forEach { $0.unregister() }
-        disconnectNotifications.removeAll()
-        currentHUDDeviceAddress = nil
-        dismissHUD()
     }
     
     /// Manually trigger HUD for testing
@@ -108,7 +98,7 @@ final class AirPodsManager {
             rightBattery: 90,
             caseBattery: 75
         )
-        showHUD(for: testAirPods, address: nil, triggerDisplayEvent: true)
+        showHUD(for: testAirPods)
     }
     
     /// Dismiss the HUD immediately
@@ -116,7 +106,6 @@ final class AirPodsManager {
         DispatchQueue.main.async {
             self.isHUDVisible = false
             self.connectedAirPods = nil
-            self.currentHUDDeviceAddress = nil
         }
     }
     
@@ -131,7 +120,6 @@ final class AirPodsManager {
                 // Don't show HUD for already-connected devices on app launch
                 if let address = device.addressString {
                     shownDeviceAddresses.insert(address)
-                    registerDisconnectNotification(for: device, address: address)
                 }
                 print("[AirPods] Found already-connected: \(airPods.name) at \(airPods.batteryLevel)%")
             }
@@ -142,11 +130,6 @@ final class AirPodsManager {
     
     @objc private func handleDeviceConnection(_ notification: IOBluetoothUserNotification?, device: IOBluetoothDevice?) {
         guard let btDevice = device, btDevice.isConnected() else { return }
-
-        let deviceAddress = btDevice.addressString
-        if let deviceAddress {
-            registerDisconnectNotification(for: btDevice, address: deviceAddress)
-        }
         
         // Check if this is a Bluetooth audio device
         guard let audioDevice = identifyAirPods(btDevice) else {
@@ -173,32 +156,10 @@ final class AirPodsManager {
         // Debounce rapid reconnections (devices can connect/disconnect in quick succession)
         debounceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            self?.showHUD(for: audioDevice, address: deviceAddress, triggerDisplayEvent: true)
-            self?.scheduleBatteryRefresh(for: btDevice, address: deviceAddress)
+            self?.showHUD(for: audioDevice)
         }
         debounceWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
-    }
-
-    @objc private func handleDeviceDisconnection(_ notification: IOBluetoothUserNotification?, device: IOBluetoothDevice?) {
-        guard let btDevice = device else { return }
-        let address = btDevice.addressString
-
-        if let address {
-            shownDeviceAddresses.remove(address)
-            disconnectNotifications[address]?.unregister()
-            disconnectNotifications.removeValue(forKey: address)
-        }
-
-        DispatchQueue.main.async {
-            if self.currentHUDDeviceAddress == address || self.connectedAirPods?.name == btDevice.name {
-                self.connectedAirPods = nil
-                self.isHUDVisible = false
-                self.currentHUDDeviceAddress = nil
-            }
-        }
-
-        print("[Audio] Device disconnected: \(btDevice.name ?? "Unknown")")
     }
     
     // MARK: - Device Identification (AirPods + Generic Headphones)
@@ -223,7 +184,7 @@ final class AirPodsManager {
             }
         }
         // === Beats Products ===
-        else if name.contains("beats") || name.contains("powerbeats") || name.contains("studio buds") {
+        else if isLikelyBeatsDevice(name) {
             type = .beats
         }
         // === Generic Earbuds (wireless earbuds from various brands) ===
@@ -272,66 +233,153 @@ final class AirPodsManager {
     
     // MARK: - Battery Level Extraction (Private API)
     
-    private func normalizedBatteryPercent(from rawValue: Any?) -> Int? {
-        switch rawValue {
-        case let value as Int:
-            return (0...100).contains(value) ? value : nil
-        case let value as NSNumber:
-            let intValue = value.intValue
-            return (0...100).contains(intValue) ? intValue : nil
-        case let value as String:
-            guard let intValue = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
-            return (0...100).contains(intValue) ? intValue : nil
-        default:
-            return nil
-        }
-    }
-
-    private func readBatteryPercent(from device: IOBluetoothDevice, key: String) -> Int? {
-        guard device.responds(to: Selector((key))) else { return nil }
-        return normalizedBatteryPercent(from: device.value(forKey: key))
-    }
-
     /// Extract battery levels using IOBluetoothDevice's private selectors
     /// These are undocumented but used by apps like AirBuddy
     private func getBatteryLevels(from device: IOBluetoothDevice, type: ConnectedAirPods.DeviceType) -> (combined: Int, left: Int?, right: Int?, case: Int?) {
-        let leftBattery = readBatteryPercent(from: device, key: "batteryPercentLeft")
-        let rightBattery = readBatteryPercent(from: device, key: "batteryPercentRight")
-        let caseBattery = readBatteryPercent(from: device, key: "batteryPercentCase")
-        let singleBattery =
-            readBatteryPercent(from: device, key: "batteryPercentSingle") ??
-            readBatteryPercent(from: device, key: "batteryPercent") ??
-            readBatteryPercent(from: device, key: "batteryPercentMain") ??
-            readBatteryPercent(from: device, key: "batteryPercentCombined")
+        var leftBattery: Int?
+        var rightBattery: Int?
+        var caseBattery: Int?
+        var singleBattery: Int?
+        var combinedBattery: Int?
+        
+        func normalizedBatteryValue(_ rawValue: Any?, depth: Int = 0) -> Int? {
+            guard depth <= 4 else { return nil }
+            
+            func validatedBatteryValue(_ value: Int) -> Int? {
+                (0...100).contains(value) ? value : nil
+            }
+            
+            func normalizedBatteryValueFromDictionary(_ dictionary: [String: Any], depth: Int) -> Int? {
+                let valueKeys = [
+                    "value",
+                    "level",
+                    "percent",
+                    "batteryLevel",
+                    "batteryPercent",
+                    "Value",
+                    "Level",
+                    "Percent",
+                    "BatteryPercent"
+                ]
+                let nestedPayloadKeys = ["payload", "data", "value"]
+                
+                for key in valueKeys {
+                    guard let entry = dictionary[key] else { continue }
+                    if let resolved = normalizedBatteryValue(entry, depth: depth + 1) {
+                        return resolved
+                    }
+                }
+                
+                for key in nestedPayloadKeys {
+                    guard let entry = dictionary[key] else { continue }
+                    if let resolved = normalizedBatteryValue(entry, depth: depth + 1) {
+                        return resolved
+                    }
+                }
+                
+                return nil
+            }
+            
+            switch rawValue {
+            case let value as Int:
+                return validatedBatteryValue(value)
+            case let value as UInt8:
+                let resolved = Int(value)
+                return validatedBatteryValue(resolved)
+            case let value as Int64:
+                let resolved = Int(value)
+                return validatedBatteryValue(resolved)
+            case let value as NSNumber:
+                let resolved = value.intValue
+                return validatedBatteryValue(resolved)
+            case let value as [String: Any]:
+                return normalizedBatteryValueFromDictionary(value, depth: depth)
+            case let value as NSDictionary:
+                var dictionary: [String: Any] = [:]
+                for (key, entry) in value {
+                    guard let stringKey = key as? String else { continue }
+                    dictionary[stringKey] = entry
+                }
+                return normalizedBatteryValueFromDictionary(dictionary, depth: depth)
+            default:
+                return nil
+            }
+        }
+        
+        func readBatteryValue(for selectorName: String) -> (raw: Any?, normalized: Int?)? {
+            guard device.responds(to: Selector((selectorName))) else { return nil }
+            let rawValue = device.value(forKey: selectorName)
+            return (rawValue, normalizedBatteryValue(rawValue))
+        }
+        
+        // Try to get individual battery levels using private selectors
+        // These selectors exist in IOBluetoothDevice but are not publicly documented
+        
+        // Left earbud battery
+        let leftRead = readBatteryValue(for: "batteryPercentLeft")
+        leftBattery = leftRead?.normalized
+        
+        // Right earbud battery
+        let rightRead = readBatteryValue(for: "batteryPercentRight")
+        rightBattery = rightRead?.normalized
+        
+        // Case battery
+        let caseRead = readBatteryValue(for: "batteryPercentCase")
+        caseBattery = caseRead?.normalized
+        
+        // Single battery (for AirPods Max or when left/right not available)
+        let singleRead = readBatteryValue(for: "batteryPercentSingle")
+        singleBattery = singleRead?.normalized
+        
+        // Combined battery is common on single-cell headphones (including some Beats models).
+        let combinedRead = readBatteryValue(for: "batteryPercentCombined")
+        combinedBattery = combinedRead?.normalized
+        
+        // Legacy headset path still used by some Bluetooth devices.
+        let headsetRead = readBatteryValue(for: "headsetBattery")
+        let headsetBattery = headsetRead?.normalized
+        
+        if type == .beats,
+           leftBattery == nil,
+           rightBattery == nil,
+           caseBattery == nil,
+           singleBattery == nil,
+           combinedBattery == nil,
+           headsetBattery == nil {
+            let rawDebugValues: [String: Any?] = [
+                "batteryPercentLeft": leftRead?.raw,
+                "batteryPercentRight": rightRead?.raw,
+                "batteryPercentCase": caseRead?.raw,
+                "batteryPercentSingle": singleRead?.raw,
+                "batteryPercentCombined": combinedRead?.raw,
+                "headsetBattery": headsetRead?.raw
+            ]
+            print("[AirPods][Beats] Battery extraction returned nil for all selectors. Raw selector values: \(rawDebugValues)")
+        }
         
         // Calculate combined battery display value
         let combined: Int
-        if type == .airpodsMax || type == .headphones {
-            // AirPods Max and over-ear headphones use single battery
-            if let single = singleBattery {
-                combined = single
-            } else if let left = leftBattery, let right = rightBattery {
-                combined = (left + right) / 2
-            } else if let left = leftBattery {
-                combined = left
-            } else if let right = rightBattery {
-                combined = right
-            } else if let caseBattery {
-                combined = caseBattery
-            } else {
-                combined = 100
-            }
-        } else if let left = leftBattery, let right = rightBattery {
-            // Average of left and right for regular AirPods
+        if let left = leftBattery, let right = rightBattery {
+            // Stereo earbuds/headsets: use average when both channels are present.
             combined = (left + right) / 2
+        } else if type == .airpodsMax || type == .headphones || type == .beats {
+            // AirPods Max and over-ear headphones use single battery
+            combined = singleBattery
+                ?? combinedBattery
+                ?? headsetBattery
+                ?? leftBattery
+                ?? rightBattery
+                ?? 100
+        } else if let combinedValue = combinedBattery {
+            combined = combinedValue
         } else if let single = singleBattery {
             combined = single
+        } else if let headset = headsetBattery {
+            combined = headset
         } else if let left = leftBattery {
             combined = left
         } else if let right = rightBattery {
             combined = right
-        } else if let caseBattery {
-            combined = caseBattery
         } else {
             // Fallback: no battery info available
             combined = 100
@@ -340,47 +388,40 @@ final class AirPodsManager {
         return (combined, leftBattery, rightBattery, caseBattery)
     }
     
+    private func isLikelyBeatsDevice(_ deviceName: String) -> Bool {
+        let beatsModelTokens = [
+            "beats",
+            "powerbeats",
+            "studio buds",
+            "studio buds+",
+            "fit pro",
+            "solo buds",
+            "solo3",
+            "solo 3",
+            "solo4",
+            "solo 4",
+            "solo pro",
+            "studio3",
+            "studio 3",
+            "studio3 wireless",
+            "studio pro",
+            "beatsx",
+            "beats x",
+            "urbeats"
+        ]
+        
+        return beatsModelTokens.contains { deviceName.contains($0) }
+    }
+    
     // MARK: - HUD Display
     
-    private func showHUD(for airPods: ConnectedAirPods, address: String?, triggerDisplayEvent: Bool) {
+    private func showHUD(for airPods: ConnectedAirPods) {
         DispatchQueue.main.async {
             self.connectedAirPods = airPods
-            self.currentHUDDeviceAddress = address
-            if triggerDisplayEvent {
-                self.lastConnectionAt = Date()
-                self.isHUDVisible = true
-            }
+            self.lastConnectionAt = Date()
+            self.isHUDVisible = true
             
             print("[AirPods] Showing HUD for: \(airPods.name) - L:\(airPods.leftBattery ?? -1)% R:\(airPods.rightBattery ?? -1)% Case:\(airPods.caseBattery ?? -1)%")
-        }
-    }
-
-    private func registerDisconnectNotification(for device: IOBluetoothDevice, address: String) {
-        guard disconnectNotifications[address] == nil else { return }
-        guard let notification = device.register(
-            forDisconnectNotification: self,
-            selector: #selector(handleDeviceDisconnection(_:device:))
-        ) else {
-            return
-        }
-        disconnectNotifications[address] = notification
-    }
-
-    /// Refresh battery values shortly after connection because macOS can initially report stale values.
-    private func scheduleBatteryRefresh(for device: IOBluetoothDevice, address: String?) {
-        let refreshDelays: [TimeInterval] = [1.0, 2.5]
-        for delay in refreshDelays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.isMonitoring, device.isConnected() else { return }
-
-                // If another device took over the HUD, don't let older refreshes override it.
-                if let address, let currentAddress = self.currentHUDDeviceAddress, currentAddress != address {
-                    return
-                }
-
-                guard let refreshedDevice = self.identifyAirPods(device) else { return }
-                self.showHUD(for: refreshedDevice, address: address, triggerDisplayEvent: false)
-            }
         }
     }
 }

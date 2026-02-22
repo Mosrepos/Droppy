@@ -15,6 +15,18 @@ import SwiftUI
 /// Uses NSWorkspace notifications to detect when screens sleep/wake
 class LockScreenManager: ObservableObject {
     static let shared = LockScreenManager()
+
+    enum LockTransitionPhase: Equatable {
+        case unlocked
+        case locking
+        case locked
+        case unlockingHandoff
+    }
+
+    enum TransitionTiming {
+        static let lockExpand: TimeInterval = 0.45
+        static let unlockCollapse: TimeInterval = 0.82
+    }
     
     /// Current state: true = unlocked (awake), false = locked (asleep)
     @Published private(set) var isUnlocked: Bool = true
@@ -28,6 +40,9 @@ class LockScreenManager: ObservableObject {
     /// True while the dedicated lock-screen HUD window is the active visual surface.
     /// Used to suppress duplicate inline notch lock HUD rendering during lock/unlock handoff.
     @Published private(set) var isDedicatedHUDActive: Bool = false
+
+    /// Explicit lock/unlock motion phase for deterministic cross-surface handoff behavior.
+    @Published private(set) var transitionPhase: LockTransitionPhase = .unlocked
     
     /// Duration the HUD should stay visible
     let visibleDuration: TimeInterval = 2.5
@@ -41,6 +56,13 @@ class LockScreenManager: ObservableObject {
     
     /// Whether observers are currently active
     private var isEnabled = false
+
+    private var isLockScreenHUDEnabled: Bool {
+        UserDefaults.standard.preference(
+            AppPreferenceKey.enableLockScreenHUD,
+            default: PreferenceDefault.enableLockScreenHUD
+        )
+    }
     
     private init() {
         // Observers are NOT started here — call enable() after checking user preferences.
@@ -63,9 +85,10 @@ class LockScreenManager: ObservableObject {
         isEnabled = false
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         DistributedNotificationCenter.default().removeObserver(self)
-        LockScreenMediaPanelManager.shared.hidePanel()
         LockScreenHUDWindowManager.shared.hideAndDestroy()
         isDedicatedHUDActive = false
+        transitionPhase = .unlocked
+        LockScreenDisplayContextProvider.shared.endLockSession()
         HUDManager.shared.dismiss()
         print("LockScreenManager: ⏹ Observers disabled")
     }
@@ -130,41 +153,54 @@ class LockScreenManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             
-            // Show media panel when screen locks (separate feature, already safe)
-            LockScreenMediaPanelManager.shared.showPanel()
-            
             // Only update state if transitioning from unlocked
             if self.isUnlocked {
+                self.transitionPhase = .locking
+                _ = LockScreenDisplayContextProvider.shared.beginLockSession()
                 self.isUnlocked = false
                 self.lastEvent = .locked
                 self.lastChangeAt = Date()
 
-                // Show dedicated lock screen window (SkyLight-delegated, separate from main notch).
-                withAnimation(DroppyAnimation.notchState) {
+                if self.isLockScreenHUDEnabled {
+                    // Show dedicated lock screen window (SkyLight-delegated, separate from main notch).
                     self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+
+                    // Gate all other HUDs during lock transition to guarantee no overlap.
+                    HUDManager.shared.show(.lockScreen, on: self.preferredLockHUDDisplayID(), duration: 3600)
+
+                    // Keep a single lock HUD animation timeline across lock/unlock events.
+                    LockScreenHUDAnimator.shared.transition(to: .locked)
+                } else {
+                    self.isDedicatedHUDActive = false
                 }
 
-                // Gate all other HUDs during lock transition to guarantee no overlap.
-                HUDManager.shared.show(.lockScreen, on: self.preferredLockHUDDisplayID(), duration: 3600)
-
-                // Keep a single lock HUD animation timeline across lock/unlock events.
-                LockScreenHUDAnimator.shared.transition(to: .locked)
+                DispatchQueue.main.asyncAfter(deadline: .now() + TransitionTiming.lockExpand) { [weak self] in
+                    guard let self else { return }
+                    guard !self.isUnlocked else { return }
+                    if self.transitionPhase == .locking {
+                        self.transitionPhase = .locked
+                    }
+                }
             }
         }
     }
     
     @objc private func handleScreenWake() {
         // Screen wake can happen on lock screen (just screen brightening)
-        // Don't hide panel here - only hide on actual unlock
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            // Re-show panel on screen wake (in case it was hidden during dim)
             if !self.isUnlocked {
-                LockScreenMediaPanelManager.shared.showPanel()
-                withAnimation(DroppyAnimation.notchState) {
-                    self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+                if self.transitionPhase == .unlocked {
+                    self.transitionPhase = .locking
                 }
-                HUDManager.shared.show(.lockScreen, on: self.preferredLockHUDDisplayID(), duration: 3600)
+                _ = LockScreenDisplayContextProvider.shared.beginLockSession()
+                if self.isLockScreenHUDEnabled {
+                    self.isDedicatedHUDActive = LockScreenHUDWindowManager.shared.showOnLockScreen()
+                    HUDManager.shared.show(.lockScreen, on: self.preferredLockHUDDisplayID(), duration: 3600)
+                } else {
+                    self.isDedicatedHUDActive = false
+                }
+                self.transitionPhase = .locked
             }
         }
     }
@@ -174,38 +210,50 @@ class LockScreenManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             
+            let shouldShowLockHUD = self.isLockScreenHUDEnabled
+
             // 1. Update state and animate on the SAME lock HUD surface
             if !self.isUnlocked {
+                self.transitionPhase = .unlockingHandoff
                 self.isUnlocked = true
                 self.lastEvent = .unlocked
                 self.lastChangeAt = Date()
 
-                // Continue on the same shared animation timeline (no handoff to main notch HUD).
-                LockScreenHUDAnimator.shared.transition(to: .unlocked)
-                HUDManager.shared.show(.lockScreen, on: self.preferredLockHUDDisplayID(), duration: 2.0)
+                if shouldShowLockHUD {
+                    // Continue on the same shared animation timeline (no handoff to main notch HUD).
+                    LockScreenHUDAnimator.shared.transition(to: .unlocked)
+                    HUDManager.shared.show(
+                        .lockScreen,
+                        on: self.preferredLockHUDDisplayID(),
+                        duration: TransitionTiming.unlockCollapse
+                    )
 
-                // Play subtle unlock sound
-                self.playUnlockSound()
+                    // Play subtle unlock sound
+                    self.playUnlockSound()
+                }
             }
             
-            // 2. Hide lock screen media panel
-            LockScreenMediaPanelManager.shared.hidePanel()
-            
-            // 3. Keep the dedicated lock HUD as the sole visible surface through unlock.
-            // Hand off to inline notch HUD, then fade dedicated surface out for seamless continuity.
-            LockScreenHUDWindowManager.shared.transitionToDesktopAndHide(
-                after: 0.06,
-                onHandoffStart: { [weak self] in
-                    withAnimation(DroppyAnimation.notchState) {
-                        self?.isDedicatedHUDActive = false
-                    }
-                }
-            ) { [weak self] in
-                // 4. Release lock gate after dedicated surface fade-out.
+            guard shouldShowLockHUD else {
+                LockScreenHUDWindowManager.shared.hideAndDestroy()
                 HUDManager.shared.dismiss()
-                withAnimation(DroppyAnimation.notchState) {
-                    self?.isDedicatedHUDActive = false
-                }
+                self.isDedicatedHUDActive = false
+                self.transitionPhase = .unlocked
+                LockScreenDisplayContextProvider.shared.endLockSession()
+                return
+            }
+
+            // 3. Keep the dedicated lock HUD as the single visual owner through unlock handoff.
+            // Inline notch remains suppressed until teardown completes.
+            LockScreenHUDWindowManager.shared.transitionToDesktopAndHide(
+                after: 0,
+                collapseDuration: TransitionTiming.unlockCollapse,
+                onHandoffStart: nil
+            ) {
+                // 4. Release lock gate after dedicated surface collapse handoff.
+                HUDManager.shared.dismiss()
+                self.isDedicatedHUDActive = false
+                self.transitionPhase = .unlocked
+                LockScreenDisplayContextProvider.shared.endLockSession()
             }
         }
     }
@@ -226,6 +274,7 @@ class LockScreenManager: ObservableObject {
 
     private func preferredLockHUDDisplayID() -> CGDirectDisplayID? {
         LockScreenHUDWindowManager.shared.preferredDisplayID
+            ?? LockScreenDisplayContextProvider.shared.contextSnapshot()?.displayID
             ?? NSScreen.main?.displayID
             ?? NSScreen.screens.first?.displayID
     }

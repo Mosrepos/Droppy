@@ -87,7 +87,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .extensions: return "Extensions"
         case .huds: return "System"
         case .accessibility: return nil // Same section as HUDs
-        case .about: return "About & Updates"
+        case .about: return "About"
         }
     }
     
@@ -121,6 +121,48 @@ struct SettingsSectionHeader: View {
 
 // MARK: - Sidebar Item
 
+private enum SettingsSidebarMetrics {
+    static let rowCornerRadius: CGFloat = 10
+    static let rowHeight: CGFloat = 42
+    static let iconSize: CGFloat = 28
+    static let iconCornerRadius: CGFloat = 8
+    static let rowHorizontalPadding: CGFloat = 10
+    static let rowVerticalPadding: CGFloat = 7
+}
+
+private struct SettingsSidebarIconBadge: View {
+    let gradient: LinearGradient
+    let symbol: String
+    let symbolSize: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: SettingsSidebarMetrics.iconCornerRadius, style: .continuous)
+                .fill(gradient)
+                .frame(width: SettingsSidebarMetrics.iconSize, height: SettingsSidebarMetrics.iconSize)
+
+            RoundedRectangle(cornerRadius: SettingsSidebarMetrics.iconCornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [AdaptiveColors.overlayAuto(0.25), Color.clear],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                )
+                .frame(width: SettingsSidebarMetrics.iconSize, height: SettingsSidebarMetrics.iconSize)
+
+            RoundedRectangle(cornerRadius: SettingsSidebarMetrics.iconCornerRadius, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.25), lineWidth: 0.6)
+                .frame(width: SettingsSidebarMetrics.iconSize, height: SettingsSidebarMetrics.iconSize)
+
+            Image(systemName: symbol)
+                .font(.system(size: symbolSize, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.2), radius: 0.5, x: 0, y: 0.5)
+        }
+    }
+}
+
 /// A single sidebar item with colored icon badge
 struct SettingsSidebarItem: View {
     let tab: SettingsTab
@@ -138,57 +180,34 @@ struct SettingsSidebarItem: View {
                 // Title
                 Text(tab.title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? AdaptiveColors.primaryTextAuto : AdaptiveColors.primaryTextAuto.opacity(0.92))
+                    .foregroundColor(isSelected ? .white : AdaptiveColors.primaryTextAuto.opacity(0.92))
                 
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, SettingsSidebarMetrics.rowHorizontalPadding)
+            .padding(.vertical, SettingsSidebarMetrics.rowVerticalPadding)
+            .frame(minHeight: SettingsSidebarMetrics.rowHeight)
             .background(backgroundShape)
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: SettingsSidebarMetrics.rowCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
+            isHovering = hovering
         }
     }
     
     private var iconBadge: some View {
-        ZStack {
-            // Squircle gradient background
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(tab.badgeGradient)
-                .frame(width: 28, height: 28)
-            
-            // Subtle inner highlight at top for 3D effect
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [AdaptiveColors.overlayAuto(0.25), Color.clear],
-                        startPoint: .top,
-                        endPoint: .center
-                    )
-                )
-                .frame(width: 28, height: 28)
-            
-            // Icon with subtle shadow
-            Image(systemName: tab.icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.2), radius: 0.5, x: 0, y: 0.5)
-        }
+        SettingsSidebarIconBadge(gradient: tab.badgeGradient, symbol: tab.icon, symbolSize: 14)
     }
     
     @ViewBuilder
     private var backgroundShape: some View {
         if isSelected {
-            // Squircle selection (like Dynamic Island)
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(AdaptiveColors.overlayAuto(0.18))
+            // Native macOS selection blue
+            RoundedRectangle(cornerRadius: SettingsSidebarMetrics.rowCornerRadius, style: .continuous)
+                .fill(Color(nsColor: .selectedContentBackgroundColor))
         } else if isHovering {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsSidebarMetrics.rowCornerRadius, style: .continuous)
                 .fill(AdaptiveColors.overlayAuto(0.10))
         } else {
             Color.clear
@@ -248,36 +267,18 @@ struct SettingsSidebar: View {
             UpdateChecker.shared.checkAndNotify()
         } label: {
             HStack(spacing: 10) {
-                // Premium gradient icon badge
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(hue: 0.38, saturation: 0.65, brightness: 0.80),
-                                    Color(hue: 0.36, saturation: 0.80, brightness: 0.65)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 28, height: 28)
-                    
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [AdaptiveColors.overlayAuto(0.25), Color.clear],
-                                startPoint: .top,
-                                endPoint: .center
-                            )
-                        )
-                        .frame(width: 28, height: 28)
-                    
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 0.5, x: 0, y: 0.5)
-                }
+                SettingsSidebarIconBadge(
+                    gradient: LinearGradient(
+                        colors: [
+                            Color(hue: 0.38, saturation: 0.65, brightness: 0.80),
+                            Color(hue: 0.36, saturation: 0.80, brightness: 0.65)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    symbol: "arrow.triangle.2.circlepath",
+                    symbolSize: 13
+                )
                 
                 Text("Updates")
                     .font(.system(size: 13, weight: .regular))
@@ -285,9 +286,10 @@ struct SettingsSidebar: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, SettingsSidebarMetrics.rowHorizontalPadding)
+            .padding(.vertical, SettingsSidebarMetrics.rowVerticalPadding)
+            .frame(minHeight: SettingsSidebarMetrics.rowHeight)
+            .contentShape(RoundedRectangle(cornerRadius: SettingsSidebarMetrics.rowCornerRadius, style: .continuous))
         }
         .buttonStyle(SettingsSidebarLinkStyle())
     }
@@ -314,7 +316,7 @@ struct SettingsSidebarLinkStyle: ButtonStyle {
     @ViewBuilder
     private var hoverBackground: some View {
         if isHovering {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: SettingsSidebarMetrics.rowCornerRadius, style: .continuous)
                 .fill(AdaptiveColors.overlayAuto(0.08))
         } else {
             Color.clear

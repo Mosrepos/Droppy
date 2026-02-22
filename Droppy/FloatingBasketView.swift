@@ -467,7 +467,7 @@ struct FloatingBasketView: View {
     }
     
     /// Basket background - Dropover style: clean dark container with subtle border
-    /// Supports transparency mode: glass material when enabled, solid dark when disabled
+    /// Supports Liquid mode: glass material when enabled, solid dark when disabled
     @ViewBuilder
     private var basketBackground: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -815,7 +815,7 @@ struct FloatingBasketView: View {
                         Text("To Shelf")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             
             // Clipboard button (optional)
@@ -874,7 +874,7 @@ struct FloatingBasketView: View {
                         Text("Select All")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .help("Select All (⌘A)")
             }
         }

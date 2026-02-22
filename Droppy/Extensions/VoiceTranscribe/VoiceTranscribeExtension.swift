@@ -14,7 +14,7 @@ struct VoiceTranscribeExtension: ExtensionDefinition {
     static let category: ExtensionGroup = .ai
     static let categoryColor: Color = .blue
     
-    static let description = "Transcribe audio recordings to text using WhisperKit AI. 100% on-device processing means your voice never leaves your Mac—completely private."
+    static let description = "Transcribe audio recordings to text using Droppy Voice Runtime. 100% on-device processing means your voice never leaves your Mac—completely private."
     
     static let features: [(icon: String, text: String)] = [
         ("mic.fill", "One-tap Quick Record from menu bar"),

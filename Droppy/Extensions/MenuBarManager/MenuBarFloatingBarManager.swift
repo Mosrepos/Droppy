@@ -22,6 +22,13 @@ enum MenuBarFloatingPlacement: String, CaseIterable, Identifiable {
 final class MenuBarFloatingBarManager: ObservableObject {
     static let shared = MenuBarFloatingBarManager()
 
+    enum SettingsLane: String, CaseIterable {
+        case visible
+        case hidden
+        case alwaysHidden
+        case floatingBar
+    }
+
     @Published private(set) var scannedItems = [MenuBarFloatingItemSnapshot]() {
         didSet {
             invalidateSettingsLaneCache()
@@ -59,6 +66,10 @@ final class MenuBarFloatingBarManager: ObservableObject {
         var isFeatureEnabled: Bool
         var alwaysHiddenItemIDs: [String]
         var floatingBarItemIDs: [String]?
+        var visibleOrderIDs: [String]?
+        var hiddenOrderIDs: [String]?
+        var alwaysHiddenOrderIDs: [String]?
+        var floatingBarOrderIDs: [String]?
     }
 
     private struct PersistedIconCacheEnvelope: Codable {
@@ -154,6 +165,8 @@ final class MenuBarFloatingBarManager: ObservableObject {
     private let panelHoverGraceInterval: TimeInterval = 0.14
     private let panelTransitionGraceInterval: TimeInterval = 0.24
     private let panelHoverMonitorMinInterval: TimeInterval = 1.0 / 45.0
+    private let alwaysHiddenRemapMinimumScore: Double = 235
+    private let alwaysHiddenRetainMinimumScore: Double = 160
     private var lastScannedWindowSignature = [CGWindowID]()
     private var lastSuccessfulScanAt = Date.distantPast
     private var consecutiveEmptyScanCount = 0
@@ -165,9 +178,15 @@ final class MenuBarFloatingBarManager: ObservableObject {
     private var pendingRescanWorkItem: DispatchWorkItem?
     private var pendingRescanForce = false
     private var pendingRescanRefreshIcons = false
+    private var pendingRescanDiscoveryMode = MenuBarFloatingScanner.OwnerDiscoveryMode.incremental
     private var pendingPanelPressWatchdogTask: Task<Void, Never>?
     private var lastPlacementRequestAt = Date.distantPast
     private let maxPlacementDragAge: TimeInterval = 12
+    private var lastWakeRecoveryScheduledAt = Date.distantPast
+    private let wakeRecoveryDebounceInterval: TimeInterval = 0.7
+    private var stateMutationProtectionUntil = Date.distantPast
+    private let startupStateMutationProtectionInterval: TimeInterval = 12
+    private let wakeStateMutationProtectionInterval: TimeInterval = 12
     private var panelHoverMonitor: Any?
     private var lastPanelHoverMonitorProcessTime: TimeInterval = 0
     private var didLogIconDebugBootstrap = false
@@ -178,6 +197,10 @@ final class MenuBarFloatingBarManager: ObservableObject {
     private var settingsLaneCacheAlwaysHidden = [MenuBarFloatingItemSnapshot]()
     private var settingsLaneCacheFloatingBar = [MenuBarFloatingItemSnapshot]()
     private var settingsLaneCacheAllFloating = [MenuBarFloatingItemSnapshot]()
+    private var visibleOrderIDs = [String]()
+    private var hiddenOrderIDs = [String]()
+    private var alwaysHiddenOrderIDs = [String]()
+    private var floatingBarOrderIDs = [String]()
     private lazy var iconCacheFileURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
@@ -236,6 +259,10 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
         installObservers()
         scheduleRescanTimer()
+        beginStateMutationProtection(
+            interval: startupStateMutationProtectionInterval,
+            reason: "startup"
+        )
         syncAlwaysHiddenSectionEnabled(forceEnable: false)
         // Keep startup responsive; perform first scan on the next run loop.
         requestRescanOnMainActor(force: true)
@@ -249,6 +276,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         pendingRescanWorkItem = nil
         pendingRescanForce = false
         pendingRescanRefreshIcons = false
+        pendingRescanDiscoveryMode = .incremental
         pendingPanelPressWatchdogTask?.cancel()
         pendingPanelPressWatchdogTask = nil
         removePanelHoverMonitor()
@@ -263,6 +291,8 @@ final class MenuBarFloatingBarManager: ObservableObject {
         panelPressStartedAt = nil
         lastPanelHoverAt = Date.distantPast
         lastHiddenSectionVisibleAt = Date.distantPast
+        lastWakeRecoveryScheduledAt = Date.distantPast
+        stateMutationProtectionUntil = Date.distantPast
         isRelocationInProgress = false
         moveInProgressItemIDs.removeAll()
         pendingPlacementByID.removeAll()
@@ -290,7 +320,11 @@ final class MenuBarFloatingBarManager: ObservableObject {
         clearMenuInteractionMask()
     }
 
-    func rescan(force: Bool = false, refreshIcons: Bool = false) {
+    func rescan(
+        force: Bool = false,
+        refreshIcons: Bool = false,
+        discoveryMode: MenuBarFloatingScanner.OwnerDiscoveryMode = .incremental
+    ) {
         guard isRunning else { return }
         guard !isRelocationInProgress || force else { return }
         if force || refreshIcons {
@@ -335,8 +369,14 @@ final class MenuBarFloatingBarManager: ObservableObject {
         // Capture real menu bar icon bitmaps only on explicit user refreshes.
         // This avoids recurring screen-recording capture activity during idle scans.
         let includeIcons = PermissionManager.shared.isScreenRecordingGranted && refreshIcons
+        let effectiveDiscoveryMode: MenuBarFloatingScanner.OwnerDiscoveryMode =
+            (refreshIcons || discoveryMode == .aggressive) ? .aggressive : .incremental
         let ownerHints = refreshIcons ? nil : preferredOwnerBundleIDsForRescan()
-        let rawItems = scanner.scan(includeIcons: includeIcons, preferredOwnerBundleIDs: ownerHints)
+        let rawItems = scanner.scan(
+            includeIcons: includeIcons,
+            preferredOwnerBundleIDs: ownerHints,
+            discoveryMode: effectiveDiscoveryMode
+        )
         let resolvedItems = rawItems.map { item in
             let resolvedIcon: NSImage?
             let iconSource: String
@@ -430,13 +470,17 @@ final class MenuBarFloatingBarManager: ObservableObject {
         rescan(force: true)
         let hiddenItems = currentlyHiddenItems()
         var itemsToShow = hiddenItems.isEmpty
-            ? scannedItems.filter { !isMandatoryMenuBarManagerControlItem($0) }
+            ? scannedItems
+                .filter { !isMandatoryMenuBarManagerControlItem($0) }
+                .compactMap { renderableFloatingItem($0) }
             : hiddenItems
         if itemsToShow.isEmpty {
             rescan(force: true)
             let refreshedHiddenItems = currentlyHiddenItems()
             itemsToShow = refreshedHiddenItems.isEmpty
-                ? scannedItems.filter { !isMandatoryMenuBarManagerControlItem($0) }
+                ? scannedItems
+                    .filter { !isMandatoryMenuBarManagerControlItem($0) }
+                    .compactMap { renderableFloatingItem($0) }
                 : refreshedHiddenItems
         }
         guard !itemsToShow.isEmpty else { return }
@@ -498,8 +542,22 @@ final class MenuBarFloatingBarManager: ObservableObject {
             }
             guard alwaysHiddenItemIDs.contains(id) else { return }
             floatingBarItemIDs.insert(id)
+            _ = moveItemOrder(
+                itemID: id,
+                to: .floatingBar,
+                before: nil,
+                persistConfiguration: false
+            )
         } else {
             floatingBarItemIDs.remove(id)
+            if alwaysHiddenItemIDs.contains(id) {
+                _ = moveItemOrder(
+                    itemID: id,
+                    to: .alwaysHidden,
+                    before: nil,
+                    persistConfiguration: false
+                )
+            }
         }
     }
 
@@ -655,6 +713,221 @@ final class MenuBarFloatingBarManager: ObservableObject {
         settingsLaneCacheAllFloating.removeAll(keepingCapacity: false)
     }
 
+    private func normalizedLaneOrderIDs(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        var normalized = [String]()
+        normalized.reserveCapacity(ids.count)
+        for id in ids where !id.isEmpty && !isMandatoryMenuBarManagerControlID(id) {
+            if seen.insert(id).inserted {
+                normalized.append(id)
+            }
+        }
+        return normalized
+    }
+
+    private func laneOrderIDs(for lane: SettingsLane) -> [String] {
+        switch lane {
+        case .visible:
+            return visibleOrderIDs
+        case .hidden:
+            return hiddenOrderIDs
+        case .alwaysHidden:
+            return alwaysHiddenOrderIDs
+        case .floatingBar:
+            return floatingBarOrderIDs
+        }
+    }
+
+    private func setLaneOrderIDs(_ ids: [String], for lane: SettingsLane) {
+        let normalized = normalizedLaneOrderIDs(ids)
+        switch lane {
+        case .visible:
+            visibleOrderIDs = normalized
+        case .hidden:
+            hiddenOrderIDs = normalized
+        case .alwaysHidden:
+            alwaysHiddenOrderIDs = normalized
+        case .floatingBar:
+            floatingBarOrderIDs = normalized
+        }
+    }
+
+    @discardableResult
+    private func moveItemOrder(
+        itemID: String,
+        to lane: SettingsLane,
+        before targetItemID: String?,
+        persistConfiguration: Bool
+    ) -> Bool {
+        guard !itemID.isEmpty else { return false }
+
+        let currentVisible = visibleOrderIDs
+        let currentHidden = hiddenOrderIDs
+        let currentAlwaysHidden = alwaysHiddenOrderIDs
+        let currentFloatingBar = floatingBarOrderIDs
+
+        var lanes: [SettingsLane: [String]] = [
+            .visible: normalizedLaneOrderIDs(currentVisible).filter { $0 != itemID },
+            .hidden: normalizedLaneOrderIDs(currentHidden).filter { $0 != itemID },
+            .alwaysHidden: normalizedLaneOrderIDs(currentAlwaysHidden).filter { $0 != itemID },
+            .floatingBar: normalizedLaneOrderIDs(currentFloatingBar).filter { $0 != itemID },
+        ]
+
+        var destination = lanes[lane] ?? []
+        let targetID = (targetItemID == itemID) ? nil : targetItemID
+        if let targetID, let targetIndex = destination.firstIndex(of: targetID) {
+            destination.insert(itemID, at: targetIndex)
+        } else {
+            destination.append(itemID)
+        }
+        lanes[lane] = destination
+
+        let nextVisible = lanes[.visible] ?? []
+        let nextHidden = lanes[.hidden] ?? []
+        let nextAlwaysHidden = lanes[.alwaysHidden] ?? []
+        let nextFloatingBar = lanes[.floatingBar] ?? []
+
+        let didChange =
+            nextVisible != currentVisible
+            || nextHidden != currentHidden
+            || nextAlwaysHidden != currentAlwaysHidden
+            || nextFloatingBar != currentFloatingBar
+        guard didChange else { return false }
+
+        visibleOrderIDs = nextVisible
+        hiddenOrderIDs = nextHidden
+        alwaysHiddenOrderIDs = nextAlwaysHidden
+        floatingBarOrderIDs = nextFloatingBar
+        invalidateSettingsLaneCache()
+
+        if persistConfiguration, !isLoadingConfiguration {
+            saveConfiguration()
+            applyPanel()
+        }
+
+        return true
+    }
+
+    func reorderSettingsItem(
+        itemID: String,
+        to lane: SettingsLane,
+        before targetItemID: String?
+    ) {
+        _ = moveItemOrder(
+            itemID: itemID,
+            to: lane,
+            before: targetItemID,
+            persistConfiguration: true
+        )
+    }
+
+    private func orderedLaneItems(
+        _ items: [MenuBarFloatingItemSnapshot],
+        lane: SettingsLane
+    ) -> [MenuBarFloatingItemSnapshot] {
+        guard items.count > 1 else { return items }
+
+        let orderIDs = laneOrderIDs(for: lane)
+        guard !orderIDs.isEmpty else {
+            return items.sorted(by: settingsFallbackSort)
+        }
+
+        var rankByID = [String: Int]()
+        rankByID.reserveCapacity(orderIDs.count)
+        for (index, id) in orderIDs.enumerated() where rankByID[id] == nil {
+            rankByID[id] = index
+        }
+
+        return items.sorted { lhs, rhs in
+            let lhsRank = rankByID[lhs.id] ?? Int.max
+            let rhsRank = rankByID[rhs.id] ?? Int.max
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+            return settingsFallbackSort(lhs, rhs)
+        }
+    }
+
+    private func settingsFallbackSort(
+        _ lhs: MenuBarFloatingItemSnapshot,
+        _ rhs: MenuBarFloatingItemSnapshot
+    ) -> Bool {
+        let lhsX = lhs.quartzFrame.minX
+        let rhsX = rhs.quartzFrame.minX
+        if lhsX != rhsX {
+            return lhsX < rhsX
+        }
+        return lhs.id < rhs.id
+    }
+
+    private func remapOrderItemID(
+        _ ids: [String],
+        oldID: String,
+        newID: String
+    ) -> [String] {
+        guard oldID != newID else { return ids }
+        var result = [String]()
+        result.reserveCapacity(ids.count)
+        var insertedNew = false
+        for id in ids {
+            if id == oldID || id == newID {
+                if !insertedNew {
+                    result.append(newID)
+                    insertedNew = true
+                }
+            } else {
+                result.append(id)
+            }
+        }
+        return result
+    }
+
+    private func remapOrderItemID(oldID: String, newID: String) {
+        guard oldID != newID else { return }
+        let changedVisible = remapOrderItemID(visibleOrderIDs, oldID: oldID, newID: newID)
+        let changedHidden = remapOrderItemID(hiddenOrderIDs, oldID: oldID, newID: newID)
+        let changedAlwaysHidden = remapOrderItemID(alwaysHiddenOrderIDs, oldID: oldID, newID: newID)
+        let changedFloating = remapOrderItemID(floatingBarOrderIDs, oldID: oldID, newID: newID)
+        let didChange =
+            changedVisible != visibleOrderIDs
+            || changedHidden != hiddenOrderIDs
+            || changedAlwaysHidden != alwaysHiddenOrderIDs
+            || changedFloating != floatingBarOrderIDs
+        guard didChange else { return }
+        visibleOrderIDs = changedVisible
+        hiddenOrderIDs = changedHidden
+        alwaysHiddenOrderIDs = changedAlwaysHidden
+        floatingBarOrderIDs = changedFloating
+        invalidateSettingsLaneCache()
+        if !isLoadingConfiguration {
+            saveConfiguration()
+            applyPanel()
+        }
+    }
+
+    private func removeOrderItemIDs(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        let changedVisible = visibleOrderIDs.filter { !ids.contains($0) }
+        let changedHidden = hiddenOrderIDs.filter { !ids.contains($0) }
+        let changedAlwaysHidden = alwaysHiddenOrderIDs.filter { !ids.contains($0) }
+        let changedFloating = floatingBarOrderIDs.filter { !ids.contains($0) }
+        let didChange =
+            changedVisible != visibleOrderIDs
+            || changedHidden != hiddenOrderIDs
+            || changedAlwaysHidden != alwaysHiddenOrderIDs
+            || changedFloating != floatingBarOrderIDs
+        guard didChange else { return }
+        visibleOrderIDs = changedVisible
+        hiddenOrderIDs = changedHidden
+        alwaysHiddenOrderIDs = changedAlwaysHidden
+        floatingBarOrderIDs = changedFloating
+        invalidateSettingsLaneCache()
+        if !isLoadingConfiguration {
+            saveConfiguration()
+            applyPanel()
+        }
+    }
+
     func settingsLaneItems() -> SettingsLaneItems {
         let items = settingsItems
         let signature = settingsLaneSignature(for: items)
@@ -711,22 +984,31 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
 
         let floatingIDs = floatingBarItemIDs
-        let alwaysHidden = floating.filter { !floatingIDs.contains($0.id) }
-        let floatingBar = floating.filter { floatingIDs.contains($0.id) }
+        let alwaysHidden = orderedLaneItems(
+            floating.filter { !floatingIDs.contains($0.id) },
+            lane: .alwaysHidden
+        )
+        let floatingBar = orderedLaneItems(
+            floating.filter { floatingIDs.contains($0.id) },
+            lane: .floatingBar
+        )
+        visible = orderedLaneItems(visible, lane: .visible)
+        hidden = orderedLaneItems(hidden, lane: .hidden)
+        let allFloating = alwaysHidden + floatingBar
 
         settingsLaneCacheSignature = signature
         settingsLaneCacheVisible = visible
         settingsLaneCacheHidden = hidden
         settingsLaneCacheAlwaysHidden = alwaysHidden
         settingsLaneCacheFloatingBar = floatingBar
-        settingsLaneCacheAllFloating = floating
+        settingsLaneCacheAllFloating = allFloating
 
         return SettingsLaneItems(
             visible: visible,
             hidden: hidden,
             alwaysHidden: alwaysHidden,
             floatingBar: floatingBar,
-            allFloating: floating
+            allFloating: allFloating
         )
     }
 
@@ -753,6 +1035,23 @@ final class MenuBarFloatingBarManager: ObservableObject {
         for (id, placement) in pendingPlacementByID.sorted(by: { $0.key < $1.key }) {
             hasher.combine(id)
             hasher.combine(placement.rawValue)
+        }
+
+        hasher.combine(visibleOrderIDs.count)
+        for id in visibleOrderIDs {
+            hasher.combine(id)
+        }
+        hasher.combine(hiddenOrderIDs.count)
+        for id in hiddenOrderIDs {
+            hasher.combine(id)
+        }
+        hasher.combine(alwaysHiddenOrderIDs.count)
+        for id in alwaysHiddenOrderIDs {
+            hasher.combine(id)
+        }
+        hasher.combine(floatingBarOrderIDs.count)
+        for id in floatingBarOrderIDs {
+            hasher.combine(id)
         }
 
         if let hiddenOriginX = lastKnownHiddenSeparatorOriginX {
@@ -812,9 +1111,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         return merged
             .filter { !isMandatoryMenuBarManagerControlItem($0) }
-            .sorted { lhs, rhs in
-            lhs.quartzFrame.minX < rhs.quartzFrame.minX
-        }
+            .sorted(by: settingsFallbackSort)
     }
 
     private func isInFloatingBar(_ itemID: String) -> Bool {
@@ -873,6 +1170,12 @@ final class MenuBarFloatingBarManager: ObservableObject {
             if targetPlacement == .floating {
                 alwaysHiddenItemIDs.insert(item.id)
                 floatingBarItemIDs.insert(item.id)
+                _ = moveItemOrder(
+                    itemID: item.id,
+                    to: .floatingBar,
+                    before: nil,
+                    persistConfiguration: false
+                )
             }
             return
         }
@@ -907,6 +1210,10 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         let previousAlwaysHidden = alwaysHiddenItemIDs
         let previousFloatingBar = floatingBarItemIDs
+        let previousVisibleOrder = visibleOrderIDs
+        let previousHiddenOrder = hiddenOrderIDs
+        let previousAlwaysHiddenOrder = alwaysHiddenOrderIDs
+        let previousFloatingBarOrder = floatingBarOrderIDs
 
         // Optimistically reflect toggle state in UI, then revert on failure.
         if targetPlacement == .floating {
@@ -914,9 +1221,22 @@ final class MenuBarFloatingBarManager: ObservableObject {
             // Default behavior: newly always-hidden items are included in Floating Bar.
             // Settings drag/drop can immediately opt out via setFloatingBarInclusion(false,...).
             floatingBarItemIDs.insert(item.id)
+            _ = moveItemOrder(
+                itemID: item.id,
+                to: .floatingBar,
+                before: nil,
+                persistConfiguration: false
+            )
         } else {
             alwaysHiddenItemIDs.remove(item.id)
             floatingBarItemIDs.remove(item.id)
+            let destinationLane: SettingsLane = (targetPlacement == .hidden) ? .hidden : .visible
+            _ = moveItemOrder(
+                itemID: item.id,
+                to: destinationLane,
+                before: nil,
+                persistConfiguration: false
+            )
         }
         pendingPlacementByID[item.id] = targetPlacement
 
@@ -950,6 +1270,11 @@ final class MenuBarFloatingBarManager: ObservableObject {
             if !moved {
                 strongSelf.alwaysHiddenItemIDs = previousAlwaysHidden
                 strongSelf.floatingBarItemIDs = previousFloatingBar
+                strongSelf.visibleOrderIDs = previousVisibleOrder
+                strongSelf.hiddenOrderIDs = previousHiddenOrder
+                strongSelf.alwaysHiddenOrderIDs = previousAlwaysHiddenOrder
+                strongSelf.floatingBarOrderIDs = previousFloatingBarOrder
+                strongSelf.invalidateSettingsLaneCache()
                 strongSelf.pendingPlacementByID.removeValue(forKey: item.id)
             }
         }
@@ -968,6 +1293,20 @@ final class MenuBarFloatingBarManager: ObservableObject {
         return nil
     }
 
+    private func renderableFloatingItem(_ item: MenuBarFloatingItemSnapshot) -> MenuBarFloatingItemSnapshot? {
+        let resolved = withCachedIconIfNeeded(item)
+        if resolved.icon != nil {
+            return resolved
+        }
+        if let registry = itemRegistryByID[item.id] {
+            let registryResolved = withCachedIconIfNeeded(registry)
+            if registryResolved.icon != nil {
+                return registryResolved
+            }
+        }
+        return nil
+    }
+
     private func currentlyHiddenItems() -> [MenuBarFloatingItemSnapshot] {
         let scannedByID = indexByID(scannedItems)
         var hiddenByID = [String: MenuBarFloatingItemSnapshot]()
@@ -976,10 +1315,13 @@ final class MenuBarFloatingBarManager: ObservableObject {
 
         for id in effectiveFloatingIDs {
             if let scanned = scannedByID[id] {
-                hiddenByID[id] = scanned
+                if let renderable = renderableFloatingItem(scanned) {
+                    hiddenByID[id] = renderable
+                }
             } else if let cached = itemRegistryByID[id], shouldRetainRegistryFallback(cached, itemID: id) {
-                let resolved = withCachedIconIfNeeded(cached)
-                hiddenByID[id] = resolved
+                if let renderable = renderableFloatingItem(cached) {
+                    hiddenByID[id] = renderable
+                }
             }
         }
 
@@ -988,15 +1330,15 @@ final class MenuBarFloatingBarManager: ObservableObject {
         for item in scannedItems {
             guard !isMandatoryMenuBarManagerControlItem(item) else { continue }
             if placement(for: item) == .floating, isInFloatingBar(item.id) {
-                hiddenByID[item.id] = item
+                if let renderable = renderableFloatingItem(item) {
+                    hiddenByID[item.id] = renderable
+                }
             }
         }
 
-        return Array(hiddenByID.values)
+        let filtered = Array(hiddenByID.values)
             .filter { !isMandatoryMenuBarManagerControlItem($0) }
-            .sorted { lhs, rhs in
-                lhs.quartzFrame.minX < rhs.quartzFrame.minX
-            }
+        return orderedLaneItems(filtered, lane: .floatingBar)
     }
 
     private func applyPanel() {
@@ -1037,13 +1379,25 @@ final class MenuBarFloatingBarManager: ObservableObject {
             && Date().timeIntervalSince(lastHiddenSectionVisibleAt) <= panelTransitionGraceInterval
         let shouldStayVisibleBecausePanelHover =
             isPanelHoveredNow || isWithinPanelHoverGrace || isWithinPanelTransitionGrace
-        let shouldShowBecauseHover = isHiddenSectionVisibleNow || shouldStayVisibleBecausePanelHover
+        let isFullscreenContext = isFullscreenContextForFloatingBar()
+        let menuBarRevealedNow = isMenuBarRevealedForFloatingBar()
+        let shouldShowBecauseHover: Bool = {
+            if isFullscreenContext {
+                // In fullscreen, keep the floating bar tied to active menu bar reveal state.
+                // This prevents the bar from lingering after the menu bar retracts.
+                return shouldStayVisibleBecausePanelHover
+                    || (isHiddenSectionVisibleNow && menuBarRevealedNow)
+            }
+            return isHiddenSectionVisibleNow || shouldStayVisibleBecausePanelHover
+        }()
         let shouldShowBecauseManualPreview = isManualPreviewRequested
         let itemsToShow = shouldShowBecauseManualPreview && hiddenItems.isEmpty
-            ? scannedItems.filter { !isMandatoryMenuBarManagerControlItem($0) }
+            ? scannedItems
+                .filter { !isMandatoryMenuBarManagerControlItem($0) }
+                .compactMap { renderableFloatingItem($0) }
             : hiddenItems
         if isIconDebugEnabled {
-            let reason = "showHover=\(shouldShowBecauseHover) showManual=\(shouldShowBecauseManualPreview) hiddenVisible=\(isHiddenSectionVisibleNow)"
+            let reason = "showHover=\(shouldShowBecauseHover) showManual=\(shouldShowBecauseManualPreview) hiddenVisible=\(isHiddenSectionVisibleNow) fullscreen=\(isFullscreenContext) menuBarRevealed=\(menuBarRevealedNow)"
             if itemsToShow.isEmpty {
                 iconDebugLog("panel skipped reason=\(reason) emptyItems=true")
             } else {
@@ -1449,6 +1803,50 @@ final class MenuBarFloatingBarManager: ObservableObject {
             screen: screen,
             menuBarHeight: menuBarHeight
         )
+    }
+
+    private func isFullscreenContextForFloatingBar() -> Bool {
+        guard let screen = interactionScreen(for: NSEvent.mouseLocation),
+              let displayID = MenuBarFloatingCoordinateConverter.displayID(for: screen) else {
+            return false
+        }
+        return NotchWindowController.shared.fullscreenDisplayIDs.contains(displayID)
+    }
+
+    private func isMenuBarRevealedForFloatingBar() -> Bool {
+        guard let screen = interactionScreen(for: NSEvent.mouseLocation) else { return false }
+
+        // When available, visible-frame insets are the strongest signal.
+        let inferredMenuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+        if inferredMenuBarHeight > 0.5 {
+            return true
+        }
+
+        // Active tracked menu windows indicate the menu bar is currently open.
+        if hasActiveMenuWindow() {
+            return true
+        }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let probeHeight = max(1, NSStatusBar.system.thickness)
+        guard isInInteractiveMenuBarZone(
+            mouseLocation: mouseLocation,
+            screen: screen,
+            menuBarHeight: probeHeight
+        ) else {
+            return false
+        }
+
+        // In fullscreen spaces the menu bar can be transient. Probe status-item windows
+        // near the cursor so we only treat it as revealed when menu bar elements exist.
+        let mouseQuartzRect = MenuBarFloatingCoordinateConverter.appKitToQuartz(
+            CGRect(x: mouseLocation.x, y: mouseLocation.y, width: 1, height: 1)
+        )
+        let mouseQuartzPoint = CGPoint(x: mouseQuartzRect.midX, y: mouseQuartzRect.midY)
+        if MenuBarStatusWindowCache.containsStatusItem(at: mouseQuartzPoint, maxAge: 0.12) {
+            return true
+        }
+        return MenuBarStatusWindowCache.containsAnyStatusWindow(at: mouseQuartzPoint, maxAge: 0.12)
     }
 
     private func interactionScreen(for mouseLocation: CGPoint) -> NSScreen? {
@@ -2325,6 +2723,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         if let pendingPlacement = pendingPlacementByID.removeValue(forKey: oldID) {
             pendingPlacementByID[newID] = pendingPlacement
         }
+        remapOrderItemID(oldID: oldID, newID: newID)
 
         if target == .alwaysHidden {
             let wasInFloatingBar = floatingBarItemIDs.contains(oldID)
@@ -2689,6 +3088,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         guard !alwaysHiddenItemIDs.isEmpty else { return }
 
         let scannedByID = indexByID(items)
+        let shouldSuppressOwnerAbsencePruning = isStateMutationProtectionActive
         var sanitized = alwaysHiddenItemIDs.filter { !isMandatoryMenuBarManagerControlID($0) }
 
         sanitized = sanitized.filter { id in
@@ -2696,10 +3096,16 @@ final class MenuBarFloatingBarManager: ObservableObject {
                 return !isMandatoryMenuBarManagerControlItem(scanned)
             }
             if let cached = itemRegistryByID[id] {
+                if shouldSuppressOwnerAbsencePruning {
+                    return !isMandatoryMenuBarManagerControlItem(cached)
+                }
                 guard shouldRetainRegistryFallback(cached, itemID: id) else { return false }
                 return !isMandatoryMenuBarManagerControlItem(cached)
             }
             if let ownerBundleID = ownerBundleIDFromItemID(id) {
+                if shouldSuppressOwnerAbsencePruning {
+                    return true
+                }
                 return isOwnerBundleRunning(ownerBundleID)
             }
             return true
@@ -2735,6 +3141,9 @@ final class MenuBarFloatingBarManager: ObservableObject {
     }
 
     private func shouldUseRegistryFallback(for item: MenuBarFloatingItemSnapshot, itemID: String) -> Bool {
+        if isStateMutationProtectionActive {
+            return true
+        }
         if isOwnerBundleRunning(item.ownerBundleID) {
             return true
         }
@@ -2782,36 +3191,20 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
         guard !candidates.isEmpty else { return false }
 
-        if candidates.contains(where: { $0.id == fallback.id }) {
-            return true
-        }
-        if let fallbackIdentifier = fallback.axIdentifier, !fallbackIdentifier.isEmpty,
-           candidates.contains(where: { $0.axIdentifier == fallbackIdentifier }) {
-            return true
-        }
-        if let fallbackWindowID = fallback.windowID,
-           candidates.contains(where: { $0.windowID == fallbackWindowID }) {
-            return true
-        }
-        if let fallbackIndex = fallback.statusItemIndex,
-           candidates.contains(where: { $0.statusItemIndex == fallbackIndex }) {
-            return true
-        }
-        let fallbackTitleToken = stableTextToken(fallback.title)
-        if let fallbackTitleToken,
-           candidates.contains(where: { stableTextToken($0.title) == fallbackTitleToken }) {
-            return true
-        }
-        let fallbackDetailToken = stableTextToken(fallback.detail)
-        if let fallbackDetailToken,
-           candidates.contains(where: { stableTextToken($0.detail) == fallbackDetailToken }) {
-            return true
-        }
-        return false
+        let bestScore = candidates
+            .map { alwaysHiddenMatchScore(for: fallback, candidate: $0) }
+            .max() ?? -.greatestFiniteMagnitude
+        return bestScore >= alwaysHiddenRetainMinimumScore
     }
 
     private func pruneTerminatedItems(for bundleID: String) {
         guard !bundleID.isEmpty else { return }
+        if isStateMutationProtectionActive {
+            if isIconDebugEnabled {
+                iconDebugLog("terminated owner prune skipped-protected bundle=\(bundleID)")
+            }
+            return
+        }
         let normalizedBundleID = bundleID.lowercased()
         var idsToRemove = Set<String>()
 
@@ -2847,6 +3240,7 @@ final class MenuBarFloatingBarManager: ObservableObject {
         if sanitizedFloating != floatingBarItemIDs {
             floatingBarItemIDs = sanitizedFloating
         }
+        removeOrderItemIDs(idsToRemove)
 
         if isIconDebugEnabled {
             iconDebugLog("terminated owner pruned bundle=\(bundleID) removed=\(idsToRemove.count)")
@@ -2866,51 +3260,117 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
         guard !candidates.isEmpty else { return nil }
 
+        if let exactIDMatch = candidates.first(where: { $0.id == fallback.id }) {
+            return exactIDMatch
+        }
+
+        let ranked = candidates.map { candidate in
+            let score = alwaysHiddenMatchScore(for: fallback, candidate: candidate)
+            return (candidate: candidate, score: score)
+        }
+        .sorted { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
+            }
+            let lhsDistance = abs(lhs.candidate.quartzFrame.midX - fallback.quartzFrame.midX)
+            let rhsDistance = abs(rhs.candidate.quartzFrame.midX - fallback.quartzFrame.midX)
+            return lhsDistance < rhsDistance
+        }
+
+        guard let best = ranked.first,
+              best.score >= alwaysHiddenRemapMinimumScore else {
+            return nil
+        }
+
+        if !hasStrongIdentityAnchor(fallback: fallback, candidate: best.candidate),
+           let second = ranked.dropFirst().first,
+           abs(best.score - second.score) < 42 {
+            return nil
+        }
+
+        return best.candidate
+    }
+
+    private func alwaysHiddenMatchScore(
+        for fallback: MenuBarFloatingItemSnapshot,
+        candidate: MenuBarFloatingItemSnapshot
+    ) -> Double {
+        guard candidate.ownerBundleID == fallback.ownerBundleID else { return -.greatestFiniteMagnitude }
+
+        var score: Double = 0
+        if candidate.id == fallback.id {
+            score += 950
+        }
+
         if let fallbackIdentifier = fallback.axIdentifier,
-           let identifierMatch = candidates.first(where: { $0.axIdentifier == fallbackIdentifier }) {
-            return identifierMatch
+           !fallbackIdentifier.isEmpty,
+           candidate.axIdentifier == fallbackIdentifier {
+            score += 620
         }
 
-        if let fallbackWindowID = fallback.windowID {
-            let windowMatches = candidates.filter { $0.windowID == fallbackWindowID }
-            if let windowMatch = nearestByQuartzDistance(from: fallback, in: windowMatches) {
-                return windowMatch
-            }
+        if let fallbackWindowID = fallback.windowID,
+           candidate.windowID == fallbackWindowID {
+            score += 520
         }
 
-        let fallbackDetailToken = stableTextToken(fallback.detail)
-        if let fallbackDetailToken {
-            let detailMatches = candidates.filter { stableTextToken($0.detail) == fallbackDetailToken }
-            if let detailMatch = nearestByQuartzDistance(from: fallback, in: detailMatches) {
-                return detailMatch
-            }
+        if let fallbackIndex = fallback.statusItemIndex,
+           candidate.statusItemIndex == fallbackIndex {
+            score += 340
         }
 
-        let fallbackTitleToken = stableTextToken(fallback.title)
-        if let fallbackTitleToken {
-            let titleMatches = candidates.filter { stableTextToken($0.title) == fallbackTitleToken }
-            if let titleMatch = nearestByQuartzDistance(from: fallback, in: titleMatches) {
-                return titleMatch
-            }
+        if let fallbackDetailToken = stableTextToken(fallback.detail),
+           stableTextToken(candidate.detail) == fallbackDetailToken {
+            score += 260
         }
 
-        if let fallbackIndex = fallback.statusItemIndex {
-            let indexMatches = candidates.filter { $0.statusItemIndex == fallbackIndex }
-            if let indexMatch = nearestByQuartzDistance(from: fallback, in: indexMatches) {
-                return indexMatch
-            }
+        if let fallbackTitleToken = stableTextToken(fallback.title),
+           stableTextToken(candidate.title) == fallbackTitleToken {
+            score += 210
         }
 
-        let geometryMatches = candidates.filter { candidate in
-            abs(candidate.quartzFrame.width - fallback.quartzFrame.width) <= 2
-                && abs(candidate.quartzFrame.height - fallback.quartzFrame.height) <= 2
-                && abs(candidate.quartzFrame.midX - fallback.quartzFrame.midX) <= 28
-        }
-        if geometryMatches.count == 1 {
-            return geometryMatches[0]
+        let widthDelta = Double(abs(candidate.quartzFrame.width - fallback.quartzFrame.width))
+        let heightDelta = Double(abs(candidate.quartzFrame.height - fallback.quartzFrame.height))
+        if widthDelta <= 2, heightDelta <= 2 {
+            score += 96
+        } else {
+            score += max(0.0, 52.0 - ((widthDelta + heightDelta) * 5.5))
         }
 
-        return nil
+        let midpointDistance = Double(abs(candidate.quartzFrame.midX - fallback.quartzFrame.midX))
+        score += max(0.0, 165.0 - min(midpointDistance, 165.0))
+
+        return score
+    }
+
+    private func hasStrongIdentityAnchor(
+        fallback: MenuBarFloatingItemSnapshot,
+        candidate: MenuBarFloatingItemSnapshot
+    ) -> Bool {
+        if candidate.id == fallback.id {
+            return true
+        }
+        if let fallbackIdentifier = fallback.axIdentifier,
+           !fallbackIdentifier.isEmpty,
+           candidate.axIdentifier == fallbackIdentifier {
+            return true
+        }
+        if let fallbackWindowID = fallback.windowID,
+           candidate.windowID == fallbackWindowID {
+            return true
+        }
+        if let fallbackIndex = fallback.statusItemIndex,
+           candidate.statusItemIndex == fallbackIndex {
+            return true
+        }
+        if let fallbackDetailToken = stableTextToken(fallback.detail),
+           stableTextToken(candidate.detail) == fallbackDetailToken {
+            return true
+        }
+        if let fallbackTitleToken = stableTextToken(fallback.title),
+           stableTextToken(candidate.title) == fallbackTitleToken {
+            return true
+        }
+        return false
     }
 
     private func nearestByQuartzDistance(
@@ -2953,6 +3413,26 @@ final class MenuBarFloatingBarManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             self?.requestRescanOnMainActor()
+        })
+
+        observers.append(workspaceCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleSystemWake(reason: "workspace-didWake")
+            }
+        })
+
+        observers.append(workspaceCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleSystemWake(reason: "workspace-screensDidWake")
+            }
         })
 
         observers.append(workspaceCenter.addObserver(
@@ -3094,6 +3574,57 @@ final class MenuBarFloatingBarManager: ObservableObject {
         requestRescanOnMainActor(force: true)
     }
 
+    private func handleSystemWake(reason: String) {
+        guard isRunning else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastWakeRecoveryScheduledAt) >= wakeRecoveryDebounceInterval else { return }
+        lastWakeRecoveryScheduledAt = now
+        beginStateMutationProtection(
+            interval: wakeStateMutationProtectionInterval,
+            reason: reason
+        )
+
+        if isIconDebugEnabled {
+            iconDebugLog("wake recovery scheduled reason=\(reason)")
+        }
+
+        MenuBarStatusWindowCache.invalidate()
+        lastScannedWindowSignature.removeAll()
+        lastSuccessfulScanAt = Date.distantPast
+        consecutiveEmptyScanCount = 0
+        scheduleWakeRecoveryRescans()
+    }
+
+    private var isStateMutationProtectionActive: Bool {
+        Date() < stateMutationProtectionUntil
+    }
+
+    private func beginStateMutationProtection(interval: TimeInterval, reason: String) {
+        guard interval > 0 else { return }
+        let deadline = Date().addingTimeInterval(interval)
+        if deadline > stateMutationProtectionUntil {
+            stateMutationProtectionUntil = deadline
+        }
+        if isIconDebugEnabled {
+            let secondsRemaining = max(0, stateMutationProtectionUntil.timeIntervalSinceNow)
+            let roundedRemaining = String(format: "%.2f", secondsRemaining)
+            iconDebugLog("state mutation protection active reason=\(reason) remaining=\(roundedRemaining)s")
+        }
+    }
+
+    private func scheduleWakeRecoveryRescans() {
+        let burstDelays: [TimeInterval] = [0.0, 0.35, 0.95, 1.75]
+        for delay in burstDelays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.requestRescanOnMainActor(
+                    force: true,
+                    refreshIcons: true,
+                    discoveryMode: .aggressive
+                )
+            }
+        }
+    }
+
     private func scheduleRescanTimer() {
         let interval = desiredRescanInterval()
         if rescanTimer != nil, abs(currentRescanInterval - interval) < 0.01 {
@@ -3116,29 +3647,51 @@ final class MenuBarFloatingBarManager: ObservableObject {
         }
     }
 
-    private nonisolated func requestRescanOnMainActor(force: Bool = false, refreshIcons: Bool = false) {
+    private nonisolated func requestRescanOnMainActor(
+        force: Bool = false,
+        refreshIcons: Bool = false,
+        discoveryMode: MenuBarFloatingScanner.OwnerDiscoveryMode = .incremental
+    ) {
         Task { @MainActor [weak self] in
-            self?.enqueueRescanRequest(force: force, refreshIcons: refreshIcons)
+            self?.enqueueRescanRequest(
+                force: force,
+                refreshIcons: refreshIcons,
+                discoveryMode: discoveryMode
+            )
         }
     }
 
-    private func enqueueRescanRequest(force: Bool, refreshIcons: Bool) {
+    private func enqueueRescanRequest(
+        force: Bool,
+        refreshIcons: Bool,
+        discoveryMode: MenuBarFloatingScanner.OwnerDiscoveryMode
+    ) {
         pendingRescanForce = pendingRescanForce || force
         pendingRescanRefreshIcons = pendingRescanRefreshIcons || refreshIcons
+        pendingRescanDiscoveryMode = mergedDiscoveryMode(
+            pendingRescanDiscoveryMode,
+            discoveryMode
+        )
         if pendingRescanWorkItem != nil {
             return
         }
 
-        let isUrgent = force || refreshIcons
+        let isUrgent = force || refreshIcons || discoveryMode == .aggressive
         let delay: TimeInterval = isUrgent ? 0 : 0.08
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let pendingForce = self.pendingRescanForce
             let pendingRefreshIcons = self.pendingRescanRefreshIcons
+            let pendingDiscoveryMode = self.pendingRescanDiscoveryMode
             self.pendingRescanForce = false
             self.pendingRescanRefreshIcons = false
+            self.pendingRescanDiscoveryMode = .incremental
             self.pendingRescanWorkItem = nil
-            self.rescan(force: pendingForce, refreshIcons: pendingRefreshIcons)
+            self.rescan(
+                force: pendingForce,
+                refreshIcons: pendingRefreshIcons,
+                discoveryMode: pendingDiscoveryMode
+            )
         }
         pendingRescanWorkItem = workItem
         if isUrgent {
@@ -3146,6 +3699,16 @@ final class MenuBarFloatingBarManager: ObservableObject {
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
+    }
+
+    private func mergedDiscoveryMode(
+        _ lhs: MenuBarFloatingScanner.OwnerDiscoveryMode,
+        _ rhs: MenuBarFloatingScanner.OwnerDiscoveryMode
+    ) -> MenuBarFloatingScanner.OwnerDiscoveryMode {
+        if lhs == .aggressive || rhs == .aggressive {
+            return .aggressive
+        }
+        return .incremental
     }
 
     private func desiredRescanInterval() -> TimeInterval {
@@ -3163,7 +3726,11 @@ final class MenuBarFloatingBarManager: ObservableObject {
         let config = Config(
             isFeatureEnabled: isFeatureEnabled,
             alwaysHiddenItemIDs: Array(alwaysHiddenItemIDs),
-            floatingBarItemIDs: Array(floatingBarItemIDs)
+            floatingBarItemIDs: Array(floatingBarItemIDs),
+            visibleOrderIDs: visibleOrderIDs,
+            hiddenOrderIDs: hiddenOrderIDs,
+            alwaysHiddenOrderIDs: alwaysHiddenOrderIDs,
+            floatingBarOrderIDs: floatingBarOrderIDs
         )
         guard let data = try? JSONEncoder().encode(config) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
@@ -3181,6 +3748,19 @@ final class MenuBarFloatingBarManager: ObservableObject {
             restoredAlwaysHidden.contains($0) && !isMandatoryMenuBarManagerControlID($0)
         })
         floatingBarItemIDs = restoredFloatingBar
+        setLaneOrderIDs(config.visibleOrderIDs ?? [], for: .visible)
+        setLaneOrderIDs(config.hiddenOrderIDs ?? [], for: .hidden)
+        setLaneOrderIDs(
+            config.alwaysHiddenOrderIDs
+            ?? config.alwaysHiddenItemIDs.filter { !restoredFloatingBar.contains($0) },
+            for: .alwaysHidden
+        )
+        setLaneOrderIDs(
+            config.floatingBarOrderIDs
+            ?? config.floatingBarItemIDs
+            ?? config.alwaysHiddenItemIDs,
+            for: .floatingBar
+        )
     }
 
     private func loadPersistedIconCache() {

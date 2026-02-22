@@ -15,6 +15,7 @@ struct HighAlertHUDView: View {
     let hudWidth: CGFloat     // Total HUD width
     var targetScreen: NSScreen? = nil  // Target screen for multi-monitor support
     var notchWidth: CGFloat = 180  // Actual notch width from caller (for proper spacer alignment)
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     
     // Access CaffeineManager for timer display
@@ -25,10 +26,16 @@ struct HighAlertHUDView: View {
         HUDLayoutCalculator(screen: targetScreen ?? NSScreen.main ?? NSScreen.screens.first)
     }
     
+    private var activeAccentColor: Color {
+        colorScheme == .light
+            ? Color(red: 0.78, green: 0.36, blue: 0.05)
+            : Color(red: 1.0, green: 0.62, blue: 0.26)
+    }
+
     /// Accent color based on High Alert state
     private var accentColor: Color {
         isActive
-            ? Color(red: 1.0, green: 0.62, blue: 0.26)
+            ? activeAccentColor
             : (useAdaptiveForegrounds ? AdaptiveColors.secondaryTextAuto.opacity(0.85) : .white.opacity(0.78))
     }
 

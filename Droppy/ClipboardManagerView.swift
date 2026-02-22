@@ -41,6 +41,12 @@ private struct SafeVideoPreview: NSViewRepresentable {
 }
 
 struct ClipboardManagerView: View {
+    private enum TrafficLightKind {
+        case close
+        case minimize
+        case zoom
+    }
+
     @ObservedObject var manager = ClipboardManager.shared
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.clipboardAutoFocusSearch) private var autoFocusSearch = PreferenceDefault.clipboardAutoFocusSearch
@@ -73,9 +79,14 @@ struct ClipboardManagerView: View {
     @State private var isTagPopoverVisible = false
     @State private var showTagManagement = false
     @State private var showClearAllConfirmation = false
+    @State private var topBarTextEditingItemID: UUID?
+    @State private var topBarTextEditingContent = ""
+    @State private var hoveredTrafficLight: TrafficLightKind?
+    @State private var suppressListAnimations = true
     
     // Cached sorted/filtered history (updated only when needed)
     @State private var cachedSortedHistory: [ClipboardItem] = []
+    @State private var removingBackgroundItemIDs: Set<UUID> = []
     
     /// Helper to get selected items as array, respecting visual order
     private var selectedItemsArray: [ClipboardItem] {
@@ -97,58 +108,54 @@ struct ClipboardManagerView: View {
         cachedSortedHistory.filter { !$0.isFlagged }
     }
 
-    /// Keep toolbar items structurally stable to avoid AppKit removal crashes.
+    private var singleSelectedItem: ClipboardItem? {
+        guard selectedItemsArray.count == 1 else { return nil }
+        return selectedItemsArray.first
+    }
+
+    /// Single selected image that can be opened in Screenshot Editor.
     private var selectedEditableImage: NSImage? {
-        guard selectedItemsArray.count == 1,
-              let item = selectedItemsArray.first,
+        guard let item = singleSelectedItem,
               item.type == .image,
               let imageData = item.loadImageData() else {
             return nil
         }
         return NSImage(data: imageData)
     }
-    
-    /// Recompute sorted history (called only when history or search changes)
-    private func updateSortedHistory() {
-        let historySnapshot = manager.history
-        let searchSnapshot = searchText
-        let tagFilterSnapshot = selectedTagFilter
-        
-        // Apply tag filter first
-        var filtered: [ClipboardItem]
-        if let tagId = tagFilterSnapshot {
-            filtered = historySnapshot.filter { $0.tagId == tagId }
-        } else {
-            filtered = historySnapshot
-        }
-        
-        // Then apply search filter
-        if !searchSnapshot.isEmpty {
-            filtered = filtered.filter { item in
-                // PERFORMANCE: Limit content search to first 10K chars for large text
-                let contentPreview = String((item.content ?? "").prefix(10000))
-                return item.title.localizedCaseInsensitiveContains(searchSnapshot) ||
-                contentPreview.localizedCaseInsensitiveContains(searchSnapshot) ||
-                (item.sourceApp ?? "").localizedCaseInsensitiveContains(searchSnapshot)
-            }
-        }
-        
-        // Sort: flagged first, then favorites, then others
-        let flagged = filtered.filter { $0.isFlagged }
-        let favorites = filtered.filter { $0.isFavorite && !$0.isFlagged }
-        let others = filtered.filter { !$0.isFavorite && !$0.isFlagged }
-        cachedSortedHistory = flagged + favorites + others
-    }
-    
+
     // Actions passed from Controller
     var onPaste: (ClipboardItem) -> Void
     var onPasteItems: ([ClipboardItem]) -> Void  // Issue #154: Batch paste
     var onClose: () -> Void
     var onReset: () -> Void
+
+    init(
+        onPaste: @escaping (ClipboardItem) -> Void,
+        onPasteItems: @escaping ([ClipboardItem]) -> Void,
+        onClose: @escaping () -> Void,
+        onReset: @escaping () -> Void
+    ) {
+        self.onPaste = onPaste
+        self.onPasteItems = onPasteItems
+        self.onClose = onClose
+        self.onReset = onReset
+        _cachedSortedHistory = State(
+            initialValue: Self.computeSortedHistory(
+                history: ClipboardManager.shared.history,
+                searchText: "",
+                tagFilter: nil
+            )
+        )
+    }
     
     var body: some View {
         mainContentView
-            .overlay(alignment: .bottom) { feedbackToastView }
+            .overlay(alignment: .bottom) {
+                if !showTagManagement {
+                    feedbackToastView
+                }
+            }
+            .overlay { tagManagementOverlay }
             .onAppear { 
                 updateSortedHistory()
                 handleOnAppear() 
@@ -169,6 +176,17 @@ struct ClipboardManagerView: View {
                     selectedTagFilter = nil
                 }
             }
+            .onChange(of: showTagManagement) { _, showing in
+                if showing {
+                    isTagPopoverVisible = false
+                }
+            }
+            .onChange(of: singleSelectedItem?.id) { _, selectedID in
+                if topBarTextEditingItemID != selectedID {
+                    topBarTextEditingItemID = nil
+                    topBarTextEditingContent = ""
+                }
+            }
             // ENFORCE PENDING SELECTION: After sortedHistory changes, apply pending selection
             .onChange(of: cachedSortedHistory) { _, _ in
                 if let pendingId = pendingSelectionId {
@@ -181,101 +199,44 @@ struct ClipboardManagerView: View {
             // Issue #33: onAppear might not fire if window is just hidden/shown (cached view)
             // Use custom notification from Controller to force reset every time window opens
             .onReceive(NotificationCenter.default.publisher(for: .clipboardWindowDidShow)) { _ in
+                suppressListAnimations = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                    suppressListAnimations = false
+                }
                 // Clear any pending selection on fresh window open
                 pendingSelectionId = nil
                 handleOnAppear()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .clipboardWindowDidHide)) { _ in
+                suppressListAnimations = true
+                pendingSelectionId = nil
+                selectedItems.removeAll()
+                topBarTextEditingItemID = nil
+                topBarTextEditingContent = ""
+            }
     }
     
     private var mainContentView: some View {
-        ZStack {
-            NavigationSplitView {
-                // Sidebar with entries list
-                entriesListView
-                    .frame(minWidth: 400)
-                    .background(Color.clear)
-                    .toolbar {
-                        // Tags filter button (only if tags enabled)
-                        ToolbarItem(placement: .automatic) {
-                            Button {
-                                guard tagsEnabled else { return }
-                                isTagPopoverVisible.toggle()
-                            } label: {
-                                ZStack(alignment: .topTrailing) {
-                                    Image(systemName: "tag")
-                                    // Show dot when filter active
-                                    if selectedTagFilter != nil {
-                                        Circle()
-                                            .fill(manager.getTag(by: selectedTagFilter)?.color ?? .blue)
-                                            .frame(width: 6, height: 6)
-                                            .offset(x: 2, y: -2)
-                                    }
-                                }
-                            }
-                            .droppyPopover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
-                                TagFilterPopover(
-                                    selectedTagFilter: $selectedTagFilter,
-                                    showTagManagement: $showTagManagement,
-                                    manager: manager
-                                )
-                            }
-                            .disabled(!tagsEnabled)
-                            .opacity(tagsEnabled ? 1 : 0)
-                            .allowsHitTesting(tagsEnabled)
-                            .help("Filter by Tag")
-                        }
-                        
-                        // Search button in sidebar
-                        ToolbarItem(placement: .automatic) {
-                            Button {
-                                withAnimation(DroppyAnimation.state) {
-                                    isSearchVisible.toggle()
-                                    if !isSearchVisible {
-                                        searchText = ""
-                                        isSearchFocused = false
-                                    } else {
-                                        isSearchFocused = true
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "magnifyingglass")
-                            }
-                            .keyboardShortcut("f", modifiers: .command)
-                            .help("Search (⌘F)")
-                        }
+        HStack(spacing: 0) {
+            clipboardLeftPanel
 
-                        ToolbarItem(placement: .automatic) {
-                            Button(role: .destructive) {
-                                showClearAllConfirmation = true
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .disabled(manager.history.isEmpty)
-                            .help("Clear All")
-                        }
-                    }
-                    .sheet(isPresented: $showTagManagement) {
-                        TagManagementSheet(manager: manager)
-                    }
-            } detail: {
-                // Detail view with preview pane
+            VStack(spacing: 0) {
+                clipboardTitleBar
+
                 previewPane
-                    .toolbar {
-                        // Edit button (opens image in Screenshot Editor) - Far right of title bar
-                        ToolbarItem(placement: .primaryAction) {
-                            if let image = selectedEditableImage {
-                                Button {
-                                    ScreenshotEditorWindowController.shared.show(with: image)
-                                } label: {
-                                    Image(systemName: "pencil")
-                                }
-                                .help("Edit in Screenshot Editor")
-                            }
-                        }
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 12)
+                    .padding(.leading, 12)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 12)
             }
         }
-        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+        .droppyTransparentBackground(useTransparentBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.16), lineWidth: 1)
+        )
         .frame(minWidth: 1040, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity)
         .background(pasteShortcutButton)
         .background(navigationShortcutButtons)
@@ -292,6 +253,217 @@ struct ClipboardManagerView: View {
             Text("This will permanently remove all clipboard items.")
         }
     }
+
+    @ViewBuilder
+    private var tagManagementOverlay: some View {
+        if showTagManagement {
+            ZStack {
+                Color.black.opacity(0.48)
+                    .contentShape(Rectangle())
+                    .onTapGesture { closeTagManagement() }
+
+                TagManagementSheet(
+                    manager: manager,
+                    onDone: closeTagManagement
+                )
+                .transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(DroppyAnimation.transition, value: showTagManagement)
+        }
+    }
+
+    private var clipboardLeftPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            trafficLightsRow
+                .padding(.top, 10)
+                .padding(.horizontal, 12)
+
+            entriesListView
+        }
+        .frame(width: 400)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .droppyTransparentFill(useTransparentBackground, fallback: AdaptiveColors.panelBackgroundAuto)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.18), lineWidth: 1)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+    }
+
+    private var clipboardTitleBar: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Text("Clipboard")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.88))
+
+            Spacer(minLength: 0)
+
+            clipboardTitleBarTrailingAction
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            ZStack {
+                ClipboardWindowDragView()
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var clipboardTitleBarTrailingAction: some View {
+        if let image = selectedEditableImage {
+            Button {
+                ScreenshotEditorWindowController.shared.show(with: image)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Edit")
+                }
+            }
+            .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
+            .help("Edit in Screenshot Editor")
+        } else if let selected = singleSelectedItem, selected.type == .text {
+            let isEditingSelectedText = topBarTextEditingItemID == selected.id
+            Button {
+                if isEditingSelectedText {
+                    manager.updateItemContent(selected, newContent: topBarTextEditingContent)
+                    topBarTextEditingItemID = nil
+                } else {
+                    topBarTextEditingContent = selected.content ?? ""
+                    topBarTextEditingItemID = selected.id
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isEditingSelectedText ? "checkmark" : "pencil")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(isEditingSelectedText ? "Save" : "Edit")
+                }
+            }
+            .buttonStyle(DroppyAccentButtonStyle(color: isEditingSelectedText ? .green : AdaptiveColors.selectionBlueAuto, size: .small))
+            .help(isEditingSelectedText ? "Save Text" : "Edit Text")
+        }
+    }
+
+    private var trafficLightsRow: some View {
+        HStack(spacing: 8) {
+            trafficLightButton(
+                kind: .close,
+                color: Color(red: 1.0, green: 0.37, blue: 0.34),
+                symbol: "xmark",
+                action: onClose
+            )
+            trafficLightButton(
+                kind: .minimize,
+                color: Color(red: 1.0, green: 0.74, blue: 0.18),
+                symbol: "minus",
+                action: { NSApp.keyWindow?.miniaturize(nil) }
+            )
+            trafficLightButton(
+                kind: .zoom,
+                color: Color(red: 0.17, green: 0.82, blue: 0.33),
+                symbol: "plus",
+                action: { NSApp.keyWindow?.zoom(nil) }
+            )
+
+            Spacer()
+
+            Button {
+                guard tagsEnabled else { return }
+                isTagPopoverVisible.toggle()
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "tag")
+                    if selectedTagFilter != nil {
+                        Circle()
+                            .fill(manager.getTag(by: selectedTagFilter)?.color ?? .blue)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 2, y: -2)
+                    }
+                }
+            }
+            .buttonStyle(DroppyCircleButtonStyle(size: 28))
+            .droppyPopover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
+                TagFilterPopover(
+                    selectedTagFilter: $selectedTagFilter,
+                    showTagManagement: $showTagManagement,
+                    manager: manager
+                )
+            }
+            .disabled(!tagsEnabled)
+            .opacity(tagsEnabled ? 1 : 0)
+            .allowsHitTesting(tagsEnabled)
+            .help("Filter by Tag")
+
+            Button {
+                withAnimation(DroppyAnimation.state) {
+                    isSearchVisible.toggle()
+                    if !isSearchVisible {
+                        searchText = ""
+                        isSearchFocused = false
+                    } else {
+                        isSearchFocused = true
+                    }
+                }
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .buttonStyle(DroppyCircleButtonStyle(size: 28))
+            .keyboardShortcut("f", modifiers: .command)
+            .help("Search (⌘F)")
+
+            Button(role: .destructive) {
+                showClearAllConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(DroppyCircleButtonStyle(size: 28))
+            .disabled(manager.history.isEmpty)
+            .help("Clear All")
+        }
+        .onHover { hovering in
+            if !hovering {
+                hoveredTrafficLight = nil
+            }
+        }
+    }
+
+    private func trafficLightButton(
+        kind: TrafficLightKind,
+        color: Color,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(color)
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.black.opacity(0.2), lineWidth: 0.6)
+                    )
+
+                Image(systemName: symbol)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.black.opacity(0.65))
+                    .opacity(hoveredTrafficLight == nil ? 0 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredTrafficLight = hovering ? kind : nil
+        }
+    }
     
     private var pasteShortcutButton: some View {
         Button("") {
@@ -300,6 +472,7 @@ struct ClipboardManagerView: View {
         }
             .keyboardShortcut(.return, modifiers: []) // 1. Return -> Paste
             .keyboardShortcut(.return, modifiers: .command) // 2. Cmd+Return -> Paste (Bonus)
+            .disabled(showTagManagement)
             .opacity(0)
     }
     
@@ -335,10 +508,17 @@ struct ClipboardManagerView: View {
                 Button("") { bulkSaveSelectedItems() }.keyboardShortcut("s", modifiers: .command)
             }
         }
+        .disabled(showTagManagement)
         .opacity(0)
         // Force SwiftUI to rebuild this view when editing state changes
         // This ensures keyboard shortcuts are properly registered/unregistered
         .id("shortcuts-\(manager.isEditingContent)")
+    }
+
+    private func closeTagManagement() {
+        withAnimation(DroppyAnimation.transition) {
+            showTagManagement = false
+        }
     }
     
     private func handleOnAppear() {
@@ -368,13 +548,53 @@ struct ClipboardManagerView: View {
             selectedItems = [lastCopied.id]
             // Scroll to it in case it's below favorites
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(DroppyAnimation.transition) {
+                if suppressListAnimations {
                     scrollProxy?.scrollTo(lastCopied.id, anchor: .center)
+                } else {
+                    withAnimation(DroppyAnimation.transition) {
+                        scrollProxy?.scrollTo(lastCopied.id, anchor: .center)
+                    }
                 }
             }
         } else {
             selectedItems = []
         }
+    }
+
+    private static func computeSortedHistory(
+        history: [ClipboardItem],
+        searchText: String,
+        tagFilter: UUID?
+    ) -> [ClipboardItem] {
+        var filtered: [ClipboardItem]
+
+        if let tagId = tagFilter {
+            filtered = history.filter { $0.tagId == tagId }
+        } else {
+            filtered = history
+        }
+
+        if !searchText.isEmpty {
+            filtered = filtered.filter { item in
+                let contentPreview = String((item.content ?? "").prefix(10000))
+                return item.title.localizedCaseInsensitiveContains(searchText) ||
+                    contentPreview.localizedCaseInsensitiveContains(searchText) ||
+                    (item.sourceApp ?? "").localizedCaseInsensitiveContains(searchText)
+            }
+        }
+
+        let flagged = filtered.filter { $0.isFlagged }
+        let favorites = filtered.filter { $0.isFavorite && !$0.isFlagged }
+        let others = filtered.filter { !$0.isFavorite && !$0.isFlagged }
+        return flagged + favorites + others
+    }
+
+    private func updateSortedHistory() {
+        cachedSortedHistory = Self.computeSortedHistory(
+            history: manager.history,
+            searchText: searchText,
+            tagFilter: selectedTagFilter
+        )
     }
     
     private func handleHistoryChange(_ new: [ClipboardItem]) {
@@ -597,14 +817,14 @@ struct ClipboardManagerView: View {
                         .focused($isSearchFocused)
                         .frame(maxWidth: .infinity)
                     
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .buttonStyle(DroppyCircleButtonStyle(size: 20))
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark")
                     }
+                    .buttonStyle(DroppyCircleButtonStyle(size: 20))
+                    .opacity(searchText.isEmpty ? 0 : 1)
+                    .disabled(searchText.isEmpty)
                 }
                 .droppyTextInputChrome(
                     cornerRadius: DroppyRadius.large,
@@ -742,6 +962,7 @@ struct ClipboardManagerView: View {
                                     ClipboardItemRow(
                                         item: item, 
                                         isSelected: selectedItems.contains(item.id),
+                                        isRemovingBackground: removingBackgroundItemIDs.contains(item.id),
                                         renamingItemId: $renamingItemId,
                                         renamingText: $renamingText,
                                         onRename: { newName in
@@ -865,6 +1086,28 @@ struct ClipboardManagerView: View {
                                         } label: {
                                             Label("Move to Basket", systemImage: "tray.and.arrow.down")
                                         }
+
+                                        if item.type == .image {
+                                            if !ExtensionType.aiBackgroundRemoval.isRemoved && AIInstallManager.shared.isInstalled {
+                                                let isRemovingBackground = removingBackgroundItemIDs.contains(item.id)
+                                                Button {
+                                                    removeBackgroundFromClipboardItem(item)
+                                                } label: {
+                                                    Label(
+                                                        isRemovingBackground ? "Removing Background..." : "Remove Background",
+                                                        systemImage: "person.and.background.dotted"
+                                                    )
+                                                }
+                                                .disabled(isRemovingBackground)
+                                            } else {
+                                                Button {
+                                                    // No action - informational only.
+                                                } label: {
+                                                    Label("Remove Background (Settings > Extensions)", systemImage: "person.and.background.dotted")
+                                                }
+                                                .disabled(true)
+                                            }
+                                        }
                                         
                                         Divider()
                                         Button {
@@ -891,7 +1134,7 @@ struct ClipboardManagerView: View {
                         .padding(.bottom, 20)
                         // Animation for list changes (favorites, add/remove)
                         // PERFORMANCE: ID-only Hashable makes this comparison fast
-                        .animation(DroppyAnimation.listChange, value: sortedHistory)
+                        .animation(suppressListAnimations ? nil : DroppyAnimation.listChange, value: sortedHistory)
                     }
                     .onAppear {
                         scrollProxy = proxy
@@ -900,7 +1143,7 @@ struct ClipboardManagerView: View {
             } // Close else
 
         }
-        .frame(width: 400)
+        .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity) // Sidebar takes full height, but width fixed
     }
     
@@ -912,6 +1155,8 @@ struct ClipboardManagerView: View {
             isSelected: selectedItems.contains(item.id),
             onTap: { selectedItems = [item.id] },
             onPaste: { onPaste(item) },
+            onRemoveBackground: { removeBackgroundFromClipboardItem(item) },
+            isRemovingBackground: removingBackgroundItemIDs.contains(item.id),
             manager: manager
         )
         .id(item.id)
@@ -1104,6 +1349,70 @@ struct ClipboardManagerView: View {
         let droppedItem = DroppedItem(url: fileURL, isTemporary: true)
         DroppyState.shared.addItem(droppedItem)
     }
+
+    private func removeBackgroundFromClipboardItem(_ item: ClipboardItem) {
+        guard item.type == .image else { return }
+        guard !ExtensionType.aiBackgroundRemoval.isRemoved else { return }
+        guard AIInstallManager.shared.isInstalled else { return }
+        guard !removingBackgroundItemIDs.contains(item.id) else { return }
+
+        removingBackgroundItemIDs.insert(item.id)
+
+        Task {
+            await Task.yield()
+            do {
+                let (inputURL, cleanupInputURL) = try makeBackgroundRemovalInput(for: item)
+                defer {
+                    if cleanupInputURL {
+                        try? FileManager.default.removeItem(at: inputURL)
+                    }
+                }
+
+                let outputURL = try await BackgroundRemovalManager.shared.removeBackground(from: inputURL)
+                defer { try? FileManager.default.removeItem(at: outputURL) }
+
+                let outputData = try Data(contentsOf: outputURL)
+
+                await MainActor.run {
+                    if let newItem = manager.addGeneratedImageToHistory(outputData, basedOn: item) {
+                        selectedItems = [newItem.id]
+                    }
+                    removingBackgroundItemIDs.remove(item.id)
+                }
+            } catch {
+                await MainActor.run {
+                    removingBackgroundItemIDs.remove(item.id)
+                    HapticFeedback.error()
+                }
+                await DroppyAlertController.shared.showError(
+                    title: "Background Removal Failed",
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func makeBackgroundRemovalInput(for item: ClipboardItem) throws -> (URL, Bool) {
+        if let sourceURL = item.getImageFileURL(),
+           FileManager.default.fileExists(atPath: sourceURL.path) {
+            return (sourceURL, false)
+        }
+
+        guard let imageData = item.loadImageData() else {
+            throw NSError(
+                domain: "ClipboardBackgroundRemoval",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to load image data from clipboard item."]
+            )
+        }
+
+        let workingDirectory = manager.imagesDirectory.appendingPathComponent("bg-removal-work", isDirectory: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+
+        let fileURL = workingDirectory.appendingPathComponent("bg_input_\(item.id.uuidString).png")
+        try imageData.write(to: fileURL, options: .atomic)
+        return (fileURL, true)
+    }
     
     /// Converts a ClipboardItem to a temp file and returns its URL
     private func clipboardItemToTempFile(_ item: ClipboardItem) -> URL? {
@@ -1181,6 +1490,11 @@ struct ClipboardManagerView: View {
                 ClipboardPreviewView(
                     item: item, 
                     scrollProxy: scrollProxy,
+                    showsPrimaryActionsInFooter: true,
+                    topBarTextEditingItemID: $topBarTextEditingItemID,
+                    topBarTextEditingContent: $topBarTextEditingContent,
+                    onRemoveBackground: { removeBackgroundFromClipboardItem(item) },
+                    isRemovingBackground: removingBackgroundItemIDs.contains(item.id),
                     onPaste: { onPaste(item) },
                     onDelete: { deleteSelectedItems() }
                 )
@@ -1199,12 +1513,31 @@ struct ClipboardManagerView: View {
     }
 }
 
+private struct ClipboardWindowDragView: NSViewRepresentable {
+    func makeNSView(context: Context) -> ClipboardWindowDraggableView {
+        ClipboardWindowDraggableView()
+    }
+
+    func updateNSView(_ nsView: ClipboardWindowDraggableView, context: Context) {}
+}
+
+private final class ClipboardWindowDraggableView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        window.performDrag(with: event)
+    }
+}
+
 // MARK: - Flagged Grid Item View
 struct FlaggedGridItemView: View {
     let item: ClipboardItem
     let isSelected: Bool
     let onTap: () -> Void
     let onPaste: () -> Void
+    let onRemoveBackground: () -> Void
+    let isRemovingBackground: Bool
     @ObservedObject var manager: ClipboardManager
     
     @State private var isHovering = false
@@ -1228,7 +1561,7 @@ struct FlaggedGridItemView: View {
                             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.sm, style: .continuous))
                     } else {
                         itemIcon
-                            .foregroundStyle(isSelected ? .white : AdaptiveColors.primaryTextAuto)
+                            .foregroundStyle(isSelected ? .white : AdaptiveColors.primaryTextAuto.opacity(0.92))
                             .font(.system(size: 12))
                     }
                 }
@@ -1239,12 +1572,16 @@ struct FlaggedGridItemView: View {
                     if item.type == .image {
                         let thumbnail = ThumbnailCache.shared.thumbnail(for: item)
                         await MainActor.run {
-                            cachedThumbnail = thumbnail
+                            cachedThumbnail = thumbnail.map {
+                                ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.sm)
+                            }
                         }
                     } else if item.type == .file, let path = item.content {
                         let thumbnail = await ThumbnailCache.shared.loadFileThumbnailAsync(path: path, size: CGSize(width: 64, height: 64))
                         await MainActor.run {
-                            cachedThumbnail = thumbnail ?? ThumbnailCache.shared.cachedIcon(forPath: path)
+                            cachedThumbnail = thumbnail.map {
+                                ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.sm)
+                            } ?? ThumbnailCache.shared.cachedIcon(forPath: path)
                         }
                     }
                 }
@@ -1252,8 +1589,8 @@ struct FlaggedGridItemView: View {
                 // Title and time
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isSelected ? .white : AdaptiveColors.primaryTextAuto.opacity(0.95))
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? .white : AdaptiveColors.primaryTextAuto.opacity(0.92))
                         .lineLimit(1)
                     
                     Text(item.date, style: .time)
@@ -1276,21 +1613,31 @@ struct FlaggedGridItemView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
-                    .fill(isSelected 
-                          ? Color.blue.opacity(isHovering ? 1.0 : 0.8)
-                          : Color.red.opacity(isHovering ? 0.22 : 0.15))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? Color(nsColor: .selectedContentBackgroundColor)
+                            : Color.red.opacity(isHovering ? 0.09 : 0.06)
+                    )
             )
-            .scaleEffect(isHovering && !isSelected ? 1.02 : 1.0)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? AdaptiveColors.overlayAuto(0.14)
+                            : Color.red.opacity(isHovering ? 0.18 : 0.12),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .buttonStyle(DroppySelectableButtonStyle(isSelected: isSelected))
+        .buttonStyle(.plain)
         .onHover { hovering in
             isHovering = hovering
         }
-        .animation(DroppyAnimation.hoverBouncy, value: isHovering)
         .contextMenu {
             Button(action: onPaste) {
                 Label("Paste", systemImage: "doc.on.clipboard")
@@ -1304,6 +1651,24 @@ struct FlaggedGridItemView: View {
                 manager.toggleFavorite(item)
             } label: {
                 Label(item.isFavorite ? "Unfavorite" : "Favorite", systemImage: item.isFavorite ? "star.slash" : "star")
+            }
+            if item.type == .image {
+                if !ExtensionType.aiBackgroundRemoval.isRemoved && AIInstallManager.shared.isInstalled {
+                    Button(action: onRemoveBackground) {
+                        Label(
+                            isRemovingBackground ? "Removing Background..." : "Remove Background",
+                            systemImage: "person.and.background.dotted"
+                        )
+                    }
+                    .disabled(isRemovingBackground)
+                } else {
+                    Button {
+                        // No action - informational only.
+                    } label: {
+                        Label("Remove Background (Settings > Extensions)", systemImage: "person.and.background.dotted")
+                    }
+                    .disabled(true)
+                }
             }
             Divider()
             Button(role: .destructive) {
@@ -1334,15 +1699,30 @@ struct FlaggedGridItemView: View {
 struct ClipboardItemRow: View {
     let item: ClipboardItem
     let isSelected: Bool
+    let isRemovingBackground: Bool
     @Binding var renamingItemId: UUID?
     @Binding var renamingText: String
     let onRename: (String) -> Void
     
     @AppStorage(AppPreferenceKey.clipboardTagsEnabled) private var tagsEnabled = PreferenceDefault.clipboardTagsEnabled
+    @ObservedObject private var backgroundRemovalManager = BackgroundRemovalManager.shared
     @State private var isHovering = false
     @State private var dashPhase: CGFloat = 0
     @State private var cachedThumbnail: NSImage? // Async-loaded thumbnail
     @FocusState private var isRenameFocused: Bool
+
+    private var rowBackgroundRemovalProgress: Double? {
+        guard isRemovingBackground, backgroundRemovalManager.isProcessing else { return nil }
+        return backgroundRemovalManager.progress
+    }
+
+    private var rowBackgroundRemovalProgressClamped: Double {
+        min(max(rowBackgroundRemovalProgress ?? 0, 0), 1)
+    }
+
+    private var rowBackgroundRemovalPercentText: String {
+        "\(Int(rowBackgroundRemovalProgressClamped * 100))%"
+    }
     
     var body: some View {
         HStack(spacing: 10) {
@@ -1373,13 +1753,17 @@ struct ClipboardItemRow: View {
                     // Image: load from clipboard image cache
                     let thumbnail = ThumbnailCache.shared.thumbnail(for: item)
                     await MainActor.run {
-                        cachedThumbnail = thumbnail
+                        cachedThumbnail = thumbnail.map {
+                            ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.sm)
+                        }
                     }
                 } else if item.type == .file, let path = item.content {
                     // File: load QuickLook thumbnail for PDFs, docs, etc.
                     let thumbnail = await ThumbnailCache.shared.loadFileThumbnailAsync(path: path, size: CGSize(width: 64, height: 64))
                     await MainActor.run {
-                        cachedThumbnail = thumbnail ?? ThumbnailCache.shared.cachedIcon(forPath: path)
+                        cachedThumbnail = thumbnail.map {
+                            ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.sm)
+                        } ?? ThumbnailCache.shared.cachedIcon(forPath: path)
                     }
                 }
             }
@@ -1387,8 +1771,8 @@ struct ClipboardItemRow: View {
             // Title or rename field
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isSelected ? .white : AdaptiveColors.primaryTextAuto)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .white : AdaptiveColors.primaryTextAuto.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 
@@ -1401,7 +1785,7 @@ struct ClipboardItemRow: View {
                     Text(item.date, style: .time)
                         .font(.system(size: 10))
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSelected ? Color.white.opacity(0.9) : AdaptiveColors.secondaryTextAuto.opacity(0.9))
             }
             .frame(maxWidth: .infinity, alignment: .leading)  // Fill available space, don't expand parent
             
@@ -1434,23 +1818,60 @@ struct ClipboardItemRow: View {
         }
         .frame(maxWidth: .infinity)  // Ensure consistent width for all rows
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
+        .frame(minHeight: 42)
         .background(
-            RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
-                .fill(isSelected 
-                      ? Color.blue.opacity(isHovering ? 1.0 : 0.8) 
-                      : item.isFlagged
-                          ? Color.red.opacity(isHovering ? 0.22 : 0.15)
-                          : AdaptiveColors.overlayAuto(isHovering ? 0.18 : 0.12))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(
+                    isSelected
+                        ? Color(nsColor: .selectedContentBackgroundColor)
+                        : AdaptiveColors.overlayAuto(isHovering ? 0.09 : 0.05)
+                )
         )
-        .foregroundStyle(isSelected ? .white : .primary)
-        .scaleEffect(isHovering && !isSelected ? 1.02 : 1.0)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    isSelected
+                        ? AdaptiveColors.overlayAuto(0.14)
+                        : AdaptiveColors.overlayAuto(isHovering ? 0.13 : 0.08),
+                    lineWidth: 1
+                )
+        )
+        .overlay {
+            if isRemovingBackground {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.black.opacity(0.76))
+                    .overlay(
+                        HStack(spacing: 10) {
+                            ProgressView(value: rowBackgroundRemovalProgressClamped, total: 1)
+                                .progressViewStyle(.linear)
+                                .tint(.white.opacity(0.95))
+                                .frame(width: 56)
 
-        .contentShape(Rectangle())
+                            Spacer(minLength: 6)
+
+                            Text(rowBackgroundRemovalPercentText)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(.white.opacity(0.98))
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(.white.opacity(0.16), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.22), radius: 8, x: 0, y: 3)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(DroppyAnimation.viewChange))
+            }
+        }
+        .foregroundStyle(isSelected ? .white : .primary)
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { hovering in
             isHovering = hovering
         }
-        .animation(DroppyAnimation.hoverBouncy, value: isHovering)
         .droppyPopover(isPresented: renamePopoverPresented, arrowEdge: .top) {
             ClipboardRenamePopover(
                 text: $renamingText,
@@ -1546,7 +1967,7 @@ private struct ClipboardRenamePopover: View {
                     Text(String(localized: "action.save"))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: .accentColor, size: .small))
                 .disabled(trimmedText.isEmpty)
             }
         }
@@ -1574,6 +1995,11 @@ private struct ClipboardRenamePopover: View {
 struct ClipboardPreviewView: View {
     let item: ClipboardItem
     var scrollProxy: ScrollViewProxy?
+    let showsPrimaryActionsInFooter: Bool
+    @Binding var topBarTextEditingItemID: UUID?
+    @Binding var topBarTextEditingContent: String
+    let onRemoveBackground: () -> Void
+    let isRemovingBackground: Bool
     let onPaste: () -> Void
     let onDelete: () -> Void
     
@@ -1596,13 +2022,6 @@ struct ClipboardPreviewView: View {
     // Animation Namespace
     @Namespace private var animationNamespace
     
-    // Content Editing State
-    @State private var isEditing = false
-    @State private var editedContent = ""
-    @State private var isEditHovering = false
-    @State private var isSaveHovering = false
-    @State private var isCancelHovering = false
-    @State private var dashPhase: CGFloat = 0
     @State private var isExtractingText = false
     
     // Cached Preview Content
@@ -1629,6 +2048,8 @@ struct ClipboardPreviewView: View {
     // Video Preview State
     @State private var videoPlayer: AVPlayer?
     @State private var isVideoFile: Bool = false
+    @State private var pageNavigationTask: Task<Void, Never>?
+    private let previewLoadDebounceNanos: UInt64 = 60_000_000
     
     // Video file extensions
     private static let videoExtensions: Set<String> = ["mp4", "mov", "m4v", "avi", "mkv", "webm"]
@@ -1636,6 +2057,11 @@ struct ClipboardPreviewView: View {
     private func isVideoPath(_ path: String) -> Bool {
         let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
         return Self.videoExtensions.contains(ext)
+    }
+
+    private func cancelOutstandingPreviewTasks() {
+        pageNavigationTask?.cancel()
+        pageNavigationTask = nil
     }
     
     // MARK: - Page Navigation
@@ -1646,6 +2072,7 @@ struct ClipboardPreviewView: View {
     
     private func navigateToPage(_ pageIndex: Int, path: String, direction: SwipeDirection) {
         guard pageIndex >= 0 && pageIndex < documentPageCount else { return }
+        pageNavigationTask?.cancel()
         
         // Animate out
         let exitOffset: CGFloat = direction == .left ? -300 : 300
@@ -1655,8 +2082,11 @@ struct ClipboardPreviewView: View {
         
         // Load new page
         isLoadingPage = true
-        Task {
+        pageNavigationTask = Task {
+            try? await Task.sleep(nanoseconds: previewLoadDebounceNanos)
+            guard !Task.isCancelled else { return }
             let newPreview = await ThumbnailCache.shared.loadDocumentPage(path: path, pageIndex: pageIndex, size: CGSize(width: 400, height: 400))
+            guard !Task.isCancelled else { return }
             
             await MainActor.run {
                 currentPageIndex = pageIndex
@@ -1665,7 +2095,9 @@ struct ClipboardPreviewView: View {
                 swipeOffset = direction == .left ? 300 : -300
                 
                 // Update preview
-                cachedFilePreview = newPreview
+                cachedFilePreview = newPreview.map {
+                    ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.large)
+                }
                 isLoadingPage = false
                 
                 // Animate in
@@ -1769,6 +2201,10 @@ struct ClipboardPreviewView: View {
         isSavingFile = false
     }
 
+    private var isTextEditingFromHeader: Bool {
+        item.type == .text && topBarTextEditingItemID == item.id
+    }
+
     private func releasePreviewResources(clearCachedContent: Bool) {
         videoPlayer?.pause()
         videoPlayer?.replaceCurrentItem(with: nil)
@@ -1786,6 +2222,90 @@ struct ClipboardPreviewView: View {
         isLoadingLinkPreview = false
         isDirectImageLink = false
         showZoomedPreview = false
+        isLoadingPage = false
+    }
+
+    private func decodeImageForPreview(_ data: Data) async -> NSImage? {
+        let decodeTask = Task.detached(priority: .userInitiated) { () -> NSImage? in
+            guard !Task.isCancelled else { return nil }
+            return NSImage(data: data)
+        }
+
+        return await withTaskCancellationHandler {
+            await decodeTask.value
+        } onCancel: {
+            decodeTask.cancel()
+        }
+    }
+
+    private func decodeRTFForPreview(_ rtfData: Data) async -> AttributedString? {
+        let decodeTask = Task.detached(priority: .userInitiated) { () -> AttributedString? in
+            guard !Task.isCancelled else { return nil }
+            return try? rtfToAttributedString(rtfData)
+        }
+
+        return await withTaskCancellationHandler {
+            await decodeTask.value
+        } onCancel: {
+            decodeTask.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var imagePreviewContent: some View {
+        if let nsImg = cachedImage {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedPreviewImageSurface(
+                    image: nsImg,
+                    cornerRadius: DroppyRadius.large,
+                    contentPadding: DroppySpacing.md
+                )
+
+                // OCR Button
+                Button {
+                    guard !isExtractingText else { return }
+                    isExtractingText = true
+                    Task {
+                        do {
+                            let text = try await OCRService.shared.performOCR(on: nsImg)
+                            await MainActor.run {
+                                isExtractingText = false
+                                OCRWindowController.shared.presentExtractedText(text)
+                            }
+                        } catch {
+                            await MainActor.run {
+                                isExtractingText = false
+                                print("OCR Error: \(error)")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isExtractingText {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "text.viewfinder")
+                        }
+                        Text(isExtractingText ? "Extracting…" : "Extract Text")
+                    }
+                }
+                .buttonStyle(DroppyPillButtonStyle(size: .small))
+                .padding(DroppySpacing.md)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
+        } else if isLoadingPreview {
+            ProgressView()
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Image(systemName: "photo")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
     
     var body: some View {
@@ -1794,8 +2314,8 @@ struct ClipboardPreviewView: View {
             VStack {
                 switch item.type {
                 case .text:
-                    if isEditing {
-                        TextEditor(text: $editedContent)
+                    if isTextEditingFromHeader {
+                        TextEditor(text: $topBarTextEditingContent)
                             .font(.system(.body, design: .monospaced))
                             .scrollContentBackground(.hidden)
                             .foregroundStyle(AdaptiveColors.primaryTextAuto)
@@ -1835,91 +2355,31 @@ struct ClipboardPreviewView: View {
                     }
                     
                 case .url:
-                    if isEditing {
-                        TextEditor(text: $editedContent)
-                            .font(.system(.body, design: .monospaced))
-                            .scrollContentBackground(.hidden)
-                            .foregroundStyle(AdaptiveColors.primaryTextAuto)
-                            .droppyTextInputChrome(
-                                cornerRadius: DroppyRadius.ml,
-                                horizontalPadding: 10,
-                                verticalPadding: 10
-                            )
-                    } else {
-                        URLPreviewCard(
-                            item: item,
-                            isLoading: isLoadingLinkPreview,
-                            isDirectImage: isDirectImageLink,
-                            title: linkPreviewTitle,
-                            description: linkPreviewDescription,
-                            image: linkPreviewImage,
-                            icon: linkPreviewIcon
-                        )
-                        .padding(.vertical)
-                    }
+                    URLPreviewCard(
+                        item: item,
+                        isLoading: isLoadingLinkPreview,
+                        isDirectImage: isDirectImageLink,
+                        title: linkPreviewTitle,
+                        description: linkPreviewDescription,
+                        image: linkPreviewImage,
+                        icon: linkPreviewIcon
+                    )
+                    .padding(.vertical)
                     
                 case .image:
-                    if let nsImg = cachedImage {
-                        ZStack(alignment: .bottomTrailing) {
-                            Image(nsImage: nsImg)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(maxHeight: 220)
-                                .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
-                            
-                            // OCR Button
-                            Button {
-                                guard !isExtractingText else { return }
-                                isExtractingText = true
-                                Task {
-                                    do {
-                                        let text = try await OCRService.shared.performOCR(on: nsImg)
-                                        await MainActor.run {
-                                            isExtractingText = false
-                                            OCRWindowController.shared.presentExtractedText(text)
-                                        }
-                                    } catch {
-                                        await MainActor.run {
-                                            isExtractingText = false
-                                            // Handle error if needed, for now just reset state
-                                            print("OCR Error: \(error)")
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    if isExtractingText {
-                                        ProgressView()
-                                            .controlSize(.mini)
-                                            .frame(width: 12, height: 12)
-                                    } else {
-                                        Image(systemName: "text.viewfinder")
-                                    }
-                                    Text(isExtractingText ? "Extracting…" : "Extract Text")
-                                }
-                            }
-                            .buttonStyle(DroppyPillButtonStyle(size: .small))
-                            .padding(DroppySpacing.md)
-                        }
-                    } else if isLoadingPreview {
-                        ProgressView()
-                            .padding()
-                    } else {
-                        Image(systemName: "photo")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.secondary)
-                    }
+                    imagePreviewContent
                     
                 case .file:
                     if let path = item.content {
-                        VStack(spacing: 16) {
+                        VStack(spacing: 12) {
                             // Check if this is a video file
                             if isVideoFile, let player = videoPlayer {
                                 // Video Player View
                                 SafeVideoPreview(player: player)
                                     .aspectRatio(16/9, contentMode: .fit)
-                                    .frame(maxHeight: 280)
-                                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .padding(DroppySpacing.md)
+                                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
                                     .droppyCardShadow(opacity: 0.3)
                                     .onAppear {
                                         player.play()
@@ -1931,11 +2391,11 @@ struct ClipboardPreviewView: View {
                                 // Document preview with swipe gesture for multi-page
                                 ZStack {
                                     if let preview = cachedFilePreview {
-                                        Image(nsImage: preview)
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fit)
-                                            .frame(maxHeight: 280)
-                                            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+                                        RoundedPreviewImageSurface(
+                                            image: preview,
+                                            cornerRadius: DroppyRadius.large,
+                                            contentPadding: DroppySpacing.md
+                                        )
                                             .droppyCardShadow(opacity: 0.3)
                                             .offset(x: swipeOffset)
                                             .animation(DroppyAnimation.state, value: swipeOffset)
@@ -1943,12 +2403,17 @@ struct ClipboardPreviewView: View {
                                         ProgressView()
                                             .controlSize(.large)
                                             .padding(DroppySpacing.xxxl + DroppySpacing.sm) // 40pt for large empty state
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     } else {
                                         Image(nsImage: ThumbnailCache.shared.cachedIcon(forPath: path))
                                             .resizable()
-                                            .frame(width: 80, height: 80)
+                                            .scaledToFit()
+                                            .frame(width: 120, height: 120)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     }
                                 }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
                                 .gesture(
                                     DragGesture(minimumDistance: 30)
                                         .onChanged { value in
@@ -2068,10 +2533,18 @@ struct ClipboardPreviewView: View {
                                     .multilineTextAlignment(.center)
                                     .lineLimit(2)
                             }
+                            .padding(.bottom, DroppySpacing.md)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .clipped()
                         .task(id: item.id) {
+                            cancelOutstandingPreviewTasks()
+                            try? await Task.sleep(nanoseconds: previewLoadDebounceNanos)
+                            guard !Task.isCancelled else { return }
+
                             // Check if this is a video file
                             if isVideoPath(path) {
+                                guard !Task.isCancelled else { return }
                                 await MainActor.run {
                                     isVideoFile = true
                                     let url = URL(fileURLWithPath: path)
@@ -2091,8 +2564,11 @@ struct ClipboardPreviewView: View {
                             
                             isLoadingPreview = true
                             let preview = await ThumbnailCache.shared.loadDocumentPage(path: path, pageIndex: 0, size: CGSize(width: 400, height: 400))
+                            guard !Task.isCancelled else { return }
                             await MainActor.run {
-                                cachedFilePreview = preview
+                                cachedFilePreview = preview.map {
+                                    ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.large)
+                                }
                                 isLoadingPreview = false
                             }
                         }
@@ -2102,6 +2578,10 @@ struct ClipboardPreviewView: View {
                                 initialPageIndex: currentPageIndex,
                                 pageCount: documentPageCount
                             )
+                            .presentationBackground(.clear)
+                            .onAppear {
+                                ClipboardWindowController.shared.styleAttachedSheetForLiquidGlass()
+                            }
                         }
                     }
                 default:
@@ -2111,14 +2591,18 @@ struct ClipboardPreviewView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                    .fill(isEditing ? AdaptiveColors.buttonBackgroundAuto.opacity(0.95) : AdaptiveColors.overlayAuto(0.05))
+                    .fill(isTextEditingFromHeader ? AdaptiveColors.buttonBackgroundAuto.opacity(0.95) : AdaptiveColors.overlayAuto(0.05))
             )
+            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                    .strokeBorder(isEditing ? AdaptiveColors.subtleBorderAuto : .clear, lineWidth: 1)
+                    .strokeBorder(isTextEditingFromHeader ? AdaptiveColors.subtleBorderAuto : .clear, lineWidth: 1)
             )
-            .animation(DroppyAnimation.viewChange, value: isEditing)
-            .onChange(of: isEditing) { _, editing in
+            .animation(DroppyAnimation.viewChange, value: isTextEditingFromHeader)
+            .onAppear {
+                manager.isEditingContent = isTextEditingFromHeader
+            }
+            .onChange(of: isTextEditingFromHeader) { _, editing in
                 // Sync with shared state so Cmd+V shortcut is disabled during editing
                 manager.isEditingContent = editing
             }
@@ -2136,19 +2620,16 @@ struct ClipboardPreviewView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
             
-            // Action Buttons
-            HStack(spacing: 12) {
-                // Main Paste Button
-                if !isEditing {
+            if showsPrimaryActionsInFooter {
+                HStack(spacing: 12) {
                     Button(action: onPaste) {
                         Text("Paste")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .medium))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .medium))
                     .matchedGeometryEffect(id: "PrimaryAction", in: animationNamespace)
                     .transition(.move(edge: .leading).combined(with: .opacity))
-                    
-                    // Copy Button
+
                     Button(action: copyToClipboard) {
                         ZStack {
                             if showCopySuccess {
@@ -2160,11 +2641,10 @@ struct ClipboardPreviewView: View {
                         }
                         .frame(width: 70)
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: showCopySuccess ? .green : .blue, size: .medium))
+                    .buttonStyle(DroppyAccentButtonStyle(color: showCopySuccess ? .green : AdaptiveColors.selectionBlueAuto, size: .medium))
                     .matchedGeometryEffect(id: "SecondaryAction", in: animationNamespace)
                     .transition(.move(edge: .leading).combined(with: .opacity))
-                    
-                    // Save to File Button
+
                     Button(action: saveToFile) {
                         ZStack {
                             if showSaveSuccess {
@@ -2185,196 +2665,178 @@ struct ClipboardPreviewView: View {
                     .help("Save to Downloads")
                     .disabled(isSavingFile || showSaveSuccess)
                     .transition(.move(edge: .leading).combined(with: .opacity))
-                }
-                
-                // Favorite Button - Always visible, slides naturally
-                Button {
-                    withAnimation(DroppyAnimation.scalePop) {
-                        starAnimationTrigger.toggle()
-                    }
-                    let willBeFavorite = !item.isFavorite
-                    manager.toggleFavorite(item)
-                    // Scroll to the item after it moves to favorites section
-                    if willBeFavorite {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            withAnimation(DroppyAnimation.transition) {
-                                scrollProxy?.scrollTo(item.id, anchor: .top)
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: item.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(item.isFavorite ? .yellow : AdaptiveColors.primaryTextAuto.opacity(0.85))
-                        .symbolEffect(.bounce, value: starAnimationTrigger)
-                }
-                .buttonStyle(DroppyCircleButtonStyle(size: 40))
-                .help("Toggle Favorite")
-                
-                // Flag Button - For important items
-                Button {
-                    withAnimation(DroppyAnimation.scalePop) {
-                        flagAnimationTrigger.toggle()
-                    }
-                    let willBeFlagged = !item.isFlagged
-                    manager.toggleFlag(item)
-                    // Scroll to the item after it moves to flagged section
-                    if willBeFlagged {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            withAnimation(DroppyAnimation.transition) {
-                                scrollProxy?.scrollTo(item.id, anchor: .top)
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: item.isFlagged ? "flag.fill" : "flag")
-                        .foregroundStyle(item.isFlagged ? .red : AdaptiveColors.primaryTextAuto.opacity(0.85))
-                        .symbolEffect(.bounce, value: flagAnimationTrigger)
-                }
-                .buttonStyle(DroppyCircleButtonStyle(size: 40))
-                .help("Flag as Important")
-                
-                // Tag Button (if tags enabled)
-                if tagsEnabled {
-                    Button {
-                        isTagPopoverVisible.toggle()
-                    } label: {
-                        ZStack {
-                            Image(systemName: "tag")
-                                .foregroundStyle(item.tagId != nil ? (manager.getTag(by: item.tagId)?.color ?? .cyan) : AdaptiveColors.primaryTextAuto.opacity(0.85))
-                        }
-                    }
-                    .buttonStyle(DroppyCircleButtonStyle(size: 40))
-                    .help("Assign Tag")
-                    .droppyPopover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
-                        VStack(spacing: 4) {
-                            ForEach(manager.tags) { tag in
-                                Button {
-                                    if item.tagId == tag.id {
-                                        manager.removeTagFromItem(item)
+
+                    if item.type == .image {
+                        if !ExtensionType.aiBackgroundRemoval.isRemoved, AIInstallManager.shared.isInstalled {
+                            Button(action: onRemoveBackground) {
+                                ZStack {
+                                    if isRemovingBackground {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .tint(AdaptiveColors.primaryTextAuto)
                                     } else {
-                                        manager.assignTag(tag, to: item)
+                                        Image(systemName: "person.and.background.dotted")
                                     }
-                                    isTagPopoverVisible = false
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(tag.color)
-                                            .frame(width: 10, height: 10)
-                                        Text(tag.name)
-                                            .font(.system(size: 12))
-                                        Spacer()
-                                        if item.tagId == tag.id {
-                                            Image(systemName: "checkmark")
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(.cyan)
-                                        }
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(item.tagId == tag.id ? AdaptiveColors.overlayAuto(0.1) : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.sm, style: .continuous))
                                 }
-                                .buttonStyle(.plain)
                             }
-                            
-                            if item.tagId != nil {
-                                Divider()
-                                Button {
-                                    manager.removeTagFromItem(item)
-                                    isTagPopoverVisible = false
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "tag.slash")
-                                            .font(.system(size: 10))
-                                        Text("Remove Tag")
-                                            .font(.system(size: 12))
-                                    }
-                                    .foregroundStyle(.red)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                }
-                                .buttonStyle(.plain)
+                            .buttonStyle(DroppyCircleButtonStyle(size: 40))
+                            .help(isRemovingBackground ? "Removing Background..." : "Remove Background")
+                            .disabled(isRemovingBackground)
+                        } else {
+                            Button {
+                                // No action - informational only.
+                            } label: {
+                                Image(systemName: "person.and.background.dotted")
                             }
-                            
-                            if manager.tags.isEmpty {
-                                Text("No tags yet")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .padding(DroppySpacing.sm)
-                            }
+                            .buttonStyle(DroppyCircleButtonStyle(size: 40))
+                            .help("Remove Background (Settings > Extensions)")
+                            .disabled(true)
                         }
-                        .padding(DroppySpacing.sm)
-                        .frame(minWidth: 140)
-                        .background { Rectangle().fill(.ultraThinMaterial) }
                     }
-                }
-                
-                // Edit Button (Text/URL only)
-                if !isEditing && (item.type == .text || item.type == .url) {
+
                     Button {
-                        editedContent = item.content ?? ""
-                        withAnimation(DroppyAnimation.state) {
-                            isEditing = true
+                        withAnimation(DroppyAnimation.scalePop) {
+                            starAnimationTrigger.toggle()
+                        }
+                        let willBeFavorite = !item.isFavorite
+                        manager.toggleFavorite(item)
+                        if willBeFavorite {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                withAnimation(DroppyAnimation.transition) {
+                                    scrollProxy?.scrollTo(item.id, anchor: .top)
+                                }
+                            }
                         }
                     } label: {
-                        Image(systemName: "pencil")
+                        Image(systemName: item.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(item.isFavorite ? .yellow : AdaptiveColors.primaryTextAuto.opacity(0.85))
+                            .symbolEffect(.bounce, value: starAnimationTrigger)
                     }
                     .buttonStyle(DroppyCircleButtonStyle(size: 40))
-                    .help("Edit Content")
-                }
-                
-                // Edit Mode Actions
-                if isEditing {
-                    // Save
+                    .help("Toggle Favorite")
+
                     Button {
-                        manager.updateItemContent(item, newContent: editedContent)
-                        withAnimation(DroppyAnimation.state) {
-                            isEditing = false
+                        withAnimation(DroppyAnimation.scalePop) {
+                            flagAnimationTrigger.toggle()
+                        }
+                        let willBeFlagged = !item.isFlagged
+                        manager.toggleFlag(item)
+                        if willBeFlagged {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                withAnimation(DroppyAnimation.transition) {
+                                    scrollProxy?.scrollTo(item.id, anchor: .top)
+                                }
+                            }
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                            Text("Save")
+                        Image(systemName: item.isFlagged ? "flag.fill" : "flag")
+                            .foregroundStyle(item.isFlagged ? .red : AdaptiveColors.primaryTextAuto.opacity(0.85))
+                            .symbolEffect(.bounce, value: flagAnimationTrigger)
+                    }
+                    .buttonStyle(DroppyCircleButtonStyle(size: 40))
+                    .help("Flag as Important")
+
+                    if tagsEnabled {
+                        Button {
+                            isTagPopoverVisible.toggle()
+                        } label: {
+                            ZStack {
+                                Image(systemName: "tag")
+                                    .foregroundStyle(item.tagId != nil ? (manager.getTag(by: item.tagId)?.color ?? .cyan) : AdaptiveColors.primaryTextAuto.opacity(0.85))
+                            }
+                        }
+                        .buttonStyle(DroppyCircleButtonStyle(size: 40))
+                        .help("Assign Tag")
+                        .droppyPopover(isPresented: $isTagPopoverVisible, arrowEdge: .bottom) {
+                            VStack(spacing: 4) {
+                                ForEach(manager.tags) { tag in
+                                    Button {
+                                        if item.tagId == tag.id {
+                                            manager.removeTagFromItem(item)
+                                        } else {
+                                            manager.assignTag(tag, to: item)
+                                        }
+                                        isTagPopoverVisible = false
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Circle()
+                                                .fill(tag.color)
+                                                .frame(width: 10, height: 10)
+                                            Text(tag.name)
+                                                .font(.system(size: 12))
+                                            Spacer()
+                                            if item.tagId == tag.id {
+                                                Image(systemName: "checkmark")
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.cyan)
+                                            }
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(item.tagId == tag.id ? AdaptiveColors.overlayAuto(0.1) : Color.clear)
+                                        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.sm, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                if item.tagId != nil {
+                                    Divider()
+                                    Button {
+                                        manager.removeTagFromItem(item)
+                                        isTagPopoverVisible = false
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "tag.slash")
+                                                .font(.system(size: 10))
+                                            Text("Remove Tag")
+                                                .font(.system(size: 12))
+                                        }
+                                        .foregroundStyle(.red)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                if manager.tags.isEmpty {
+                                    Text("No tags yet")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .padding(DroppySpacing.sm)
+                                }
+                            }
+                            .padding(DroppySpacing.sm)
+                            .frame(minWidth: 140)
+                            .background { Rectangle().fill(.ultraThinMaterial) }
                         }
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .green, size: .medium))
-                    .matchedGeometryEffect(id: "PrimaryAction", in: animationNamespace)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                    
-                    // Cancel
+
                     Button {
-                        withAnimation(DroppyAnimation.state) {
-                            isEditing = false
-                        }
+                        onDelete()
                     } label: {
-                        Text("Cancel")
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
                     }
-                    .buttonStyle(DroppyPillButtonStyle(size: .medium))
-                    .matchedGeometryEffect(id: "SecondaryAction", in: animationNamespace)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .buttonStyle(DroppyCircleButtonStyle(size: 40))
+                    .help("Delete (Backspace)")
                 }
-                
-                // Delete Button
-                Button {
-                    onDelete()
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.red)
-                }
-                .buttonStyle(DroppyCircleButtonStyle(size: 40))
-                .help("Delete (Backspace)")
+                .buttonStyle(DroppyCardButtonStyle())
             }
-            .buttonStyle(DroppyCardButtonStyle())
         }
         .padding(DroppySpacing.xl)
         .onDisappear {
+            cancelOutstandingPreviewTasks()
             releasePreviewResources(clearCachedContent: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardWindowDidHide)) { _ in
+            cancelOutstandingPreviewTasks()
             releasePreviewResources(clearCachedContent: true)
         }
         .task(id: item.id) {
             // Asynchronously load and process preview content
+            cancelOutstandingPreviewTasks()
+            try? await Task.sleep(nanoseconds: previewLoadDebounceNanos)
+            guard !Task.isCancelled else { return }
             isLoadingPreview = true
 
             // Ensure media decoders and previous preview state are released before loading a new item.
@@ -2388,16 +2850,18 @@ struct ClipboardPreviewView: View {
             switch item.type {
             case .image:
                 if let data = item.loadImageData() {
-                    cachedImage = await Task.detached(priority: .userInitiated) {
-                        NSImage(data: data)
-                    }.value
+                    let decodedImage = await decodeImageForPreview(data)
+                    guard !Task.isCancelled else { return }
+                    cachedImage = decodedImage.map {
+                        ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.large)
+                    }
                 }
                 
             case .text:
                 if let rtfData = item.rtfData {
-                    cachedAttributedText = await Task.detached(priority: .userInitiated) {
-                        try? rtfToAttributedString(rtfData)
-                    }.value
+                    let attributed = await decodeRTFForPreview(rtfData)
+                    guard !Task.isCancelled else { return }
+                    cachedAttributedText = attributed
                 }
                 
             case .url:
@@ -2415,15 +2879,22 @@ struct ClipboardPreviewView: View {
                     // Check if it's a direct image link
                     if LinkPreviewService.shared.isDirectImageURL(urlString) {
                         isDirectImageLink = true
-                        linkPreviewImage = await LinkPreviewService.shared.fetchImagePreview(for: urlString)
+                        let fetchedImage = await LinkPreviewService.shared.fetchImagePreview(for: urlString)
+                        guard !Task.isCancelled else { return }
+                        linkPreviewImage = fetchedImage.map {
+                            ClipboardImageRounding.rounded($0, cornerRadius: DroppyRadius.large)
+                        }
                     } else {
                         // Fetch website metadata
                         if let metadata = await LinkPreviewService.shared.fetchMetadata(for: urlString) {
+                            guard !Task.isCancelled else { return }
                             linkPreviewTitle = metadata.title
                             linkPreviewDescription = metadata.description
                             
                             if let imageData = metadata.image {
-                                linkPreviewImage = NSImage(data: imageData)
+                                if let image = NSImage(data: imageData) {
+                                    linkPreviewImage = ClipboardImageRounding.rounded(image, cornerRadius: DroppyRadius.large)
+                                }
                             }
                             
                             if let iconData = metadata.icon {
@@ -2500,6 +2971,59 @@ nonisolated private func rtfToAttributedString(_ data: Data) throws -> Attribute
     }
     
     return AttributedString(mutable)
+}
+
+private enum ClipboardImageRounding {
+    static func rounded(_ image: NSImage, cornerRadius: CGFloat) -> NSImage {
+        let sourceSize = image.size
+        guard sourceSize.width > 0, sourceSize.height > 0 else { return image }
+        let minSide = min(sourceSize.width, sourceSize.height)
+        let adaptiveRadius = min(max(cornerRadius, minSide * 0.025), minSide * 0.5)
+
+        let rounded = NSImage(size: sourceSize)
+        rounded.lockFocus()
+        defer { rounded.unlockFocus() }
+
+        NSColor.clear.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: sourceSize)).fill()
+
+        let path = NSBezierPath(
+            roundedRect: NSRect(origin: .zero, size: sourceSize),
+            xRadius: adaptiveRadius,
+            yRadius: adaptiveRadius
+        )
+        path.addClip()
+
+        image.draw(
+            in: NSRect(origin: .zero, size: sourceSize),
+            from: NSRect(origin: .zero, size: sourceSize),
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+
+        return rounded
+    }
+}
+
+private struct RoundedPreviewImageSurface: View {
+    let image: NSImage
+    let cornerRadius: CGFloat
+    let contentPadding: CGFloat
+
+    var body: some View {
+        GeometryReader { geometry in
+            let maxWidth = max(0, geometry.size.width - (contentPadding * 2))
+            let maxHeight = max(0, geometry.size.height - (contentPadding * 2))
+
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 // MARK: - Zoomed Document Preview Sheet
@@ -2831,7 +3355,7 @@ struct ZoomedDocumentPreviewSheet: View {
                         Text(showCopySuccess ? "Copied!" : "Copy")
                     }
                 }
-                .buttonStyle(showCopySuccess ? DroppyAccentButtonStyle(color: .green, size: .medium) : DroppyAccentButtonStyle(color: .blue, size: .medium))
+                .buttonStyle(showCopySuccess ? DroppyAccentButtonStyle(color: .green, size: .medium) : DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .medium))
                 
                 // Open in Finder
                 Button {
@@ -3048,7 +3572,7 @@ struct MultiSelectPreviewView: View {
                         Text("Paste All")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .medium))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .medium))
                 
                 // Copy All Button
                 Button(action: onCopyAll) {
@@ -3362,7 +3886,9 @@ struct TagFilterPopover: View {
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button {
-                    showTagManagement = true
+                    withAnimation(DroppyAnimation.transition) {
+                        showTagManagement = true
+                    }
                 } label: {
                     Image(systemName: "gear")
                         .font(.system(size: 12))
@@ -3447,15 +3973,13 @@ struct TagFilterPopover: View {
 
 struct TagManagementSheet: View {
     @ObservedObject var manager: ClipboardManager
-    @Environment(\.dismiss) private var dismiss
-    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    let onDone: () -> Void
     
     @State private var newTagName = ""
     @State private var selectedColorIndex = 0
     @State private var editingTag: ClipboardTag? = nil
     @State private var editingName = ""
     @State private var editingColorIndex = 0
-    @State private var draggingTagId: UUID? = nil
     @FocusState private var isTextFieldFocused: Bool
     
     private var selectedColor: Color {
@@ -3549,7 +4073,7 @@ struct TagManagementSheet: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: .accentColor, size: .small))
                 .disabled(newTagName.isEmpty)
                 .opacity(newTagName.isEmpty ? 0.5 : 1.0)
             }
@@ -3603,6 +4127,20 @@ struct TagManagementSheet: View {
                                         editingTag = nil
                                     }
                                 },
+                                canMoveUp: index > 0,
+                                canMoveDown: index < manager.tags.count - 1,
+                                onMoveUp: {
+                                    guard index > 0 else { return }
+                                    withAnimation(DroppyAnimation.hover) {
+                                        manager.reorderTags(from: index, to: index - 1)
+                                    }
+                                },
+                                onMoveDown: {
+                                    guard index < manager.tags.count - 1 else { return }
+                                    withAnimation(DroppyAnimation.hover) {
+                                        manager.reorderTags(from: index, to: index + 1)
+                                    }
+                                },
                                 onDelete: {
                                     withAnimation(DroppyAnimation.transition) {
                                         manager.deleteTag(tag)
@@ -3612,20 +4150,6 @@ struct TagManagementSheet: View {
                             .transition(.asymmetric(
                                 insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.8)),
                                 removal: .scale(scale: 0.9).combined(with: .opacity)
-                            ))
-                            .onDrag {
-                                draggingTagId = tag.id
-                                return NSItemProvider(object: tag.id.uuidString as NSString)
-                            }
-                            .onDrop(of: [.text], delegate: TagDropDelegate(
-                                tag: tag,
-                                tags: manager.tags,
-                                draggingTagId: $draggingTagId,
-                                onReorder: { from, to in
-                                    withAnimation(DroppyAnimation.hover) {
-                                        manager.reorderTags(from: from, to: to)
-                                    }
-                                }
                             ))
                         }
                     }
@@ -3641,21 +4165,22 @@ struct TagManagementSheet: View {
             HStack {
                 Spacer()
                 Button {
-                    dismiss()
+                    onDone()
                 } label: {
                     Text("Done")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: .accentColor, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
         .frame(width: 340, height: 630)
-        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
+        .droppyTransparentBackground(true)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                .stroke(AdaptiveColors.overlayAuto(useTransparentBackground ? 0.14 : 0.08), lineWidth: 1)
+                .stroke(AdaptiveColors.overlayAuto(0.14), lineWidth: 1)
         )
+        .onExitCommand(perform: onDone)
     }
     
     private func addTag() {
@@ -3680,40 +4205,115 @@ struct TagRowView: View {
     let onStartEdit: () -> Void
     let onSaveEdit: () -> Void
     let onCancelEdit: () -> Void
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
     let onDelete: () -> Void
     
     @State private var isHovering = false
+    @State private var isColorPickerPresented = false
+    @State private var isHoveringColorSwatch = false
+    @State private var isHoveringColorPopover = false
     @FocusState private var isEditFocused: Bool
+
+    private var safeEditingColorIndex: Int {
+        guard !ClipboardTag.presetColors.isEmpty else { return 0 }
+        return min(max(editingColorIndex, 0), ClipboardTag.presetColors.count - 1)
+    }
+
+    private var selectedEditColor: Color {
+        guard !ClipboardTag.presetColors.isEmpty else { return .gray }
+        return Color(hex: ClipboardTag.presetColors[safeEditingColorIndex]) ?? .gray
+    }
     
     var body: some View {
         HStack(spacing: 10) {
             if isEditing {
-                // Editing mode - color picker + name field
-                HStack(spacing: 4) {
-                    ForEach(Array(ClipboardTag.presetColors.enumerated()), id: \.offset) { index, colorHex in
-                        Circle()
-                            .fill(Color(hex: colorHex) ?? .gray)
-                            .frame(width: 14, height: 14)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white, lineWidth: editingColorIndex == index ? 1.5 : 0)
-                            )
-                            .scaleEffect(editingColorIndex == index ? 1.15 : 1.0)
-                            .animation(DroppyAnimation.hoverBouncy, value: editingColorIndex)
-                            .onTapGesture {
+                // Editing mode - compact color button + full-width name field
+                Button {
+                    isColorPickerPresented.toggle()
+                } label: {
+                    Circle()
+                        .fill(selectedEditColor)
+                        .frame(width: 14, height: 14)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.9), lineWidth: 1.8)
+                        )
+                }
+                .buttonStyle(DroppyCircleButtonStyle(size: 28))
+                .help("Tag Color")
+                .onHover { hovering in
+                    isHoveringColorSwatch = hovering
+                    if hovering {
+                        isColorPickerPresented = true
+                    } else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                            if !isHoveringColorSwatch && !isHoveringColorPopover {
+                                isColorPickerPresented = false
+                            }
+                        }
+                    }
+                }
+                .droppyPopover(isPresented: $isColorPickerPresented, arrowEdge: .bottom) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(ClipboardTag.presetColors.enumerated()), id: \.offset) { index, colorHex in
+                            Button {
                                 withAnimation(DroppyAnimation.hoverBouncy) {
                                     editingColorIndex = index
                                 }
+                                isColorPickerPresented = false
+                            } label: {
+                                Circle()
+                                    .fill(Color(hex: colorHex) ?? .gray)
+                                    .frame(width: 20, height: 20)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(AdaptiveColors.overlayAuto(0.3), lineWidth: 0.8)
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .stroke(
+                                                safeEditingColorIndex == index ? AdaptiveColors.primaryTextAuto : Color.clear,
+                                                lineWidth: 2
+                                            )
+                                    )
                             }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(10)
+                    .droppyTransparentBackground(true)
+                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                            .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 1)
+                    )
+                    .onHover { hovering in
+                        isHoveringColorPopover = hovering
+                        if !hovering {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                                if !isHoveringColorSwatch && !isHoveringColorPopover {
+                                    isColorPickerPresented = false
+                                }
+                            }
+                        }
                     }
                 }
                 
                 TextField("Tag name", text: $editingName)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13, weight: .medium))
-                    .frame(maxWidth: 80)
+                    .foregroundStyle(AdaptiveColors.primaryTextAuto)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                     .focused($isEditFocused)
-                    .droppyTextInputChrome(horizontalPadding: 8, verticalPadding: 6)
+                    .droppyTextInputChrome(
+                        cornerRadius: DroppyRadius.large,
+                        horizontalPadding: 10,
+                        verticalPadding: 6
+                    )
                     .onSubmit { onSaveEdit() }
                     .onAppear { isEditFocused = true }
                 
@@ -3748,7 +4348,34 @@ struct TagRowView: View {
                 
                 Spacer()
                 
-                // Action buttons with animation - fixed width for symmetry
+                // Reorder controls
+                HStack(spacing: 6) {
+                    Button {
+                        onMoveUp()
+                    } label: {
+                        Image(systemName: "arrow.up")
+                    }
+                    .buttonStyle(DroppyCircleButtonStyle(size: 26))
+                    .disabled(!canMoveUp)
+                    .opacity(canMoveUp ? 1 : 0.35)
+                    .help("Move Up")
+                    
+                    Button {
+                        onMoveDown()
+                    } label: {
+                        Image(systemName: "arrow.down")
+                    }
+                    .buttonStyle(DroppyCircleButtonStyle(size: 26))
+                    .disabled(!canMoveDown)
+                    .opacity(canMoveDown ? 1 : 0.35)
+                    .help("Move Down")
+                }
+                .frame(width: 60, alignment: .trailing)
+                .opacity(isHovering ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: isHovering)
+                .allowsHitTesting(isHovering)
+                
+                // Edit/delete actions
                 HStack(spacing: 6) {
                     Button {
                         onStartEdit()
@@ -3768,6 +4395,7 @@ struct TagRowView: View {
                 .frame(width: 60, alignment: .trailing)
                 .opacity(isHovering ? 1 : 0)
                 .animation(.easeInOut(duration: 0.15), value: isHovering)
+                .allowsHitTesting(isHovering)
             }
         }
         .padding(.horizontal, 14)
@@ -3786,33 +4414,12 @@ struct TagRowView: View {
                 isHovering = hovering
             }
         }
-    }
-}
-
-// MARK: - Tag Drop Delegate
-
-struct TagDropDelegate: DropDelegate {
-    let tag: ClipboardTag
-    let tags: [ClipboardTag]
-    @Binding var draggingTagId: UUID?
-    let onReorder: (Int, Int) -> Void
-    
-    func dropEntered(info: DropInfo) {
-        guard let draggedId = draggingTagId,
-              draggedId != tag.id,
-              let fromIndex = tags.firstIndex(where: { $0.id == draggedId }),
-              let toIndex = tags.firstIndex(where: { $0.id == tag.id }),
-              fromIndex != toIndex else { return }
-        
-        onReorder(fromIndex, toIndex)
-    }
-    
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        return DropProposal(operation: .move)
-    }
-    
-    func performDrop(info: DropInfo) -> Bool {
-        draggingTagId = nil
-        return true
+        .onChange(of: isEditing) { _, editing in
+            if !editing {
+                isColorPickerPresented = false
+                isHoveringColorSwatch = false
+                isHoveringColorPopover = false
+            }
+        }
     }
 }

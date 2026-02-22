@@ -11,7 +11,7 @@
 import Foundation
 import AppKit
 import SwiftUI
-import QuartzCore
+import Combine
 import SkyLightWindow
 
 /// Manages a separate, throwaway window that shows the lock icon on the macOS lock screen.
@@ -26,14 +26,22 @@ import SkyLightWindow
 @MainActor
 final class LockScreenHUDWindowManager {
     static let shared = LockScreenHUDWindowManager()
+
+#if DEBUG
+    private let lockHUDMotionDebugLogs = false
+#else
+    private let lockHUDMotionDebugLogs = false
+#endif
     
     // MARK: - Window State
     private var hudWindow: NSWindow?
     private var hasDelegated = false
     private var hideTask: Task<Void, Never>?
+    private var hideTransitionToken = UUID()
     private var configuredContentSize: NSSize = .zero
     private var currentTargetDisplayID: CGDirectDisplayID?
     private var screenChangeObserver: NSObjectProtocol?
+    private let surfaceState = LockScreenHUDSurfaceState()
     
     // MARK: - Dimensions
     /// Wing width for battery/lock HUD — must match NotchShelfView.batteryWingWidth exactly
@@ -65,27 +73,29 @@ final class LockScreenHUDWindowManager {
     /// Called by `LockScreenManager` when the screen locks.
     @discardableResult
     func showOnLockScreen() -> Bool {
-        // Prefer the active/primary lock-screen display.
-        // This avoids using stale built-in geometry after dock/undock reconfiguration.
-        guard let screen = lockScreenTargetScreen() else {
+        guard let context = LockScreenDisplayContextProvider.shared.contextSnapshot()
+            ?? LockScreenDisplayContextProvider.shared.beginLockSession() else {
             currentTargetDisplayID = nil
             print("LockScreenHUDWindowManager: ⚠️ No screen available")
             return false
         }
-        
+        let screen = context.screen
+
         print("LockScreenHUDWindowManager: 🔒 Showing lock icon on lock screen")
 
         // If a delayed hide is pending from a prior unlock, cancel it.
         hideTask?.cancel()
         hideTask = nil
+        hideTransitionToken = UUID()
+        surfaceState.isUnlockCollapseActive = false
         
         // Calculate width dynamically to match main notch
         let currentHudWidth = hudWidth(for: screen)
-        let displayChanged = currentTargetDisplayID != screen.displayID
-        currentTargetDisplayID = screen.displayID
+        let displayChanged = currentTargetDisplayID != context.displayID
+        currentTargetDisplayID = context.displayID
         
         // Calculate frame with new width
-        let targetFrame = calculateWindowFrame(for: screen, width: currentHudWidth)
+        let targetFrame = calculateWindowFrame(for: context, width: currentHudWidth)
         
         let window: NSWindow
         let createdFreshWindow: Bool
@@ -108,6 +118,7 @@ final class LockScreenHUDWindowManager {
 
         // Update frame for current screen geometry
         window.setFrame(targetFrame, display: true)
+        logTopEdgeDrift(windowFrame: targetFrame, context: context, phase: "showOnLockScreen")
         
         // Only rebuild the SwiftUI host when needed to avoid visual resets/flicker.
         let needsContentRebuild =
@@ -122,6 +133,7 @@ final class LockScreenHUDWindowManager {
             let collapsedNotchWidth = max(1, layout.notchWidth)
 
             let lockHUDContent = LockScreenHUDWindowContent(
+                surfaceState: surfaceState,
                 lockWidth: currentHudWidth,
                 collapsedWidth: collapsedNotchWidth,
                 notchHeight: notchHeight,
@@ -151,16 +163,11 @@ final class LockScreenHUDWindowManager {
         
         // Show window
         if createdFreshWindow {
-            window.alphaValue = 0
+            AppKitMotion.prepareForPresent(window, initialScale: 1.0)
         }
         window.orderFrontRegardless()
         if createdFreshWindow {
-            NSAnimationContext.beginGrouping()
-            let context = NSAnimationContext.current
-            context.duration = 0.14
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().alphaValue = 1
-            NSAnimationContext.endGrouping()
+            AppKitMotion.animateIn(window, initialScale: 1.0, duration: 0.2)
         }
 
         print("LockScreenHUDWindowManager: ✅ Lock icon visible on lock screen")
@@ -171,6 +178,7 @@ final class LockScreenHUDWindowManager {
     /// This preserves a single visual surface from lock screen to unlocked desktop.
     func transitionToDesktopAndHide(
         after delay: TimeInterval,
+        collapseDuration: TimeInterval,
         onHandoffStart: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
     ) {
@@ -181,30 +189,35 @@ final class LockScreenHUDWindowManager {
         }
 
         hideTask?.cancel()
+        let transitionToken = UUID()
+        hideTransitionToken = transitionToken
         // Keep the exact same delegated surface alive through the unlock morph.
-        // Avoid level/behavior mutations here to prevent cross-space visual artifacts.
+        // Avoid any frame/display retargeting during handoff.
         window.orderFrontRegardless()
         window.alphaValue = 1
+        if let context = LockScreenDisplayContextProvider.shared.contextSnapshot() {
+            logTopEdgeDrift(windowFrame: window.frame, context: context, phase: "unlock-handoff-start")
+        }
 
         hideTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
             guard !Task.isCancelled else { return }
+            guard self?.hideTransitionToken == transitionToken else { return }
 
-            // Hand off to the inline notch HUD first so the user sees one continuous surface.
+            // Dedicated lock surface remains the single owner through handoff.
             onHandoffStart?()
 
-            // Fade the dedicated lock surface out instead of abruptly destroying it.
-            let fadeDuration: TimeInterval = 0.22
-            NSAnimationContext.beginGrouping()
-            let context = NSAnimationContext.current
-            context.duration = fadeDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().alphaValue = 0
-            NSAnimationContext.endGrouping()
+            // Use wing geometry collapse (same visual family as notch expand/shrink),
+            // not opacity fade-out.
+            self?.surfaceState.isUnlockCollapseActive = true
 
-            try? await Task.sleep(nanoseconds: UInt64(fadeDuration * 1_000_000_000))
+            let teardownDelay = max(0.01, collapseDuration)
+            try? await Task.sleep(nanoseconds: UInt64(teardownDelay * 1_000_000_000))
             guard !Task.isCancelled else { return }
+            guard self?.hideTransitionToken == transitionToken else { return }
+            guard self?.hudWindow === window else { return }
 
+            self?.hideTask = nil
             self?.hideAndDestroy()
             completion?()
         }
@@ -217,6 +230,7 @@ final class LockScreenHUDWindowManager {
 
         hideTask?.cancel()
         hideTask = nil
+        hideTransitionToken = UUID()
         
         guard let window = hudWindow else {
             print("LockScreenHUDWindowManager: No window to destroy")
@@ -225,6 +239,7 @@ final class LockScreenHUDWindowManager {
         
         // Reset alpha before teardown so reused/recreated windows always start fully visible.
         window.alphaValue = 1
+        surfaceState.isUnlockCollapseActive = false
 
         // Remove from screen
         window.orderOut(nil)
@@ -269,69 +284,130 @@ final class LockScreenHUDWindowManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { [weak self] in
-                await self?.handleScreenGeometryChange()
+            Task { @MainActor [weak self] in
+                self?.handleScreenGeometryChange()
             }
         }
     }
 
     private func handleScreenGeometryChange() {
         guard hudWindow != nil else { return }
-        guard !LockScreenManager.shared.isUnlocked else { return }
-        _ = showOnLockScreen()
+        switch LockScreenManager.shared.transitionPhase {
+        case .locking, .locked:
+            break
+        case .unlocked, .unlockingHandoff:
+            return
+        }
+        guard let context = LockScreenDisplayContextProvider.shared.contextSnapshot() else { return }
+        applyPinnedFrameIfNeeded(using: context)
         print("LockScreenHUDWindowManager: 📐 Realigned lock HUD after screen change")
-    }
-
-    /// Resolve the display that should host lock-screen HUD visuals.
-    /// Primary display wins, then current main, then cursor display, then built-in fallback.
-    private func lockScreenTargetScreen() -> NSScreen? {
-        let screens = NSScreen.screens
-        guard !screens.isEmpty else { return nil }
-
-        let primaryDisplayID = CGMainDisplayID()
-        if let primary = screens.first(where: { $0.displayID == primaryDisplayID }) {
-            return primary
-        }
-
-        if let main = NSScreen.main,
-           screens.contains(where: { $0.displayID == main.displayID }) {
-            return main
-        }
-
-        let mouseLocation = NSEvent.mouseLocation
-        if let mouseScreen = screens.first(where: { $0.frame.contains(mouseLocation) }) {
-            return mouseScreen
-        }
-
-        if let builtIn = screens.first(where: { $0.isBuiltIn }) {
-            return builtIn
-        }
-
-        return screens.first
     }
 
     var preferredDisplayID: CGDirectDisplayID? {
         currentTargetDisplayID
     }
+
+    var currentWindowFrame: NSRect? {
+        hudWindow?.frame
+    }
     
     /// Calculate the window frame to align with the physical notch area on the built-in display.
-    private func calculateWindowFrame(for screen: NSScreen, width: CGFloat) -> NSRect {
-        let layout = HUDLayoutCalculator(screen: screen)
-        let notchHeight = layout.notchHeight
-        
+    private func calculateWindowFrame(for context: LockScreenDisplayContext, width: CGFloat) -> NSRect {
+        // Notchless built-in Macs report a 0pt physical notch height.
+        // Use Dynamic Island height there so lock/unlock HUD remains visible.
+        let surfaceHeight = max(context.notchHeight, NotchLayoutConstants.dynamicIslandHeight)
+
         // Center horizontally on the notch
-        let notchCenterX = screen.notchAlignedCenterX
+        let notchCenterX = context.centerX
         let originX = notchCenterX - (width / 2)
         
         // Position at the very top of the screen (notch area)
-        let originY = screen.frame.origin.y + screen.frame.height - notchHeight
+        let originY = context.frame.maxY - surfaceHeight
         
-        return NSRect(x: originX, y: originY, width: width, height: notchHeight)
+        return NSRect(x: originX, y: originY, width: width, height: surfaceHeight)
     }
+
+    private func applyPinnedFrameIfNeeded(using context: LockScreenDisplayContext) {
+        guard let window = hudWindow else { return }
+        let frame = calculateWindowFrame(for: context, width: hudWidth(for: context.screen))
+        if abs(window.frame.origin.x - frame.origin.x) > 0.5 ||
+            abs(window.frame.origin.y - frame.origin.y) > 0.5 ||
+            abs(window.frame.width - frame.width) > 0.5 ||
+            abs(window.frame.height - frame.height) > 0.5 {
+            window.setFrame(frame, display: true)
+        }
+        currentTargetDisplayID = context.displayID
+        logTopEdgeDrift(windowFrame: window.frame, context: context, phase: "geometry-refresh")
+    }
+
+    private func logTopEdgeDrift(windowFrame: NSRect, context: LockScreenDisplayContext, phase: String) {
+        guard lockHUDMotionDebugLogs else { return }
+        let expectedTop = context.frame.maxY
+        let dedicatedDelta = abs(windowFrame.maxY - expectedTop)
+        if dedicatedDelta > 0.5 {
+            print(
+                "LockScreenHUDWindowManager: ⚠️ \(phase) top drift \(String(format: "%.3f", dedicatedDelta))pt "
+                    + "(minY=\(String(format: "%.3f", windowFrame.minY)), "
+                    + "maxY=\(String(format: "%.3f", windowFrame.maxY)), "
+                    + "expectedTop=\(String(format: "%.3f", expectedTop)))"
+            )
+        } else {
+            print(
+                "LockScreenHUDWindowManager: \(phase) top delta \(String(format: "%.3f", dedicatedDelta))pt "
+                    + "(minY=\(String(format: "%.3f", windowFrame.minY)), "
+                    + "maxY=\(String(format: "%.3f", windowFrame.maxY)))"
+            )
+        }
+    }
+}
+
+@MainActor
+private final class LockScreenHUDSurfaceState: ObservableObject {
+    @Published var isUnlockCollapseActive = false
 }
 
 private struct LockScreenHUDWindowContent: View {
     @ObservedObject private var lockScreenManager = LockScreenManager.shared
+    @ObservedObject var surfaceState: LockScreenHUDSurfaceState
+
+    private enum SurfaceMorphPhase {
+        case resting
+        case entering
+        case collapsing
+
+        var scale: CGFloat {
+            switch self {
+            case .resting:
+                1.0
+            case .entering:
+                0.96
+            case .collapsing:
+                0.97
+            }
+        }
+
+        var blur: CGFloat {
+            switch self {
+            case .resting:
+                0
+            case .entering:
+                3.2
+            case .collapsing:
+                2.6
+            }
+        }
+
+        var opacity: Double {
+            switch self {
+            case .resting:
+                1.0
+            case .entering:
+                0
+            case .collapsing:
+                0.9
+            }
+        }
+    }
 
     let lockWidth: CGFloat
     let collapsedWidth: CGFloat
@@ -340,23 +416,25 @@ private struct LockScreenHUDWindowContent: View {
     let animateEntrance: Bool
 
     @State private var visualWidth: CGFloat
-    @State private var transitionPhase = false
-    @State private var transitionResetWorkItem: DispatchWorkItem?
+    @State private var surfaceMorphPhase: SurfaceMorphPhase = .resting
     @State private var hasPlayedEntranceAnimation = false
 
     init(
+        surfaceState: LockScreenHUDSurfaceState,
         lockWidth: CGFloat,
         collapsedWidth: CGFloat,
         notchHeight: CGFloat,
         targetScreen: NSScreen,
         animateEntrance: Bool
     ) {
+        self.surfaceState = surfaceState
         self.lockWidth = lockWidth
         self.collapsedWidth = collapsedWidth
         self.notchHeight = notchHeight
         self.targetScreen = targetScreen
         self.animateEntrance = animateEntrance
         _visualWidth = State(initialValue: animateEntrance ? collapsedWidth : lockWidth)
+        _surfaceMorphPhase = State(initialValue: animateEntrance ? .entering : .resting)
     }
 
     var body: some View {
@@ -370,57 +448,54 @@ private struct LockScreenHUDWindowContent: View {
                 targetScreen: targetScreen
             )
             .frame(width: visualWidth, height: notchHeight)
-            .scaleEffect(transitionPhase ? 0.97 : 1.0, anchor: .top)
-            .blur(radius: transitionPhase ? 1.8 : 0)
-            .opacity(transitionPhase ? 0.96 : 1.0)
         }
+        .scaleEffect(surfaceMorphPhase.scale, anchor: .top)
+        .blur(radius: surfaceMorphPhase.blur)
+        .opacity(surfaceMorphPhase.opacity)
+        .geometryGroup()
         .frame(maxWidth: .infinity, maxHeight: notchHeight, alignment: .top)
-        .animation(.easeOut(duration: 0.16), value: transitionPhase)
+        .animation(DroppyAnimation.notchState(for: targetScreen), value: surfaceMorphPhase)
         .onAppear {
-            // Match regular HUD behavior: start collapsed and grow wider on lock entry.
+            // Match regular HUD behavior: collapse -> widen while also blur/fade resolving
+            // on the same element so lock/unlock feels identical to other notch surfaces.
             if animateEntrance && !hasPlayedEntranceAnimation {
                 hasPlayedEntranceAnimation = true
                 visualWidth = collapsedWidth
                 withAnimation(DroppyAnimation.notchState(for: targetScreen)) {
                     visualWidth = lockWidth
+                    surfaceMorphPhase = .resting
                 }
             } else {
                 // Keep a stable lock surface size to avoid tiny handoff ghosts.
                 visualWidth = lockWidth
+                surfaceMorphPhase = .resting
             }
-            triggerPremiumPulse()
         }
         .onChange(of: lockScreenManager.isUnlocked) { _, isUnlocked in
-            withAnimation(DroppyAnimation.notchState) {
+            withAnimation(DroppyAnimation.notchState(for: targetScreen)) {
                 visualWidth = lockWidth
-            }
-            if !isUnlocked {
-                triggerPremiumPulse()
+                if !isUnlocked {
+                    surfaceMorphPhase = .resting
+                }
             }
         }
         .onChange(of: lockWidth) { _, newLockWidth in
             if !lockScreenManager.isUnlocked {
-                withAnimation(DroppyAnimation.notchState) {
+                withAnimation(DroppyAnimation.notchState(for: targetScreen)) {
                     visualWidth = newLockWidth
                 }
             }
         }
-        .onDisappear {
-            transitionResetWorkItem?.cancel()
-            transitionResetWorkItem = nil
-        }
-    }
-
-    private func triggerPremiumPulse() {
-        transitionResetWorkItem?.cancel()
-        transitionPhase = true
-
-        let workItem = DispatchWorkItem {
-            withAnimation(DroppyAnimation.notchState) {
-                transitionPhase = false
+        .onChange(of: surfaceState.isUnlockCollapseActive) { _, isActive in
+            withAnimation(DroppyAnimation.notchState(for: targetScreen)) {
+                if isActive {
+                    surfaceMorphPhase = .collapsing
+                    visualWidth = collapsedWidth
+                } else {
+                    surfaceMorphPhase = .resting
+                    visualWidth = lockWidth
+                }
             }
         }
-        transitionResetWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.11, execute: workItem)
     }
 }

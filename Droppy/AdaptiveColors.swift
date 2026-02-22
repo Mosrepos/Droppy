@@ -30,4 +30,7 @@ enum AdaptiveColors {
     
     /// Secondary text color.
     static let secondaryTextAuto = Color(nsColor: .secondaryLabelColor)
+
+    /// Unified primary action blue, matched to clipboard selected-row highlight.
+    static let selectionBlueAuto = Color(nsColor: .selectedContentBackgroundColor)
 }

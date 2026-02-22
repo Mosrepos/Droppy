@@ -80,6 +80,7 @@ struct AirPodsHUDView: View {
     let airPods: ConnectedAirPods
     let hudWidth: CGFloat
     var targetScreen: NSScreen? = nil  // Target screen for multi-monitor support
+    @AppStorage(AppPreferenceKey.enableCompactHUDIconScaling) private var enableCompactHUDIconScaling = PreferenceDefault.enableCompactHUDIconScaling
     
     /// Centralized layout calculator - Single Source of Truth
     private var layout: HUDLayoutCalculator {
@@ -225,6 +226,7 @@ struct AirPodsHUDView: View {
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
+        .scaleEffect(enableCompactHUDIconScaling ? 0.8 : 1.0)
         .scaleEffect(iconScale * iconBreathingScale)
         .offset(y: iconLift)
         .opacity(iconOpacity)
@@ -239,7 +241,7 @@ struct AirPodsHUDView: View {
             if size > 24 {
                 return isThreeDigits ? 9.5 : 11
             }
-            return isThreeDigits ? 7.4 : 9
+            return isThreeDigits ? (enableCompactHUDIconScaling ? 7.0 : 7.4) : 9
         }()
 
         ZStack {
@@ -265,7 +267,7 @@ struct AirPodsHUDView: View {
                 .foregroundStyle(.white)
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(enableCompactHUDIconScaling ? 0.65 : 0.7)
                 .allowsTightening(true)
                 .frame(width: max(10, size - 6))
         }

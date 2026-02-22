@@ -25,6 +25,10 @@ final class CrashReporter {
     
     private init() {}
     
+    deinit {
+        removeDidBecomeActiveObserver()
+    }
+    
     // MARK: - Crash Detection
     
     /// Call at app launch to mark session as started (not cleanly terminated)
@@ -119,6 +123,8 @@ final class CrashReporter {
 
     private func queueCrashPrompt(crashLog: String?) {
         if canPresentForegroundPrompt() {
+            pendingCrashPromptLog = nil
+            removeDidBecomeActiveObserver()
             showCrashReportPrompt(crashLog: crashLog)
             return
         }
@@ -141,8 +147,15 @@ final class CrashReporter {
             guard self.canPresentForegroundPrompt() else { return }
 
             self.pendingCrashPromptLog = nil
+            self.removeDidBecomeActiveObserver()
             self.showCrashReportPrompt(crashLog: crashLog)
         }
+    }
+
+    private func removeDidBecomeActiveObserver() {
+        guard let observer = didBecomeActiveObserver else { return }
+        NotificationCenter.default.removeObserver(observer)
+        didBecomeActiveObserver = nil
     }
 
     private func canPresentForegroundPrompt() -> Bool {

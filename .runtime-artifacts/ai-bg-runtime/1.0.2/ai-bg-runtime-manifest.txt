@@ -1,0 +1,23 @@
+{
+  "id": "aiBackgroundRemoval",
+  "version": "1.0.2",
+  "protocolVersion": 1,
+  "minAppVersion": null,
+  "executableName": "droppy-ai-bg-runtime",
+  "artifacts": [
+    {
+      "arch": "arm64",
+      "url": "https://github.com/iordv/Droppy/releases/download/ai-bg-runtime/ai-bg-runtime-arm64.tar.gz",
+      "sha256": "fdb16f6cb573c8c4ad914157e6f7ce4b916b0900ebab79af579e88c2f2dcb0be",
+      "sizeBytes": 7117649,
+      "teamID": "NARHG44L48"
+    },
+    {
+      "arch": "x86_64",
+      "url": "https://github.com/iordv/Droppy/releases/download/ai-bg-runtime/ai-bg-runtime-x86_64.tar.gz",
+      "sha256": "04d4b461cfb54a5b6feb16a54bfe9a3f148870cfb43c478fc7c55d8cd0f68270",
+      "sizeBytes": 8795983,
+      "teamID": "NARHG44L48"
+    }
+  ]
+}

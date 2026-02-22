@@ -36,19 +36,17 @@ enum FFmpegInstallStep: Int, CaseIterable {
 struct FFmpegInstallView: View {
     @ObservedObject var manager = FFmpegInstallManager.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
-    @State private var isHoveringReviews = false
     @State private var isHoveringCopy = false
     @State private var pulseAnimation = false
     @State private var showSuccessGlow = false
-    @State private var showReviewsSheet = false
     @State private var currentStep: FFmpegInstallStep = .checkingHomebrew
     @State private var copiedCommand = false
     
     // Stats passed from parent
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     private let homebrewInstallCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
     
@@ -84,9 +82,6 @@ struct FFmpegInstallView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .ffmpegVideoCompression)
-        }
         .onAppear {
             pulseAnimation = true
         }
@@ -156,7 +151,7 @@ struct FFmpegInstallView: View {
                 .foregroundStyle(manager.isInstalled ? .green : .primary)
                 .animation(DroppyAnimation.viewChange, value: manager.isInstalled)
             
-            // Stats row: installs + rating + category badge
+            // Stats row: installs + category badge
             HStack(spacing: 12) {
                 // Installs
                 HStack(spacing: 4) {
@@ -167,28 +162,6 @@ struct FFmpegInstallView: View {
                 }
                 .foregroundStyle(.secondary)
                 
-                // Rating (clickable)
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
                 
                 // Category badge
                 Text("Media")
@@ -482,23 +455,12 @@ struct FFmpegInstallView: View {
             // Cancel/Close button (only show when not installing)
             if !manager.isInstalling {
                 Button {
-                    dismiss()
+                    closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
                 } label: {
                     Text(manager.isInstalled ? "Close" : "Cancel")
                 }
                 .buttonStyle(DroppyPillButtonStyle(size: .small))
             }
-            
-            // Reviews button
-            Button {
-                showReviewsSheet = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "star.bubble")
-                    Text("Reviews")
-                }
-            }
-            .buttonStyle(DroppyPillButtonStyle(size: .small))
             
             Spacer()
             

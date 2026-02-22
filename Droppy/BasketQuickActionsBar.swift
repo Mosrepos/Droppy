@@ -3,7 +3,7 @@
 //  Droppy
 //
 //  Quick Actions bar - simple, snappy animation
-//  Supports transparency mode
+//  Supports Liquid mode
 //
 
 import SwiftUI

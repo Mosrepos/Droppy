@@ -259,6 +259,9 @@ final class ElementCaptureManager: ObservableObject {
     private var isFrameDebugLoggingEnabled: Bool {
         UserDefaults.standard.bool(forKey: "DEBUG_ELEMENT_CAPTURE_FRAME_TRACKING")
     }
+    private var shouldOpenEditorInstantlyAfterCapture: Bool {
+        UserDefaults.standard.bool(forKey: AppPreferenceKey.elementCaptureOpenEditorInstantly)
+    }
 
     // MARK: - Initialization
     
@@ -797,7 +800,7 @@ final class ElementCaptureManager: ObservableObject {
                 copyToClipboard(image)
                 playScreenshotSound()
                 await MainActor.run {
-                    CapturePreviewWindowController.shared.show(with: nsImage)
+                    self.presentPostCaptureResultUI(with: nsImage)
                 }
             }
         } catch {
@@ -1386,7 +1389,7 @@ final class ElementCaptureManager: ObservableObject {
                 
                 // Show preview window with actions
                 await MainActor.run {
-                    CapturePreviewWindowController.shared.show(with: nsImage)
+                    self.presentPostCaptureResultUI(with: nsImage)
                 }
             }
             
@@ -1426,7 +1429,7 @@ final class ElementCaptureManager: ObservableObject {
             print("[ElementCapture] Fullscreen captured successfully")
 
             await MainActor.run {
-                CapturePreviewWindowController.shared.show(with: nsImage)
+                self.presentPostCaptureResultUI(with: nsImage)
             }
 
         } catch {
@@ -1480,7 +1483,7 @@ final class ElementCaptureManager: ObservableObject {
             print("[ElementCapture] Window captured successfully")
 
             await MainActor.run {
-                CapturePreviewWindowController.shared.show(with: nsImage)
+                self.presentPostCaptureResultUI(with: nsImage)
             }
 
         } catch {
@@ -1717,6 +1720,14 @@ final class ElementCaptureManager: ObservableObject {
         if !wroteData {
             let fallbackImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
             pasteboard.writeObjects([fallbackImage])
+        }
+    }
+
+    private func presentPostCaptureResultUI(with image: NSImage) {
+        if shouldOpenEditorInstantlyAfterCapture {
+            ScreenshotEditorWindowController.shared.show(with: image)
+        } else {
+            CapturePreviewWindowController.shared.show(with: image)
         }
     }
     
@@ -2000,14 +2011,20 @@ final class CapturePreviewWindowController {
     private var autoDismissTimer: Timer?
     private var escapeMonitor: Any?
     private var globalEscapeMonitor: Any?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 6
 
     var currentWindowNumber: Int? { window?.windowNumber }
     
     private init() {}
     
+    @MainActor
     func show(with image: NSImage) {
-        // Clean up any existing window first
-        cleanUp()
+        cancelDeferredTeardown()
+        autoDismissTimer?.invalidate()
+        autoDismissTimer = nil
+        removeEscapeMonitors()
         
         // Create SwiftUI view with edit callback
         let previewView = CapturePreviewView(
@@ -2024,78 +2041,115 @@ final class CapturePreviewWindowController {
         let contentSize = NSSize(width: 280, height: 220)
         
         // Create hosting view with layer clipping for proper rounded corners
-        let hosting = NSHostingView(rootView: AnyView(previewView))
-        hosting.frame = NSRect(origin: .zero, size: contentSize)
-        hosting.wantsLayer = true
-        hosting.layer?.masksToBounds = true
-        hosting.layer?.cornerRadius = 28  // Match the SwiftUI cornerRadius
-        self.hostingView = hosting
-        
-        let newWindow = NSWindow(
-            contentRect: NSRect(origin: .zero, size: contentSize),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        
-        newWindow.contentView = hosting
-        newWindow.backgroundColor = .clear
-        newWindow.isOpaque = false
-        newWindow.hasShadow = true  // Window-level shadow (properly rounded)
-        newWindow.level = .floating
-        newWindow.isMovableByWindowBackground = true
-        newWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        if let hostingView {
+            hostingView.rootView = AnyView(previewView)
+            hostingView.frame = NSRect(origin: .zero, size: contentSize)
+            hostingView.layer?.cornerRadius = 28
+        } else {
+            let hosting = NSHostingView(rootView: AnyView(previewView))
+            hosting.frame = NSRect(origin: .zero, size: contentSize)
+            hosting.wantsLayer = true
+            hosting.layer?.masksToBounds = true
+            hosting.layer?.cornerRadius = 28  // Match the SwiftUI cornerRadius
+            self.hostingView = hosting
+        }
+
+        let previewWindow: NSWindow
+        if let existing = window {
+            previewWindow = existing
+            previewWindow.setContentSize(contentSize)
+        } else {
+            let newWindow = NSWindow(
+                contentRect: NSRect(origin: .zero, size: contentSize),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            
+            newWindow.backgroundColor = .clear
+            newWindow.isOpaque = false
+            newWindow.hasShadow = true  // Window-level shadow (properly rounded)
+            newWindow.level = .floating
+            newWindow.isMovableByWindowBackground = true
+            newWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            newWindow.isReleasedWhenClosed = false
+            self.window = newWindow
+            previewWindow = newWindow
+        }
+
+        if let hostingView {
+            previewWindow.contentView = hostingView
+        }
         
         // Position in bottom-right corner
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
-            let windowFrame = newWindow.frame
+            let windowFrame = previewWindow.frame
             let x = screenFrame.maxX - windowFrame.width - 20
             let y = screenFrame.minY + 20
-            newWindow.setFrameOrigin(NSPoint(x: x, y: y))
+            previewWindow.setFrameOrigin(NSPoint(x: x, y: y))
         }
         
-        // Animate in with spring
-        newWindow.alphaValue = 0
-        newWindow.orderFront(nil)
-        
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            newWindow.animator().alphaValue = 1
+        // Animate in using shared window motion profile.
+        if previewWindow.isVisible {
+            previewWindow.makeKeyAndOrderFront(nil)
+        } else {
+            AppKitMotion.prepareForPresent(previewWindow, initialScale: 1.0)
+            previewWindow.orderFront(nil)
+            AppKitMotion.animateIn(previewWindow, initialScale: 1.0, duration: 0.2)
         }
-        
-        self.window = newWindow
+
+        isClosing = false
         installEscapeMonitors()
         
         // Auto-dismiss after 3 seconds
         autoDismissTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-            self?.dismiss()
+            Task { @MainActor [weak self] in
+                self?.dismiss()
+            }
         }
     }
     
+    @MainActor
     func dismiss() {
         autoDismissTimer?.invalidate()
         autoDismissTimer = nil
         removeEscapeMonitors()
         
-        guard let window = window else { return }
+        guard let window = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
         
-        // Fade out animation
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            // Defer cleanup to next run loop to avoid autorelease pool issues
-            DispatchQueue.main.async {
-                self?.cleanUp()
-            }
-        })
+        AppKitMotion.animateOut(window, targetScale: 1.0, duration: 0.15) { [weak self] in
+            window.orderOut(nil)
+            AppKitMotion.resetPresentationState(window)
+            self?.isClosing = false
+            self?.scheduleDeferredTeardown()
+        }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let window = self.window, !window.isVisible else { return }
+            self.cleanUp()
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
+    @MainActor
     private func cleanUp() {
         removeEscapeMonitors()
+        if let window {
+            AppKitMotion.resetPresentationState(window)
+        }
         window?.orderOut(nil)
         window?.contentView = nil
         window = nil
@@ -2107,8 +2161,11 @@ final class CapturePreviewWindowController {
 
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
-            guard let self = self, let window = self.window, window.isVisible else { return event }
-            self.dismiss()
+            guard let self = self else { return event }
+            Task { @MainActor [weak self] in
+                guard let self, let window = self.window, window.isVisible else { return }
+                self.dismiss()
+            }
             return nil
         }
 

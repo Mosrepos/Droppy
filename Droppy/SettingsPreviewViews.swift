@@ -1345,7 +1345,6 @@ private struct MockFileItem: View {
 /// Notch Shelf Preview - realistic mock matching NotchShelfView expanded state
 struct NotchShelfPreview: View {
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
-    @State private var dropZoneDashPhase: CGFloat = 0
     
     private let shelfWidth: CGFloat = 392
     private let shelfHeight: CGFloat = 110
@@ -1370,7 +1369,7 @@ struct NotchShelfPreview: View {
                             lineWidth: 1.5,
                             lineCap: .round,
                             dash: [6, 8],
-                            dashPhase: dropZoneDashPhase
+                            dashPhase: 0
                         )
                     )
                 
@@ -1387,16 +1386,6 @@ struct NotchShelfPreview: View {
         .shadow(color: .black.opacity(0.28), radius: 7, x: 0, y: 4)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
-        .onAppear {
-            withAnimation(.linear(duration: 25).repeatForever(autoreverses: false)) {
-                dropZoneDashPhase -= 280
-            }
-        }
-        .onDisappear {
-            withAnimation(.linear(duration: 0)) {
-                dropZoneDashPhase = 0
-            }
-        }
     }
 }
 

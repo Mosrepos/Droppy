@@ -20,6 +20,7 @@ struct BasketItemView: View {
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
     @AppStorage(AppPreferenceKey.enablePowerFolders) private var enablePowerFolders = PreferenceDefault.enablePowerFolders
+    @ObservedObject private var backgroundRemovalManager = BackgroundRemovalManager.shared
     
     @State private var thumbnail: NSImage?
     @State private var isHovering = false
@@ -103,6 +104,11 @@ struct BasketItemView: View {
     /// File size for list layout
     private var listFileSize: String {
         cachedFileSize ?? "—"
+    }
+
+    private var backgroundRemovalPercentText: String {
+        let percent = Int(min(max(backgroundRemovalManager.progress, 0), 1) * 100)
+        return "\(percent)%"
     }
 
     /// Approximate available width for filename in list rows.
@@ -281,7 +287,7 @@ struct BasketItemView: View {
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .blue.opacity(0.8))
                             } else if isRemovingBackground {
-                                Text("Removing BG…")
+                                Text("Removing BG… \(backgroundRemovalPercentText)")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .purple.opacity(0.8))
                             } else if isExtractingText {
@@ -351,6 +357,7 @@ struct BasketItemView: View {
                         isCompressing: isCompressing,
                         isUnzipping: isUnzipping,
                         isCreatingZIP: isCreatingZIP,
+                        backgroundRemovalProgress: backgroundRemovalManager.progress,
                         isSelected: isSelected,
                         renamingItemId: $renamingItemId,
                         isPoofing: $isPoofing,
@@ -712,7 +719,7 @@ struct BasketItemView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .blue.opacity(0.8))
                     } else if isRemovingBackground {
-                        Text("Removing BG…")
+                        Text("Removing BG… \(backgroundRemovalPercentText)")
                             .font(.system(size: 11))
                             .foregroundStyle(isSelected ? .white.opacity(0.9) : .purple.opacity(0.8))
                     } else if isExtractingText {
@@ -782,6 +789,7 @@ struct BasketItemView: View {
                 isCompressing: isCompressing,
                 isUnzipping: isUnzipping,
                 isCreatingZIP: isCreatingZIP,
+                backgroundRemovalProgress: backgroundRemovalManager.progress,
                 isSelected: isSelected,
                 renamingItemId: $renamingItemId,
                 isPoofing: $isPoofing,
@@ -1505,10 +1513,11 @@ struct BasketItemView: View {
                     }
                 }
             } catch {
+                let errorMessage = error.localizedDescription
                 await MainActor.run {
                     isRemovingBackground = false
                     state.endFileOperation()
-                    print("Background removal failed: \(error.localizedDescription)")
+                    HapticFeedback.error()
                     // Trigger shake animation for failure feedback
                     withAnimation(DroppyAnimation.stateEmphasis) {
                         isShakeAnimating = true
@@ -1525,6 +1534,10 @@ struct BasketItemView: View {
                         withAnimation(DroppyAnimation.viewChange) { isShakeAnimating = false }
                     }
                 }
+                await DroppyAlertController.shared.showError(
+                    title: "Background Removal Failed",
+                    message: errorMessage
+                )
             }
         }
     }
@@ -1731,6 +1744,8 @@ struct BasketItemView: View {
         }
         
         Task {
+            var failedItems: [(name: String, message: String)] = []
+
             for selectedItem in imagesToProcess {
                 do {
                     let outputURL = try await selectedItem.removeBackground()
@@ -1749,7 +1764,7 @@ struct BasketItemView: View {
                         // End processing even on failure
                         state.endProcessing(for: selectedItem.id)
                     }
-                    print("Background removal failed for \(selectedItem.name): \(error.localizedDescription)")
+                    failedItems.append((name: selectedItem.name, message: error.localizedDescription))
                 }
             }
             
@@ -1757,6 +1772,31 @@ struct BasketItemView: View {
                 isRemovingBackground = false
                 state.endFileOperation()
             }
+
+            guard !failedItems.isEmpty else { return }
+
+            let successCount = max(0, imagesToProcess.count - failedItems.count)
+            let shownFailures = failedItems.prefix(10)
+            var failureLines = shownFailures
+                .map { "- \($0.name): \($0.message)" }
+                .joined(separator: "\n")
+
+            if failedItems.count > shownFailures.count {
+                failureLines += "\n- \(failedItems.count - shownFailures.count) more failures not shown."
+            }
+
+            let message = """
+            Removed background from \(successCount) of \(imagesToProcess.count) images.
+
+            Failed files:
+            \(failureLines)
+            """
+
+            await MainActor.run { HapticFeedback.error() }
+            await DroppyAlertController.shared.showError(
+                title: "Background Removal Completed with Issues",
+                message: message
+            )
         }
     }
 
@@ -1818,6 +1858,7 @@ private struct BasketItemContent: View {
     let isCompressing: Bool
     let isUnzipping: Bool
     let isCreatingZIP: Bool
+    let backgroundRemovalProgress: Double
     let isSelected: Bool
     @Binding var renamingItemId: UUID?
     @Binding var isPoofing: Bool
@@ -1877,7 +1918,12 @@ private struct BasketItemContent: View {
                 }
                 .overlay {
                     // Magic processing animation for background removal
-                    if isRemovingBackground || state.processingItemIds.contains(item.id) {
+                    if isRemovingBackground {
+                        MagicProcessingOverlay(progress: backgroundRemovalProgress)
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous))
+                            .transition(.opacity.animation(DroppyAnimation.viewChange))
+                    } else if state.processingItemIds.contains(item.id) {
                         MagicProcessingOverlay()
                             .frame(width: 56, height: 56)
                             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous))
@@ -2125,7 +2171,7 @@ private struct RenameTooltipPopover: View {
                     Text(String(localized: "action.save"))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .disabled(trimmedText.isEmpty)
             }
         }

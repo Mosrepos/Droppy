@@ -26,6 +26,7 @@ enum ExtensionType: String, CaseIterable, Identifiable {
     case notificationHUD
     case caffeine
     case menuBarManager
+    case pomodoro
     case todo
     case teleprompty
 
@@ -67,7 +68,7 @@ enum ExtensionType: String, CaseIterable, Identifiable {
         case .windowSnap:
             return !WindowSnapManager.shared.shortcuts.isEmpty || WindowSnapManager.shared.pointerModeEnabled
         case .voiceTranscribe:
-            return VoiceTranscribeManager.shared.isModelDownloaded
+            return VoiceTranscribeRuntimeManager.shared.isInstalled && VoiceTranscribeManager.shared.isModelDownloaded
         case .ffmpegVideoCompression:
             return FFmpegInstallManager.shared.isInstalled
         case .terminalNotch:
@@ -82,6 +83,8 @@ enum ExtensionType: String, CaseIterable, Identifiable {
             return UserDefaults.standard.bool(forKey: AppPreferenceKey.caffeineInstalled)
         case .menuBarManager:
             return MenuBarManager.shared.isEnabled
+        case .pomodoro:
+            return UserDefaults.standard.bool(forKey: AppPreferenceKey.pomodoroInstalled)
         case .todo:
             return UserDefaults.standard.bool(forKey: AppPreferenceKey.todoInstalled)
         case .teleprompty:

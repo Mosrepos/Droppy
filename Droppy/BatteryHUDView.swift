@@ -207,6 +207,8 @@ struct BatteryHUDView: View {
     @ObservedObject var batteryManager: BatteryManager
     let hudWidth: CGFloat     // Total HUD width
     var targetScreen: NSScreen? = nil  // Target screen for multi-monitor support
+    @AppStorage(AppPreferenceKey.enableCompactHUDIconScaling) private var enableCompactHUDIconScaling = PreferenceDefault.enableCompactHUDIconScaling
+    @AppStorage(AppPreferenceKey.enableCustomBatteryHUDIcons) private var enableCustomBatteryHUDIcons = PreferenceDefault.enableCustomBatteryHUDIcons
     
     /// Centralized layout calculator - Single Source of Truth
     private var layout: HUDLayoutCalculator {
@@ -265,27 +267,51 @@ struct BatteryHUDView: View {
         return max(24, iconSize * 1.38)
     }
 
+    private func glyphBodyHeight(for iconSize: CGFloat) -> CGFloat {
+        if layout.isDynamicIslandMode {
+            return max(10.5, iconSize * 0.68)
+        }
+        return max(13, iconSize * 0.78)
+    }
+
     private func glyphFrameWidth(for iconSize: CGFloat) -> CGFloat {
         glyphBodyWidth(for: iconSize) + 6
     }
-    
+
     var body: some View {
         VStack(alignment: .center, spacing: 0) {
             if layout.isDynamicIslandMode {
                 // DYNAMIC ISLAND: Icon on left edge, percentage on right edge
                 let iconSize = layout.iconSize
+                let bodyWidth = glyphBodyWidth(for: iconSize)
+                let bodyHeight = glyphBodyHeight(for: iconSize)
                 let iconFrameWidth = glyphFrameWidth(for: iconSize)
                 let symmetricPadding = layout.symmetricPadding(for: iconSize)
                 
                 HStack {
                     // Battery icon - .leading alignment within frame for edge alignment
-                    SystemBatteryAssetIcon(
-                        level: batteryManager.batteryLevel,
-                        isCharging: batteryManager.isCharging,
-                        isPluggedIn: batteryManager.isPluggedIn,
-                        width: iconFrameWidth,
-                        height: iconSize
-                    )
+                    Group {
+                        if enableCustomBatteryHUDIcons {
+                            SystemBatteryAssetIcon(
+                                level: batteryManager.batteryLevel,
+                                isCharging: batteryManager.isCharging,
+                                isPluggedIn: batteryManager.isPluggedIn,
+                                width: iconFrameWidth,
+                                height: iconSize
+                            )
+                        } else {
+                            IOSBatteryGlyph(
+                                level: CGFloat(batteryManager.batteryLevel) / 100.0,
+                                outerColor: batteryOuterColor,
+                                innerColor: batteryInnerColor,
+                                terminalColor: batteryTerminalColor,
+                                chargingSegmentColor: batteryChargingSegmentColor,
+                                isCharging: batteryManager.isCharging || batteryManager.isPluggedIn,
+                                bodyWidth: bodyWidth,
+                                bodyHeight: bodyHeight
+                            )
+                        }
+                    }
                         .frame(width: iconFrameWidth, height: iconSize, alignment: .leading)
                     
                     Spacer()
@@ -293,6 +319,7 @@ struct BatteryHUDView: View {
                     // Percentage
                     Text("\(batteryManager.batteryLevel)%")
                         .font(.system(size: layout.labelFontSize * 0.8, weight: .semibold))
+                        .scaleEffect(enableCompactHUDIconScaling ? 0.8 : 1.0)
                         .foregroundStyle(accentColor)
                         .monospacedDigit()
                         .contentTransition(.numericText(value: Double(batteryManager.batteryLevel)))
@@ -302,6 +329,8 @@ struct BatteryHUDView: View {
             } else {
                 // NOTCH MODE: Two wings separated by the notch space
                 let iconSize = layout.iconSize
+                let bodyWidth = glyphBodyWidth(for: iconSize)
+                let bodyHeight = glyphBodyHeight(for: iconSize)
                 let iconFrameWidth = glyphFrameWidth(for: iconSize)
                 let symmetricPadding = layout.symmetricPadding(for: iconSize)
                 let wingWidth = layout.wingWidth(for: hudWidth)
@@ -309,13 +338,28 @@ struct BatteryHUDView: View {
                 HStack(spacing: 0) {
                     // Left wing: Battery icon near left edge
                     HStack {
-                        SystemBatteryAssetIcon(
-                            level: batteryManager.batteryLevel,
-                            isCharging: batteryManager.isCharging,
-                            isPluggedIn: batteryManager.isPluggedIn,
-                            width: iconFrameWidth,
-                            height: iconSize
-                        )
+                        Group {
+                            if enableCustomBatteryHUDIcons {
+                                SystemBatteryAssetIcon(
+                                    level: batteryManager.batteryLevel,
+                                    isCharging: batteryManager.isCharging,
+                                    isPluggedIn: batteryManager.isPluggedIn,
+                                    width: iconFrameWidth,
+                                    height: iconSize
+                                )
+                            } else {
+                                IOSBatteryGlyph(
+                                    level: CGFloat(batteryManager.batteryLevel) / 100.0,
+                                    outerColor: batteryOuterColor,
+                                    innerColor: batteryInnerColor,
+                                    terminalColor: batteryTerminalColor,
+                                    chargingSegmentColor: batteryChargingSegmentColor,
+                                    isCharging: batteryManager.isCharging || batteryManager.isPluggedIn,
+                                    bodyWidth: bodyWidth,
+                                    bodyHeight: bodyHeight
+                                )
+                            }
+                        }
                             .frame(width: iconFrameWidth, height: iconSize, alignment: .leading)
                         Spacer(minLength: 0)
                     }
@@ -331,6 +375,7 @@ struct BatteryHUDView: View {
                         Spacer(minLength: 0)
                         Text("\(batteryManager.batteryLevel)%")
                             .font(.system(size: layout.labelFontSize * 0.8, weight: .semibold))
+                            .scaleEffect(enableCompactHUDIconScaling ? 0.8 : 1.0)
                             .foregroundStyle(accentColor)
                             .monospacedDigit()
                             .contentTransition(.numericText(value: Double(batteryManager.batteryLevel)))

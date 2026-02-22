@@ -82,12 +82,13 @@ struct OCRResultView: View {
                         Text(showCopiedFeedback ? "Copied!" : "Copy to Clipboard")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: showCopiedFeedback ? .green : .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: showCopiedFeedback ? .green : AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
         .frame(width: 420)
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize(horizontal: true, vertical: true)
         .droppyTransparentBackground(useTransparentBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
     }
 }

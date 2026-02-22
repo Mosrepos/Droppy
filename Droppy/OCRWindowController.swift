@@ -9,71 +9,96 @@ import AppKit
 import SwiftUI
 import CoreGraphics
 
-final class OCRWindowController: NSObject {
+@MainActor
+final class OCRWindowController: NSObject, NSWindowDelegate {
     static let shared = OCRWindowController()
     
-    private(set) var window: NSPanel?
+    private(set) var window: NSWindow?
+    private var hostingView: NSHostingView<OCRResultView>?
     private var escapeMonitor: Any?
     private var globalEscapeMonitor: Any?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private override init() {
         super.init()
     }
     
     func show(with text: String, targetDisplayID: CGDirectDisplayID? = nil) {
-        // If window already exists, close and recreate to ensure clean state
-        close()
-        
+        cancelDeferredTeardown()
+
         let contentView = OCRResultView(text: text) { [weak self] in
             self?.close()
         }
 
-        let hostingView = NSHostingView(rootView: contentView)
-        
-        let newWindow = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        
+        if let hostingView {
+            hostingView.rootView = contentView
+        } else {
+            let newHostingView = NSHostingView(rootView: contentView)
+            self.hostingView = newHostingView
+        }
+
+        let panel: NSWindow
+        if let existing = window {
+            panel = existing
+        } else {
+            let newWindow = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
+                styleMask: [.titled, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+
+            newWindow.title = "Extracted Text"
+            newWindow.titlebarAppearsTransparent = true
+            newWindow.titleVisibility = .hidden
+            newWindow.standardWindowButton(.closeButton)?.isHidden = true
+            newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            newWindow.standardWindowButton(.zoomButton)?.isHidden = true
+
+            newWindow.isMovableByWindowBackground = true
+            newWindow.backgroundColor = .clear
+            newWindow.isOpaque = false
+            newWindow.hasShadow = true
+            newWindow.isReleasedWhenClosed = false
+            newWindow.delegate = self
+
+            self.window = newWindow
+            panel = newWindow
+        }
+
+        if let hostingView {
+            panel.contentView = hostingView
+        }
+
         if let screen = resolveScreen(for: targetDisplayID) {
             let visibleFrame = screen.visibleFrame
-            let size = newWindow.frame.size
+            let size = panel.frame.size
             let origin = NSPoint(
                 x: visibleFrame.midX - (size.width / 2),
                 y: visibleFrame.midY - (size.height / 2)
             )
-            newWindow.setFrameOrigin(origin)
+            panel.setFrameOrigin(origin)
         } else {
-            newWindow.center()
+            panel.center()
         }
-        newWindow.title = "Extracted Text"
-        newWindow.titlebarAppearsTransparent = true
-        newWindow.titleVisibility = .visible
-        
-        newWindow.isMovableByWindowBackground = false
-        newWindow.backgroundColor = .clear
-        newWindow.isOpaque = false
-        newWindow.hasShadow = true
-        newWindow.isReleasedWhenClosed = false
-        newWindow.level = .screenSaver
-        newWindow.hidesOnDeactivate = false
-        newWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        
-        newWindow.contentView = hostingView
-        
-        AppKitMotion.prepareForPresent(newWindow, initialScale: 0.9)
-        
-        // Show - use deferred makeKey to avoid NotchWindow conflicts
-        newWindow.orderFront(nil)
-        DispatchQueue.main.async {
+
+        if panel.isVisible {
             NSApp.activate(ignoringOtherApps: true)
-            newWindow.makeKeyAndOrderFront(nil)
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            AppKitMotion.prepareForPresent(panel, initialScale: 0.9)
+
+            // Show - use deferred makeKey to avoid NotchWindow conflicts
+            panel.orderFront(nil)
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                panel.makeKeyAndOrderFront(nil)
+            }
+            AppKitMotion.animateIn(panel, initialScale: 0.9, duration: 0.2)
         }
-        AppKitMotion.animateIn(newWindow, initialScale: 0.9, duration: 0.24)
-        
-        self.window = newWindow
+
         installEscapeMonitors()
     }
 
@@ -93,14 +118,36 @@ final class OCRWindowController: NSObject {
     }
     
     func close() {
-        guard let panel = window else { return }
+        guard let panel = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
         removeEscapeMonitors()
 
         AppKitMotion.animateOut(panel, targetScale: 0.96, duration: 0.15) { [weak self] in
-            panel.close()
+            panel.orderOut(nil)
             AppKitMotion.resetPresentationState(panel)
-            self?.window = nil
+            self?.isClosing = false
+            self?.scheduleDeferredTeardown()
         }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.hostingView = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
 
     private func resolveScreen(for displayID: CGDirectDisplayID?) -> NSScreen? {
@@ -144,5 +191,18 @@ final class OCRWindowController: NSObject {
             NSEvent.removeMonitor(monitor)
             globalEscapeMonitor = nil
         }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        close()
+        return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        removeEscapeMonitors()
+        window = nil
+        hostingView = nil
+        isClosing = false
+        cancelDeferredTeardown()
     }
 }

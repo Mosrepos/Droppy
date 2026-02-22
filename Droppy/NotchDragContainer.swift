@@ -56,13 +56,14 @@ class NotchDragContainer: NSView {
     private func collapseTemporaryDragExpansion() {
         guard expandedForCurrentDrag else { return }
         expandedForCurrentDrag = false
+        let animationScreen = (window as? NotchWindow)?.notchScreen
 
         if let displayID = activeDisplayID() {
-            withAnimation(DroppyAnimation.state) {
+            withAnimation(DroppyAnimation.notchState(for: animationScreen)) {
                 DroppyState.shared.collapseShelf(for: displayID)
             }
         } else {
-            withAnimation(DroppyAnimation.state) {
+            withAnimation(DroppyAnimation.notchState(for: animationScreen)) {
                 DroppyState.shared.isExpanded = false
             }
         }

@@ -3,7 +3,7 @@
 //  Droppy
 //
 //  SwiftUI view for managing Quickshare upload history
-//  Matches UpdateView styling exactly (adapts to dark/transparent mode)
+//  Matches UpdateView styling exactly (adapts to dark/Liquid mode)
 //
 
 import SwiftUI
@@ -119,7 +119,7 @@ struct QuickshareManagerView: View {
     
     private var fileList: some View {
         ScrollView {
-            VStack(spacing: 6) {
+            LazyVStack(spacing: 6) {
                 ForEach(manager.items) { item in
                     itemRow(for: item)
                 }
@@ -151,7 +151,7 @@ struct QuickshareManagerView: View {
             } label: {
                 Text("Done")
             }
-            .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+            .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
         }
         .padding(DroppySpacing.lg)
     }
@@ -218,12 +218,10 @@ struct QuickshareItemRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(rowBackground)
-            .scaleEffect(isHovering ? 1.02 : 1.0)
             .contentShape(Rectangle())
             .onHover { hovering in
                 isHovering = hovering
             }
-            .animation(DroppyAnimation.hoverBouncy, value: isHovering)
             .onTapGesture {
                 onCopy()
             }

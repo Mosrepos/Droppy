@@ -10,7 +10,7 @@ import SwiftUI
 struct AIBackgroundRemovalExtension: ExtensionDefinition {
     static let id = "aiBackgroundRemoval"
     static let title = "AI Background Removal"
-    static let subtitle = "InSPyReNet - State of the Art Quality"
+    static let subtitle = "BiRefNet - External Runtime"
     static let category: ExtensionGroup = .ai
     static let categoryColor: Color = .blue
     
@@ -19,8 +19,8 @@ struct AIBackgroundRemovalExtension: ExtensionDefinition {
     static let features: [(icon: String, text: String)] = [
         ("cpu", "Runs entirely on-device"),
         ("lock.shield", "Private—images never leave your Mac"),
-        ("bolt.fill", "Fast InSPyReNet AI engine"),
-        ("arrow.down.circle", "One-click install")
+        ("bolt.fill", "BiRefNet SOTA segmentation quality"),
+        ("arrow.down.circle", "One-time runtime + model install")
     ]
     
     static var screenshotURL: URL? {

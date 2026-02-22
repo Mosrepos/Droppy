@@ -278,7 +278,7 @@ struct LicenseActivationView: View {
                         Text("Activate License")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .disabled(licenseManager.isChecking)
             }
         }

@@ -10,20 +10,19 @@ import SwiftUI
 struct VoiceTranscribeInfoView: View {
     @AppStorage(AppPreferenceKey.voiceTranscribeAutoCopyResult) private var autoCopyTranscriptionResult = PreferenceDefault.voiceTranscribeAutoCopyResult
     @ObservedObject private var manager = VoiceTranscribeManager.shared
+    @ObservedObject private var runtimeManager = VoiceTranscribeRuntimeManager.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     @State private var isHoveringAction = false
     @State private var isHoveringCancel = false
-    @State private var isHoveringReviews = false
     @State private var isHoveringDownload = false
     @State private var isHoveringDelete = false
     @State private var isHoveringRecord: [VoiceRecordingMode: Bool] = [:]
-    @State private var showReviewsSheet = false
     @State private var isDownloading = false
     @State private var recordingMode: VoiceRecordingMode?
     @State private var recordMonitor: Any?
     
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -57,11 +56,11 @@ struct VoiceTranscribeInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .voiceTranscribe)
-        }
         .onDisappear {
             stopRecording()
+        }
+        .task {
+            await runtimeManager.refresh()
         }
     }
     
@@ -93,27 +92,6 @@ struct VoiceTranscribeInfoView: View {
                 }
                 .foregroundStyle(.secondary)
                 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
                 
                 Text("AI")
                     .font(.caption.weight(.semibold))
@@ -307,7 +285,8 @@ struct VoiceTranscribeInfoView: View {
                 RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                     .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
             )
-            
+            runtimeSection
+
 
             // Download Section
             if manager.isDownloading {
@@ -355,17 +334,30 @@ struct VoiceTranscribeInfoView: View {
                     .buttonStyle(DroppyCircleButtonStyle(size: 22))
                 }
             } else if !manager.isModelDownloaded {
-                // Download button
-                Button {
-                    manager.downloadModel()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.down.circle.fill")
-                        Text("Download Model")
+                if runtimeManager.isInstalled {
+                    // Download button
+                    Button {
+                        manager.downloadModel()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down.circle.fill")
+                            Text("Download Model")
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .medium))
+                } else {
+                    Button {
+                        runtimeManager.installOrUpdateRuntime()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "shippingbox.fill")
+                            Text("Install Runtime First")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(DroppyAccentButtonStyle(color: .orange, size: .medium))
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .medium))
             }
             
             // Keyboard Shortcuts Section (only when model is installed)
@@ -455,7 +447,7 @@ struct VoiceTranscribeInfoView: View {
     private var buttonSection: some View {
         HStack(spacing: 10) {
             Button {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             } label: {
                 Text("Close")
             }
@@ -527,7 +519,7 @@ struct VoiceTranscribeInfoView: View {
                 } label: {
                     Text(recordingMode == mode ? "Press…" : "Record")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: recordingMode == mode ? .red : .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: recordingMode == mode ? .red : AdaptiveColors.selectionBlueAuto, size: .small))
             }
         }
         .padding(DroppySpacing.mdl)
@@ -590,6 +582,179 @@ struct VoiceTranscribeInfoView: View {
         if let m = recordMonitor {
             NSEvent.removeMonitor(m)
             recordMonitor = nil
+        }
+    }
+}
+
+private extension VoiceTranscribeInfoView {
+    @ViewBuilder
+    var runtimeSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("External Runtime")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: runtimeStatusIconName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(runtimeStatusColor)
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(runtimeStatusTitle)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(runtimeStatusSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if runtimeManager.isInstalling {
+                VStack(spacing: 8) {
+                    ProgressView(value: runtimeManager.installProgress)
+                        .progressViewStyle(.linear)
+                        .tint(AdaptiveColors.selectionBlueAuto)
+
+                    HStack(spacing: 8) {
+                        Text("Installing \(Int(runtimeManager.installProgress * 100))%")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Button("Cancel") {
+                            runtimeManager.cancelInstall()
+                        }
+                        .buttonStyle(DroppyPillButtonStyle(size: .small))
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Button {
+                        runtimeManager.installOrUpdateRuntime()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: runtimePrimaryActionIcon)
+                            Text(runtimePrimaryActionTitle)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
+
+                    if runtimeManager.isInstalled {
+                        Button {
+                            Task { await runtimeManager.uninstallRuntime() }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(DroppyCircleButtonStyle(size: 30))
+                        .help("Uninstall runtime")
+                    } else {
+                        Button {
+                            Task { await runtimeManager.refresh() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(DroppyCircleButtonStyle(size: 30))
+                        .help("Check for runtime updates")
+                    }
+                }
+            }
+        }
+        .padding(DroppySpacing.lg)
+        .background(AdaptiveColors.buttonBackgroundAuto.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
+        )
+    }
+
+    var runtimeStatusTitle: String {
+        switch runtimeManager.state {
+        case .checking:
+            return "Checking runtime status…"
+        case .notInstalled:
+            return "Runtime not installed"
+        case .installing:
+            return "Installing runtime…"
+        case .installed(let version):
+            return "Installed v\(version)"
+        case .updateAvailable(let currentVersion, let latestVersion):
+            return "Update available: \(currentVersion) -> \(latestVersion)"
+        case .failed:
+            return "Runtime error"
+        }
+    }
+
+    var runtimeStatusSubtitle: String {
+        switch runtimeManager.state {
+        case .checking:
+            return "Looking up latest GitHub release."
+        case .notInstalled:
+            return "Install once. Afterwards Voice Transcribe can run offline."
+        case .installing:
+            return "Downloading, verifying checksum/signature, and installing locally."
+        case .installed:
+            return "Stored in ~/Library/Application Support/Droppy/Extensions/voiceTranscribe."
+        case .updateAvailable:
+            return "You can update now or keep your current installed runtime."
+        case .failed(let message):
+            return message
+        }
+    }
+
+    var runtimePrimaryActionTitle: String {
+        switch runtimeManager.state {
+        case .updateAvailable:
+            return "Update Runtime"
+        default:
+            return runtimeManager.isInstalled ? "Reinstall Runtime" : "Install Runtime"
+        }
+    }
+
+    var runtimePrimaryActionIcon: String {
+        switch runtimeManager.state {
+        case .updateAvailable:
+            return "arrow.down.circle.fill"
+        default:
+            return runtimeManager.isInstalled ? "arrow.clockwise.circle.fill" : "arrow.down.circle.fill"
+        }
+    }
+
+    var runtimeStatusIconName: String {
+        switch runtimeManager.state {
+        case .checking:
+            return "hourglass"
+        case .notInstalled:
+            return "arrow.down.circle"
+        case .installing:
+            return "icloud.and.arrow.down"
+        case .installed:
+            return "checkmark.circle.fill"
+        case .updateAvailable:
+            return "arrow.triangle.2.circlepath.circle.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var runtimeStatusColor: Color {
+        switch runtimeManager.state {
+        case .installed:
+            return .green
+        case .updateAvailable:
+            return .orange
+        case .failed:
+            return .red
+        default:
+            return .blue
         }
     }
 }

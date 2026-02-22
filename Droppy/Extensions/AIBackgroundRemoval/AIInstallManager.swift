@@ -3,716 +3,564 @@
 //  Droppy
 //
 //  Created by Droppy on 11/01/2026.
-//  Manages installation of AI background removal dependencies
+//  Manages installation of external BiRefNet runtime + model
 //
 
 import Foundation
 import Combine
+import CryptoKit
 
-private nonisolated final class AIInstallOutputBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
+private enum AIInstallValidationError: LocalizedError {
+    case timedOut
 
-    func append(_ chunk: Data) {
-        guard !chunk.isEmpty else { return }
-        lock.lock()
-        data.append(chunk)
-        lock.unlock()
-    }
-
-    func outputString() -> String {
-        lock.lock()
-        let snapshot = data
-        lock.unlock()
-        return String(data: snapshot, encoding: .utf8) ?? ""
-    }
-}
-
-private struct AIInstallProcessResult: Sendable {
-    let status: Int32
-    let output: String
-}
-
-private struct PythonRuntimeInfo: Sendable {
-    let major: Int
-    let minor: Int
-    let machine: String
-
-    var versionString: String {
-        "\(major).\(minor)"
-    }
-}
-
-/// Runs a process while continuously draining output to prevent deadlocks on verbose commands.
-private func runAIInstallProcess(executable: String, arguments: [String]) async throws -> AIInstallProcessResult {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = arguments
-
-    let outputPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = outputPipe
-
-    let handle = outputPipe.fileHandleForReading
-    let outputBuffer = AIInstallOutputBuffer()
-
-    handle.readabilityHandler = { fileHandle in
-        let chunk = fileHandle.availableData
-        outputBuffer.append(chunk)
-    }
-
-    return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AIInstallProcessResult, Error>) in
-        process.terminationHandler = { process in
-            handle.readabilityHandler = nil
-            let remainder = handle.readDataToEndOfFile()
-            outputBuffer.append(remainder)
-            let output = outputBuffer.outputString()
-
-            continuation.resume(returning: AIInstallProcessResult(status: process.terminationStatus, output: output))
-        }
-
-        do {
-            try process.run()
-        } catch {
-            handle.readabilityHandler = nil
-            continuation.resume(throwing: error)
+    var errorDescription: String? {
+        switch self {
+        case .timedOut:
+            return "Validation timed out."
         }
     }
 }
 
-/// Manages the installation of Python transparent-background package
+private final class AIModelDownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
+    private let onProgress: @Sendable (Int64, Int64) -> Void
+
+    init(onProgress: @escaping @Sendable (Int64, Int64) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    nonisolated func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        onProgress(totalBytesWritten, totalBytesExpectedToWrite)
+    }
+
+    nonisolated func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        // Required by URLSessionDownloadDelegate; result is already returned by download(for:delegate:).
+    }
+}
+
 @MainActor
 final class AIInstallManager: ObservableObject {
     static let shared = AIInstallManager()
+
+    // Legacy key retained for cleanup compatibility with previous Python pipeline.
     static let selectedPythonPathKey = "aiBackgroundRemovalPythonPath"
 
-    nonisolated static var managedVenvURL: URL {
+    nonisolated static let modelVersion = "birefnet-general-epoch_244"
+    nonisolated static let modelURL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-epoch_244.onnx"
+    nonisolated static let modelFileName = "birefnet-general.onnx"
+    nonisolated static let modelSHA256 = "58f621f00f5d756097615970a88a791584600dcf7c45b18a0a6267535a1ebd3c"
+    nonisolated static let modelByteSize: Int64 = 972_666_916
+
+    nonisolated static var managedAssetsURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
         return base
             .appendingPathComponent("Droppy", isDirectory: true)
             .appendingPathComponent("AIBackgroundRemoval", isDirectory: true)
-            .appendingPathComponent("venv", isDirectory: true)
     }
 
-    nonisolated static var managedVenvPythonPath: String {
-        managedVenvURL.appendingPathComponent("bin/python3").path
+    nonisolated static var managedModelsURL: URL {
+        managedAssetsURL.appendingPathComponent("models", isDirectory: true)
     }
-    
+
+    nonisolated static var localModelURL: URL {
+        managedModelsURL.appendingPathComponent(modelFileName, isDirectory: false)
+    }
+
+    nonisolated static var localModelPath: String {
+        localModelURL.path
+    }
+
+    nonisolated static var legacyVenvURL: URL {
+        managedAssetsURL.appendingPathComponent("venv", isDirectory: true)
+    }
+
+    nonisolated static var legacyCheckpointURL: URL {
+        managedModelsURL.appendingPathComponent("ckpt_base.pth", isDirectory: false)
+    }
+
     @Published var isInstalled = false
     @Published var isInstalling = false
     @Published var installProgress: String = ""
+    @Published var installProgressFraction: Double = 0
+    @Published var installProgressDetail: String = ""
     @Published var installError: String?
-    @Published private(set) var activePythonPath: String?
-    @Published private(set) var detectedPythonPath: String?
-    
+
     private let installedCacheKey = "aiBackgroundRemovalInstalled"
-    private let runtimeModuleChecks = ["transparent_background", "wget"]
-    private let runtimePackageRequirements = ["transparent-background==1.2.10", "wget"]
-    
+    private let legacyRuntimeFlagKey = "useLocalBackgroundRemoval"
+    private let validationTimeoutSeconds: TimeInterval = 120
+    private let runtimeManager = AIBackgroundRemovalRuntimeManager.shared
+    private var cancellables = Set<AnyCancellable>()
+
     private init() {
-        // Load cached status immediately for instant UI response
         isInstalled = UserDefaults.standard.bool(forKey: installedCacheKey)
-        if let cachedPythonPath = UserDefaults.standard.string(forKey: Self.selectedPythonPathKey),
-           FileManager.default.fileExists(atPath: cachedPythonPath) {
-            activePythonPath = cachedPythonPath
-        }
-        
-        // Always verify in background — handles PearCleaner recovery (UserDefaults wiped
-        // but Python packages still on disk) and stale cache scenarios
+        installProgressFraction = isInstalled ? 1.0 : 0
+        installProgressDetail = isInstalled ? "Runtime + model are ready." : ""
+        bindRuntimeState()
         checkInstallationStatus()
     }
-    
-    // MARK: - Installation Check
-    
+
+    var modelDownloadURL: String {
+        Self.modelURL
+    }
+
+    var modelFormattedSize: String {
+        ByteCountFormatter.string(fromByteCount: Self.modelByteSize, countStyle: .file)
+    }
+
     func checkInstallationStatus() {
+        let runtimeLikelyReady = runtimeManager.isInstalled && runtimeManager.executableURL != nil
+        let modelLikelyReady = Self.modelSizeMatchesManifest()
+        if runtimeLikelyReady && modelLikelyReady {
+            setInstalledState(true)
+        } else if !isInstalling {
+            setInstalledState(false)
+        }
+
         Task {
-            let candidates = await pythonCandidatePaths()
-            let installCandidates = await installBaseCandidates(from: candidates).paths
-            detectedPythonPath = installCandidates.first ?? preferredDetectedPythonPath(from: candidates)
-            
-            let installedPython = await findPythonWithTransparentBackground(in: candidates)
-            setInstalledState(installedPython != nil, pythonPath: installedPython)
-            
-            if installedPython == nil, let detectedPythonPath {
-                activePythonPath = detectedPythonPath
-            }
-        }
-    }
-    
-    var recommendedManualInstallCommand: String {
-        let venvPath = Self.managedVenvURL.path
-        let venvPython = Self.managedVenvPythonPath
-        let requirements = runtimePackageRequirements.joined(separator: " ")
-
-        if FileManager.default.fileExists(atPath: venvPython) {
-            return "\(shellQuote(venvPython)) -m pip install --upgrade \(requirements)"
-        }
-
-        let preferredPath = activePythonPath ?? detectedPythonPath
-        let python = (preferredPath.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }) ?? "python3"
-
-        return "\(shellQuote(python)) -m venv \(shellQuote(venvPath)) && \(shellQuote(venvPython)) -m pip install --upgrade \(requirements)"
-    }
-    
-    var hasDetectedPythonPath: Bool {
-        guard let detectedPythonPath else { return false }
-        return FileManager.default.fileExists(atPath: detectedPythonPath)
-    }
-    
-    private func setInstalledState(_ installed: Bool, pythonPath: String?) {
-        let previous = isInstalled
-        
-        isInstalled = installed
-        UserDefaults.standard.set(installed, forKey: installedCacheKey)
-        if installed {
-            installError = nil
-        }
-        
-        if let pythonPath {
-            activePythonPath = pythonPath
-            UserDefaults.standard.set(pythonPath, forKey: Self.selectedPythonPathKey)
-        }
-        
-        if previous != installed {
-            NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.aiBackgroundRemoval)
-        }
-    }
-    
-    private func findPythonWithTransparentBackground(in candidates: [String]) async -> String? {
-        for pythonPath in candidates {
-            if await isTransparentBackgroundInstalled(at: pythonPath) {
-                return pythonPath
-            }
-        }
-        return nil
-    }
-    
-    private func isTransparentBackgroundInstalled(at pythonPath: String) async -> Bool {
-        let moduleList = runtimeModuleChecks
-            .map { "'\($0)'" }
-            .joined(separator: ", ")
-
-        do {
-            let result = try await runAIInstallProcess(
-                executable: pythonPath,
-                arguments: ["-c", "import importlib.util, sys; modules=[\(moduleList)]; missing=[m for m in modules if importlib.util.find_spec(m) is None]; sys.exit(0 if not missing else 1)"]
-            )
-            return result.status == 0
-        } catch {
-            return false
-        }
-    }
-    
-    private func pythonCandidatePaths() async -> [String] {
-        var candidates: [String] = []
-
-        candidates.append(Self.managedVenvPythonPath)
-        
-        if let cachedPath = UserDefaults.standard.string(forKey: Self.selectedPythonPathKey) {
-            candidates.append(cachedPath)
-        }
-        
-        candidates.append(contentsOf: [
-            "/opt/homebrew/bin/python3",
-            "/usr/local/bin/python3",
-            "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
-            "/usr/bin/python3"
-        ])
-        
-        if let whichPath = await pythonPathFromWhich() {
-            candidates.append(whichPath)
-        }
-        
-        var seen: Set<String> = []
-        var unique: [String] = []
-        for path in candidates {
-            guard !path.isEmpty else { continue }
-            guard FileManager.default.fileExists(atPath: path) else { continue }
-            if seen.insert(path).inserted {
-                unique.append(path)
-            }
-        }
-        
-        return unique
-    }
-
-    private func preferredDetectedPythonPath(from candidates: [String]) -> String? {
-        let sorted = candidates.sorted { rankForInstall($0) < rankForInstall($1) }
-        return sorted.first { $0 != Self.managedVenvPythonPath } ?? sorted.first
-    }
-    
-    private func pythonPathFromWhich() async -> String? {
-        do {
-            let result = try await runAIInstallProcess(executable: "/usr/bin/which", arguments: ["python3"])
-            guard result.status == 0 else { return nil }
-            guard let firstLine = result.output
-                .split(separator: "\n")
-                .map({ String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
-                .first,
-                firstLine.hasPrefix("/") else {
-                return nil
-            }
-            return firstLine
-        } catch {
-            return nil
-        }
-    }
-    
-    private func rankForInstall(_ path: String) -> Int {
-        if path == Self.managedVenvPythonPath { return -100 }
-        if path.hasPrefix("/opt/homebrew/") { return 0 }
-        if path.hasPrefix("/usr/local/") { return 1 }
-        if path.hasPrefix("/Library/Frameworks/Python.framework/") { return 2 }
-        if path == "/usr/bin/python3" { return 9 }
-        return 3
-    }
-    
-    private func hasPip(at pythonPath: String) async -> Bool {
-        do {
-            let result = try await runAIInstallProcess(executable: pythonPath, arguments: ["-m", "pip", "--version"])
-            return result.status == 0
-        } catch {
-            return false
-        }
-    }
-    
-    private func ensurePipAvailable(at pythonPath: String) async -> Bool {
-        if await hasPip(at: pythonPath) {
-            return true
-        }
-        
-        do {
-            let bootstrap = try await runAIInstallProcess(
-                executable: pythonPath,
-                arguments: ["-m", "ensurepip", "--upgrade"]
-            )
-            if bootstrap.status == 0 {
-                return await hasPip(at: pythonPath)
-            }
-        } catch {
-            return false
-        }
-        
-        return false
-    }
-
-    private func canCreateVenv(at pythonPath: String) async -> Bool {
-        do {
-            let result = try await runAIInstallProcess(executable: pythonPath, arguments: ["-m", "venv", "--help"])
-            return result.status == 0
-        } catch {
-            return false
+            let ready = await runtimeReady(requireValidation: false)
+            setInstalledState(ready)
         }
     }
 
-    private func pythonRuntimeInfo(at pythonPath: String) async -> PythonRuntimeInfo? {
-        do {
-            let result = try await runAIInstallProcess(
-                executable: pythonPath,
-                arguments: ["-c", "import platform, sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}|{platform.machine()}')"]
-            )
-            guard result.status == 0 else { return nil }
-            guard let firstLine = result.output
-                .split(separator: "\n")
-                .map({ String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
-                .first else {
-                return nil
-            }
-            let parts = firstLine.split(separator: "|", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { return nil }
-
-            let versionParts = parts[0].split(separator: ".", maxSplits: 1).map(String.init)
-            guard versionParts.count == 2,
-                  let major = Int(versionParts[0]),
-                  let minor = Int(versionParts[1]) else {
-                return nil
-            }
-
-            return PythonRuntimeInfo(
-                major: major,
-                minor: minor,
-                machine: parts[1].lowercased()
-            )
-        } catch {
-            return nil
-        }
-    }
-
-    private func compatibilityIssue(for info: PythonRuntimeInfo) -> String? {
-        let isIntel = info.machine == "x86_64" || info.machine == "amd64" || info.machine == "i386"
-        if isIntel && info.major == 3 && info.minor >= 13 {
-            return "Intel Macs are currently unsupported on Python \(info.versionString). Use Python 3.12 or older for AI background removal."
-        }
-        return nil
-    }
-
-    private func installBaseCandidates(from candidates: [String]) async -> (paths: [String], issues: [String]) {
-        let sorted = candidates
-            .filter { $0 != Self.managedVenvPythonPath }
-            .sorted { rankForInstall($0) < rankForInstall($1) }
-
-        var usable: [String] = []
-        var issues: [String] = []
-
-        for path in sorted {
-            guard await canCreateVenv(at: path) else {
-                issues.append("venv unavailable at \(path)")
-                continue
-            }
-
-            if let info = await pythonRuntimeInfo(at: path),
-               let issue = compatibilityIssue(for: info) {
-                issues.append("\(path): \(issue)")
-                continue
-            }
-
-            usable.append(path)
-        }
-
-        return (usable, issues)
-    }
-
-    private func recreateManagedVenv(using basePythonPath: String) async -> AIInstallProcessResult? {
-        let venvURL = Self.managedVenvURL
-        let fileManager = FileManager.default
-
-        do {
-            try fileManager.createDirectory(at: venvURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if fileManager.fileExists(atPath: venvURL.path) {
-                try fileManager.removeItem(at: venvURL)
-            }
-
-            return try await runAIInstallProcess(
-                executable: basePythonPath,
-                arguments: ["-m", "venv", venvURL.path]
-            )
-        } catch {
-            return nil
-        }
-    }
-    
-    private func isXcodeCliInstalled() async -> Bool {
-        do {
-            let result = try await runAIInstallProcess(executable: "/usr/bin/xcode-select", arguments: ["-p"])
-            return result.status == 0
-        } catch {
-            return false
-        }
-    }
-    
-    // MARK: - Installation
-    
-    /// Trigger Xcode Command Line Tools installation (shows macOS dialog)
-    private func triggerXcodeCliInstall() async -> Bool {
-        installProgress = "Python 3 not found. Requesting Command Line Tools…"
-        
-        do {
-            let result = try await runAIInstallProcess(executable: "/usr/bin/xcode-select", arguments: ["--install"])
-            if result.status != 0 {
-                let output = result.output.lowercased()
-                if !output.contains("already installed") {
-                    return false
-                }
-            }
-            
-            installProgress = "Complete the Command Line Tools prompt, then retry install."
-            
-            // Poll for up to 3 minutes after prompting install.
-            for _ in 0..<36 {
-                if await isXcodeCliInstalled() {
-                    return true
-                }
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-            }
-            return await isXcodeCliInstalled()
-        } catch {
-            return false
-        }
-    }
-    
     func installTransparentBackground() async {
         isInstalling = true
-        installProgress = "Checking existing installation…"
+        setInstallProgress(
+            step: "Checking runtime…",
+            fraction: 0.05,
+            detail: "Verifying external runtime and model files…"
+        )
         installError = nil
-        
+
         defer {
             isInstalling = false
             checkInstallationStatus()
         }
-        
-        var candidates = await pythonCandidatePaths()
-        var candidateEvaluation = await installBaseCandidates(from: candidates)
-        detectedPythonPath = candidateEvaluation.paths.first ?? preferredDetectedPythonPath(from: candidates)
-        
-        if let installedPython = await findPythonWithTransparentBackground(in: candidates) {
-            installProgress = "AI background removal is already installed."
-            setInstalledState(true, pythonPath: installedPython)
-            return
-        }
-        
-        let systemCandidates = candidates.filter { $0 != Self.managedVenvPythonPath }
-        if systemCandidates.isEmpty, !(await isXcodeCliInstalled()) {
-            let requested = await triggerXcodeCliInstall()
-            if requested {
-                candidates = await pythonCandidatePaths()
-                candidateEvaluation = await installBaseCandidates(from: candidates)
-                detectedPythonPath = candidateEvaluation.paths.first ?? preferredDetectedPythonPath(from: candidates)
-            }
-        }
-        
-        let refreshedSystemCandidates = candidates.filter { $0 != Self.managedVenvPythonPath }
-        guard !refreshedSystemCandidates.isEmpty else {
-            installProgress = ""
-            installError = "Python 3 is required. Install Command Line Tools or Python from python.org, then retry."
-            return
-        }
-        
-        let installCandidates = candidateEvaluation.paths
-        let candidateIssues = candidateEvaluation.issues
-        guard !installCandidates.isEmpty else {
-            installProgress = ""
-            if let compatibilityIssue = candidateIssues.first(where: { $0.localizedCaseInsensitiveContains("intel macs are currently unsupported") }) {
-                let cleanedIssue = compatibilityIssue
-                    .components(separatedBy: ": ")
-                    .last ?? compatibilityIssue
-                installError = "No compatible Python found. \(cleanedIssue)"
-            } else if candidateIssues.contains(where: { $0.localizedCaseInsensitiveContains("venv unavailable") }) {
-                installError = "Python was found, but this runtime cannot create virtual environments. Install Python from python.org and retry."
-            } else {
-                installError = "No compatible Python runtime found for AI background removal. Install Python 3.12 or run Command Line Tools, then retry."
-            }
+
+        let initialRuntimeReady = await runtimeReady(requireValidation: true)
+        if initialRuntimeReady {
+            setInstallProgress(
+                step: "Installation complete!",
+                fraction: 1.0,
+                detail: "Runtime + model are ready."
+            )
+            setInstalledState(true)
             return
         }
 
-        let installArgs = [
-            "-m", "pip", "install",
-            "--upgrade",
-            "--disable-pip-version-check",
-        ] + runtimePackageRequirements
-
-        var lastError: String?
-
-        for basePythonPath in installCandidates {
-            installProgress = "Preparing isolated Python environment…"
-
-            guard let venvResult = await recreateManagedVenv(using: basePythonPath) else {
-                lastError = "Failed to create AI Python environment. Try installing Python from python.org and retry."
-                continue
-            }
-
-            guard venvResult.status == 0 else {
-                lastError = formatInstallError(venvResult.output)
-                continue
-            }
-
-            let venvPythonPath = Self.managedVenvPythonPath
-            guard await ensurePipAvailable(at: venvPythonPath) else {
-                lastError = "Virtual environment was created, but pip is unavailable. Reinstall Python and retry."
-                continue
-            }
-
-            activePythonPath = venvPythonPath
-            UserDefaults.standard.set(venvPythonPath, forKey: Self.selectedPythonPathKey)
-            installProgress = "Installing transparent-background package…"
-
+        let hasValidModelAlready = await Self.modelMatchesManifestAsync()
+        let shouldReinstallRuntime = !runtimeManager.isInstalled || (hasValidModelAlready && !initialRuntimeReady)
+        if shouldReinstallRuntime {
+            setInstallProgress(
+                step: "Checking runtime…",
+                fraction: 0.08,
+                detail: "Installing background removal runtime…"
+            )
             do {
-                let result = try await runAIInstallProcess(executable: venvPythonPath, arguments: installArgs)
-                guard result.status == 0 else {
-                    lastError = formatInstallError(result.output)
-                    continue
-                }
+                try await runtimeManager.installOrUpdateRuntime()
             } catch {
-                lastError = "Failed to start installation: \(error.localizedDescription)"
-                continue
+                installProgress = ""
+                installProgressDetail = ""
+                installError = "Runtime install failed: \(error.localizedDescription)"
+                return
             }
+        }
 
-            guard await isTransparentBackgroundInstalled(at: venvPythonPath) else {
-                lastError = "Install finished, but package verification could not confirm transparent-background."
-                continue
-            }
-
-            installProgress = "Installation complete!"
-            setInstalledState(true, pythonPath: venvPythonPath)
-
-            // Keep legacy key for backward compatibility.
-            UserDefaults.standard.set(true, forKey: "useLocalBackgroundRemoval")
-
-            // Track extension activation
-            AnalyticsService.shared.trackExtensionActivation(extensionId: "aiBackgroundRemoval")
+        let fileManager = FileManager.default
+        do {
+            try fileManager.createDirectory(at: Self.managedModelsURL, withIntermediateDirectories: true)
+        } catch {
+            installProgress = ""
+            installProgressDetail = ""
+            installError = "Could not create AI model storage directory."
             return
         }
 
-        installProgress = ""
-        installError = lastError ?? formatInstallError(candidateIssues.joined(separator: "\n"))
-    }
-    
-    private func formatInstallError(_ rawOutput: String) -> String {
-        let cleanedOutput = stripAnsiEscapeCodes(in: rawOutput)
-        let trimmed = cleanedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalized = trimmed.lowercased()
-        
-        if normalized.contains("no module named pip") {
-            return "pip is missing for this Python install. Install pip, then retry."
-        }
-        
-        if normalized.contains("externally-managed-environment") {
-            return "Python refused package changes in this environment. Droppy now installs in an isolated venv; retry install."
+        let minimumFreeBytes = Self.modelByteSize + 512_000_000
+        guard hasEnoughDiskSpace(requiredBytes: minimumFreeBytes) else {
+            installProgress = ""
+            installProgressDetail = ""
+            installError = "Not enough disk space. Free at least \(ByteCountFormatter.string(fromByteCount: minimumFreeBytes, countStyle: .file)) and retry."
+            return
         }
 
-        if normalized.contains("resolutionimpossible")
-            || normalized.contains("no matching distribution found for torch")
-            || (normalized.contains("no matching distributions available for your environment") && normalized.contains("torch")) {
-            return "This Python build is incompatible with required AI dependencies (torch). On Intel Macs, use Python 3.12 or older."
-        }
-        
-        if normalized.contains("permission denied") {
-            return "Permission denied while installing Python packages. Check your user account permissions and retry."
-        }
-        
-        if normalized.contains("network") || normalized.contains("timed out") || normalized.contains("ssl") {
-            return "Network error while downloading dependencies. Check connection and retry."
-        }
-        
-        if trimmed.isEmpty {
-            return "Installation failed. Try again, then run the manual command if it still fails."
+        if fileManager.fileExists(atPath: Self.localModelPath) {
+            let matchesManifest = await Self.modelMatchesManifestAsync()
+            if !matchesManifest {
+                try? fileManager.removeItem(at: Self.localModelURL)
+            }
         }
 
-        let lines = trimmed
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        if !fileManager.fileExists(atPath: Self.localModelPath) {
+            guard let sourceURL = URL(string: Self.modelURL) else {
+                installProgress = ""
+                installProgressDetail = ""
+                installError = "Model URL is invalid."
+                return
+            }
 
-        let meaningfulLines = lines.filter { line in
-            let lower = line.lowercased()
-            return !lower.hasPrefix("[notice]") && !lower.hasPrefix("warning:")
+            setInstallProgress(
+                step: "Downloading model…",
+                fraction: 0.1,
+                detail: "0% • 0 KB / \(Self.byteCountString(Self.modelByteSize))"
+            )
+            do {
+                let (temporaryURL, response) = try await downloadModel(from: sourceURL)
+
+                if let httpResponse = response as? HTTPURLResponse,
+                   !(200...299).contains(httpResponse.statusCode) {
+                    if httpResponse.statusCode == 404 {
+                        installError = "Model download URL is unavailable (HTTP 404). Update Droppy and retry."
+                    } else {
+                        installError = "Model download failed with HTTP \(httpResponse.statusCode)."
+                    }
+                    installProgress = ""
+                    installProgressDetail = ""
+                    return
+                }
+
+                if fileManager.fileExists(atPath: Self.localModelPath) {
+                    try? fileManager.removeItem(at: Self.localModelURL)
+                }
+
+                try fileManager.moveItem(at: temporaryURL, to: Self.localModelURL)
+            } catch {
+                installProgress = ""
+                installProgressDetail = ""
+                installError = "Failed to download BiRefNet model. Check your network and retry."
+                return
+            }
         }
 
-        let priorityLine = meaningfulLines.first { line in
-            let lower = line.lowercased()
-            return lower.contains("error")
-                || lower.contains("failed")
-                || lower.contains("permission denied")
-                || lower.contains("timed out")
-                || lower.contains("no matching distribution")
-                || lower.contains("unsupported")
-                || lower.contains("not found")
-        }
-
-        let selectedLine = priorityLine ?? meaningfulLines.first ?? String(trimmed.prefix(220))
-        let normalizedLine = selectedLine
-            .replacingOccurrences(of: #"^error:\s*"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"^fatal:\s*"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return "Installation failed: \(normalizedLine.prefix(180))"
-    }
-
-    private func stripAnsiEscapeCodes(in text: String) -> String {
-        text.replacingOccurrences(
-            of: "\u{001B}\\[[0-9;]*[A-Za-z]",
-            with: "",
-            options: .regularExpression
+        setInstallProgress(
+            step: "Downloading model…",
+            fraction: 0.85,
+            detail: "Verifying model integrity…"
         )
+        guard await Self.modelMatchesManifestAsync() else {
+            installProgress = ""
+            installProgressDetail = ""
+            installError = "Downloaded model failed integrity verification."
+            try? fileManager.removeItem(at: Self.localModelURL)
+            return
+        }
+
+        setInstallProgress(
+            step: "Validating model…",
+            fraction: 0.9,
+            detail: "Validating external runtime…"
+        )
+        let validationPulseTask = makeValidationPulseTask()
+        defer { validationPulseTask.cancel() }
+        do {
+            try await validateRuntimeWithTimeout()
+        } catch {
+            installProgress = ""
+            installProgressDetail = ""
+            if let validationError = error as? AIInstallValidationError, case .timedOut = validationError {
+                installError = "Model validation timed out. Retry install."
+            } else {
+                installError = "Model validation failed: \(error.localizedDescription)"
+            }
+            return
+        }
+
+        setInstallProgress(
+            step: "Installation complete!",
+            fraction: 1.0,
+            detail: "BiRefNet runtime + model are ready."
+        )
+        setInstalledState(true)
+        UserDefaults.standard.set(true, forKey: legacyRuntimeFlagKey)
+        AnalyticsService.shared.trackExtensionActivation(extensionId: "aiBackgroundRemoval")
     }
-    
-    // MARK: - Uninstall
-    
+
     func uninstallTransparentBackground() async {
         isInstalling = true
-        installProgress = "Removing package…"
+        setInstallProgress(
+            step: "Removing model…",
+            fraction: 0,
+            detail: "Cleaning up model artifacts…"
+        )
         installError = nil
-        
+
         defer {
             isInstalling = false
             checkInstallationStatus()
         }
-        
-        let candidates = await pythonCandidatePaths()
-        var uninstallCandidates: [String] = []
-        if let activePythonPath {
-            uninstallCandidates.append(activePythonPath)
-        }
-        uninstallCandidates.append(contentsOf: candidates)
-        
-        var seen: Set<String> = []
-        uninstallCandidates = uninstallCandidates.filter { seen.insert($0).inserted }
-        
-        var selectedPython: String?
-        for path in uninstallCandidates {
-            if await hasPip(at: path) {
-                selectedPython = path
-                break
-            }
-        }
-        
-        guard let pythonPath = selectedPython else {
-            installError = "Python 3 not found. Cannot uninstall."
-            return
-        }
-        
+
         do {
-            let result = try await runAIInstallProcess(
-                executable: pythonPath,
-                arguments: ["-m", "pip", "uninstall", "-y", "transparent-background"]
-            )
-            
-            let output = result.output.lowercased()
-            if result.status == 0 || output.contains("not installed") {
-                if pythonPath == Self.managedVenvPythonPath {
-                    removeManagedVenvIfPresent()
-                }
-                setInstalledState(false, pythonPath: nil)
-                
-                // Keep legacy key for backward compatibility.
-                UserDefaults.standard.set(false, forKey: "useLocalBackgroundRemoval")
-            } else {
-                installError = "Failed to uninstall: \(result.output.prefix(200))"
-            }
+            try removeManagedRuntimeArtifacts()
+            try await runtimeManager.uninstallRuntime()
+            setInstalledState(false)
+            UserDefaults.standard.set(false, forKey: legacyRuntimeFlagKey)
+            setInstallProgress(step: "", fraction: 0, detail: "")
         } catch {
-            installError = "Failed to uninstall: \(error.localizedDescription)"
+            installProgress = ""
+            installProgressDetail = ""
+            installError = "Failed to remove AI model files: \(error.localizedDescription)"
         }
     }
-    
-    // MARK: - Extension Removal Cleanup
-    
-    /// Clean up all AI Background Removal resources when extension is removed
+
     func cleanup() {
         Task {
-            // Uninstall the Python package
             await uninstallTransparentBackground()
-            
-            // Clear cached state
+
             UserDefaults.standard.removeObject(forKey: installedCacheKey)
             UserDefaults.standard.removeObject(forKey: Self.selectedPythonPathKey)
-            UserDefaults.standard.removeObject(forKey: "useLocalBackgroundRemoval")
+            UserDefaults.standard.removeObject(forKey: legacyRuntimeFlagKey)
             UserDefaults.standard.removeObject(forKey: "aiBackgroundRemovalTracked")
-            removeManagedVenvIfPresent()
-            
-            // Reset state
+
             isInstalled = false
-            activePythonPath = nil
             installProgress = ""
+            installProgressFraction = 0
+            installProgressDetail = ""
             installError = nil
-            
+
             NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.aiBackgroundRemoval)
-            
             print("[AIInstallManager] Cleanup complete")
         }
     }
 
-    private func removeManagedVenvIfPresent() {
-        let venvURL = Self.managedVenvURL
-        if FileManager.default.fileExists(atPath: venvURL.path) {
-            try? FileManager.default.removeItem(at: venvURL)
+    nonisolated static func modelExists() -> Bool {
+        FileManager.default.fileExists(atPath: localModelPath)
+    }
+
+    nonisolated static func modelSizeMatchesManifest() -> Bool {
+        guard FileManager.default.fileExists(atPath: localModelPath) else { return false }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: localModelPath)
+        let fileSize = (attrs?[.size] as? NSNumber)?.int64Value ?? -1
+        return fileSize == modelByteSize
+    }
+
+    nonisolated static func modelMatchesManifest() -> Bool {
+        guard modelSizeMatchesManifest() else { return false }
+
+        guard let digest = sha256Hex(forFileAt: localModelURL) else { return false }
+        return digest == modelSHA256
+    }
+
+    private func setInstalledState(_ installed: Bool) {
+        let previous = isInstalled
+
+        isInstalled = installed
+        UserDefaults.standard.set(installed, forKey: installedCacheKey)
+
+        if installed {
+            installError = nil
+            installProgressFraction = 1.0
+            if installProgress.isEmpty {
+                installProgress = "Installation complete!"
+            }
+            if installProgressDetail.isEmpty {
+                installProgressDetail = "Runtime + model are ready."
+            }
+        } else if !isInstalling {
+            installProgressFraction = 0
+            if installError == nil {
+                installProgress = ""
+                installProgressDetail = ""
+            }
+        }
+
+        if previous != installed {
+            NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.aiBackgroundRemoval)
         }
     }
-    
-    private func shellQuote(_ value: String) -> String {
-        if value.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "'\"$`\\"))) == nil {
-            return value
+
+    nonisolated private static func modelMatchesManifestAsync() async -> Bool {
+        await Task.detached(priority: .utility) {
+            modelMatchesManifest()
+        }.value
+    }
+
+    private func runtimeReady(requireValidation: Bool) async -> Bool {
+        guard await runtimeHelperReady(requirePing: requireValidation) else { return false }
+        guard await Self.modelMatchesManifestAsync() else { return false }
+
+        if requireValidation {
+            do {
+                _ = try await runtimeManager.runCommand(
+                    "validateRuntime",
+                    arguments: ["modelPath": Self.localModelPath]
+                )
+            } catch {
+                return false
+            }
         }
-        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+
+        return true
+    }
+
+    private func runtimeHelperReady(requirePing: Bool) async -> Bool {
+        guard runtimeManager.isInstalled else { return false }
+        guard runtimeManager.executableURL != nil else { return false }
+        guard requirePing else { return true }
+
+        do {
+            _ = try await runtimeManager.runCommand("status")
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func bindRuntimeState() {
+        runtimeManager.$state
+            .sink { [weak self] state in
+                guard let self else { return }
+                switch state {
+                case .installed, .updateAvailable, .notInstalled:
+                    self.checkInstallationStatus()
+                default:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func setInstallProgress(step: String, fraction: Double, detail: String) {
+        installProgress = step
+        installProgressFraction = max(0, min(1, fraction))
+        installProgressDetail = detail
+    }
+
+    private func updateDownloadProgress(writtenBytes: Int64, expectedBytes: Int64) {
+        let totalBytes = expectedBytes > 0 ? expectedBytes : Self.modelByteSize
+        guard totalBytes > 0 else { return }
+
+        let fraction = max(0, min(1, Double(writtenBytes) / Double(totalBytes)))
+        let mappedProgress = 0.1 + (fraction * 0.75)
+        installProgressFraction = max(installProgressFraction, mappedProgress)
+        installProgressDetail = "\(Int(fraction * 100))% • \(Self.byteCountString(writtenBytes)) / \(Self.byteCountString(totalBytes))"
+    }
+
+    private func downloadModel(from sourceURL: URL) async throws -> (URL, URLResponse) {
+        let progressDelegate = AIModelDownloadProgressDelegate { [weak self] written, expected in
+            Task { @MainActor [weak self] in
+                self?.updateDownloadProgress(writtenBytes: written, expectedBytes: expected)
+            }
+        }
+
+        var request = URLRequest(url: sourceURL)
+        request.timeoutInterval = 3_600
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        return try await URLSession.shared.download(for: request, delegate: progressDelegate)
+    }
+
+    private func makeValidationPulseTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            let messages = [
+                "Launching external runtime…",
+                "Running runtime warmup…",
+                "Finalizing runtime validation…"
+            ]
+            var messageIndex = 0
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                await MainActor.run {
+                    guard let self, self.isInstalling else { return }
+                    self.installProgressFraction = min(max(self.installProgressFraction, 0.9) + 0.005, 0.985)
+                    self.installProgressDetail = messages[messageIndex % messages.count]
+                    messageIndex += 1
+                }
+            }
+        }
+    }
+
+    private func validateRuntimeWithTimeout() async throws {
+        let validationTask = Task(priority: .userInitiated) { [runtimeManager] in
+            _ = try await runtimeManager.runCommand(
+                "validateRuntime",
+                arguments: ["modelPath": Self.localModelPath]
+            )
+        }
+
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await validationTask.value
+                }
+
+                group.addTask { [validationTimeoutSeconds] in
+                    try await Task.sleep(nanoseconds: UInt64(validationTimeoutSeconds * 1_000_000_000))
+                    throw AIInstallValidationError.timedOut
+                }
+
+                _ = try await group.next()
+                group.cancelAll()
+            }
+        } catch AIInstallValidationError.timedOut {
+            validationTask.cancel()
+            throw AIInstallValidationError.timedOut
+        } catch {
+            validationTask.cancel()
+            throw error
+        }
+    }
+
+    nonisolated private static func byteCountString(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func hasEnoughDiskSpace(requiredBytes: Int64) -> Bool {
+        let probeURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let values = try? probeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        guard let available = values?.volumeAvailableCapacityForImportantUsage else {
+            return true
+        }
+        return Int64(available) >= requiredBytes
+    }
+
+    private func removeManagedRuntimeArtifacts() throws {
+        let fileManager = FileManager.default
+
+        let runtimeArtifacts: [URL] = [
+            Self.localModelURL,
+            Self.legacyCheckpointURL,
+            Self.legacyVenvURL
+        ]
+
+        for artifact in runtimeArtifacts where fileManager.fileExists(atPath: artifact.path) {
+            try fileManager.removeItem(at: artifact)
+        }
+
+        if fileManager.fileExists(atPath: Self.managedModelsURL.path),
+           (try? fileManager.contentsOfDirectory(atPath: Self.managedModelsURL.path).isEmpty) == true {
+            try? fileManager.removeItem(at: Self.managedModelsURL)
+        }
+    }
+
+    nonisolated private static func sha256Hex(forFileAt url: URL) -> String? {
+        guard let stream = InputStream(url: url) else { return nil }
+        stream.open()
+        defer { stream.close() }
+
+        var hasher = SHA256()
+        let bufferSize = 1_048_576
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+
+        while stream.hasBytesAvailable {
+            let bytesRead = stream.read(&buffer, maxLength: buffer.count)
+            if bytesRead < 0 {
+                return nil
+            }
+            if bytesRead == 0 {
+                break
+            }
+            hasher.update(data: Data(buffer[0..<bytesRead]))
+        }
+
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }

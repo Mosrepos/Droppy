@@ -102,7 +102,7 @@ struct TargetSizeDialogView: View {
                         Text("Compress")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .disabled(targetBytes == nil || targetBytes! >= currentSize)
                 .opacity(targetBytes == nil || targetBytes! >= currentSize ? 0.5 : 1.0)
             }
@@ -270,21 +270,33 @@ class TargetSizeDialogController {
             panel.contentView = hostingView
             
             self.window = panel
-            
-            // Use deferred makeKey to avoid NotchWindow conflicts
+
+            AppKitMotion.prepareForPresent(panel, initialScale: 1.0)
             panel.orderFront(nil)
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
                 panel.makeKeyAndOrderFront(nil)
             }
+            AppKitMotion.animateIn(panel, initialScale: 1.0, duration: 0.2)
         }
     }
     
     private func dismiss(result: Int64?) {
-        window?.close()
+        guard let panel = window else {
+            continuation?.resume(returning: result)
+            continuation = nil
+            return
+        }
+
         window = nil
-        continuation?.resume(returning: result)
+        let capturedContinuation = continuation
         continuation = nil
+
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) {
+            panel.close()
+            AppKitMotion.resetPresentationState(panel)
+            capturedContinuation?.resume(returning: result)
+        }
     }
 }
 

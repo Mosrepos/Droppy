@@ -433,8 +433,13 @@ private struct DropoverCard: View {
                 // Direct thumbnail with rounded corners (Dropover style)
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    // Keep aspect ratio stable across QuickLook/native fallback sources.
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: style.cardSize, height: style.cardSize)
+                    .background(
+                        RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                            .fill(AdaptiveColors.overlayAuto(0.08))
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
             } else if item.isDirectory {
                 // Folder icon fallback

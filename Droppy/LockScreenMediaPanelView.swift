@@ -8,6 +8,8 @@
 //
 
 import SwiftUI
+import AppKit
+import ObjectiveC.runtime
 
 /// Lock screen media panel - iPhone-inspired design
 /// Displays on the macOS lock screen via SkyLight.framework
@@ -15,6 +17,9 @@ struct LockScreenMediaPanelView: View {
     @EnvironmentObject var musicManager: MusicManager
     @ObservedObject var animator: LockScreenMediaPanelAnimator
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+    @AppStorage(AppPreferenceKey.lockScreenMediaLiquidGlassVariant) private var lockScreenMediaLiquidGlassVariant = PreferenceDefault.lockScreenMediaLiquidGlassVariant
+    @State private var spotifyController = SpotifyController.shared
+    @State private var appleMusicController = AppleMusicController.shared
     
     // MARK: - Layout Constants (pixel-perfect, synced with Manager)
     private let panelWidth: CGFloat = 380
@@ -24,14 +29,23 @@ struct LockScreenMediaPanelView: View {
     private let albumArtSize: CGFloat = 56
     private let albumArtRadius: CGFloat = 10
     
+    private var panelShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
+    private var clampedLiquidGlassVariant: Int {
+        min(max(lockScreenMediaLiquidGlassVariant, 0), 19)
+    }
+    
     // MARK: - Body
     
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.5 : 60)) { context in
+        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
             let estimatedTime = musicManager.estimatedPlaybackPosition(at: context.date)
             let progress: Double = musicManager.songDuration > 0 
                 ? min(1, max(0, estimatedTime / musicManager.songDuration)) 
                 : 0
+            let glassTrigger = context.date.timeIntervalSinceReferenceDate
             
             VStack(spacing: 14) {
                 // Row 1: Album Art + Track Info + Visualizer
@@ -99,68 +113,160 @@ struct LockScreenMediaPanelView: View {
                 }
                 
                 // Row 3: Media controls (centered)
-                HStack(spacing: 40) {
-                    // Previous
-                    Button {
-                        musicManager.previousTrack()
-                    } label: {
-                        Image(systemName: "backward.fill")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Play/Pause
-                    Button {
-                        musicManager.togglePlay()
-                    } label: {
-                        Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 28, weight: .medium))
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Next
-                    Button {
-                        musicManager.nextTrack()
-                    } label: {
-                        Image(systemName: "forward.fill")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-                }
+                controlsRow
             }
             .padding(edgePadding)
             .frame(width: panelWidth, height: panelHeight)
-            .background(panelBackground)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(AdaptiveColors.overlayAuto(useTransparentBackground ? 0.2 : 0.1), lineWidth: 1)
+            .background(panelBackground(glassTrigger: glassTrigger))
+            .clipShape(panelShape)
+            .overlay(panelBorderOverlay)
+            .shadow(
+                color: useTransparentBackground ? .clear : Color.black.opacity(0.4),
+                radius: useTransparentBackground ? 0 : 30,
+                x: 0,
+                y: useTransparentBackground ? 0 : 15
             )
-            .shadow(color: Color.black.opacity(0.4), radius: 30, x: 0, y: 15)
             // Entry/exit animations - FAST
             .scaleEffect(animator.isPresented ? 1 : 0.9, anchor: .center)
             .opacity(animator.isPresented ? 1 : 0)
             .animation(DroppyAnimation.hoverQuick, value: animator.isPresented)
+        }
+        .onAppear(perform: refreshProviderStateIfNeeded)
+        .onChange(of: musicManager.bundleIdentifier) { _, _ in
+            refreshProviderStateIfNeeded()
         }
     }
     
     // MARK: - Panel Background
     
     @ViewBuilder
-    private var panelBackground: some View {
+    private func panelBackground(glassTrigger: TimeInterval) -> some View {
         if useTransparentBackground {
-            // Glass effect
-            ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                AdaptiveColors.overlayAuto(0.03)
+            // Use the same live-resampling glass strategy as live lock-screen glass surfaces.
+            if #available(macOS 26.0, *) {
+                LockScreenLiveLiquidGlassBackground(
+                    cornerRadius: cornerRadius,
+                    trigger: glassTrigger,
+                    variantRawValue: clampedLiquidGlassVariant
+                ) {
+                    Color.white.opacity(0.04)
+                }
+            } else {
+                panelShape
+                    .fill(.ultraThinMaterial)
             }
         } else {
             // Dark solid
-            Color.black.opacity(0.85)
+            panelShape
+                .fill(Color.black.opacity(0.85))
         }
+    }
+    
+    @ViewBuilder
+    private var panelBorderOverlay: some View {
+        if useTransparentBackground {
+            if #unavailable(macOS 26.0) {
+                panelShape
+                    .stroke(AdaptiveColors.overlayAuto(0.2), lineWidth: 1)
+            }
+        } else {
+            panelShape
+                .stroke(AdaptiveColors.overlayAuto(0.1), lineWidth: 1)
+        }
+    }
+    
+    // MARK: - Controls
+    
+    @ViewBuilder
+    private var controlsRow: some View {
+        let isSpotify = musicManager.isSpotifySource
+        let isAppleMusic = musicManager.isAppleMusicSource
+        let spotifyGreen = Color(red: 0.11, green: 0.73, blue: 0.33)
+        let appleMusicPink = Color(red: 0.98, green: 0.34, blue: 0.40)
+        
+        HStack(spacing: 14) {
+            if isSpotify {
+                SpotifyControlButton(
+                    icon: "shuffle",
+                    isActive: spotifyController.shuffleEnabled,
+                    accentColor: spotifyGreen,
+                    size: 14
+                ) {
+                    spotifyController.toggleShuffle()
+                }
+            } else if isAppleMusic {
+                SpotifyControlButton(
+                    icon: "shuffle",
+                    isActive: appleMusicController.shuffleEnabled,
+                    accentColor: appleMusicPink,
+                    size: 14
+                ) {
+                    appleMusicController.toggleShuffle()
+                }
+            }
+            
+            MediaControlButton(
+                icon: "backward.fill",
+                size: 22,
+                foregroundColor: .white,
+                tapPadding: 6,
+                nudgeDirection: .left
+            ) {
+                musicManager.previousTrack()
+            }
+            
+            MediaControlButton(
+                icon: musicManager.isPlaying ? "pause.fill" : "play.fill",
+                size: 26,
+                foregroundColor: .white,
+                tapPadding: 6
+            ) {
+                musicManager.togglePlay()
+            }
+            
+            MediaControlButton(
+                icon: "forward.fill",
+                size: 22,
+                foregroundColor: .white,
+                tapPadding: 6,
+                nudgeDirection: .right
+            ) {
+                musicManager.nextTrack()
+            }
+            
+            if isSpotify {
+                SpotifyControlButton(
+                    icon: spotifyController.repeatMode.iconName,
+                    isActive: spotifyController.repeatMode != .off,
+                    accentColor: spotifyGreen,
+                    size: 14
+                ) {
+                    spotifyController.cycleRepeatMode()
+                }
+            } else if isAppleMusic {
+                SpotifyControlButton(
+                    icon: appleMusicController.repeatMode.iconName,
+                    isActive: appleMusicController.repeatMode != .off,
+                    accentColor: appleMusicPink,
+                    size: 14
+                ) {
+                    appleMusicController.cycleRepeatMode()
+                }
+            }
+            
+            if isAppleMusic {
+                SpotifyControlButton(
+                    icon: appleMusicController.isCurrentTrackLoved ? "heart.fill" : "heart",
+                    isActive: appleMusicController.isCurrentTrackLoved,
+                    isLoading: appleMusicController.isLoveLoading,
+                    accentColor: appleMusicPink,
+                    size: 14
+                ) {
+                    appleMusicController.toggleLove()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
     
     // MARK: - Album Art
@@ -193,25 +299,92 @@ struct LockScreenMediaPanelView: View {
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
     }
+    
+    private func refreshProviderStateIfNeeded() {
+        if musicManager.isSpotifySource {
+            spotifyController.refreshState()
+        } else if musicManager.isAppleMusicSource {
+            appleMusicController.refreshState()
+        }
+    }
 }
 
-// MARK: - Visual Effect View
+// MARK: - Native Live Liquid Glass (live glass parity)
 
-private struct VisualEffectView: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-    
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .active
-        return view
+private struct LockScreenLiveLiquidGlassBackground<Content: View>: NSViewRepresentable {
+    private let cornerRadius: CGFloat
+    private let trigger: TimeInterval
+    private let variantRawValue: Int
+    private let content: Content
+
+    init(cornerRadius: CGFloat, trigger: TimeInterval, variantRawValue: Int, @ViewBuilder content: () -> Content) {
+        self.cornerRadius = cornerRadius
+        self.trigger = trigger
+        self.variantRawValue = min(max(variantRawValue, 0), 19)
+        self.content = content()
     }
-    
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
+
+    func makeNSView(context: Context) -> NSView {
+        if let glassType = NSClassFromString("NSGlassEffectView") as? NSView.Type {
+            let glass = glassType.init(frame: .zero)
+            applyCornerRadiusIfSupported(on: glass)
+            callPrivateVariantSetter(on: glass, value: variantRawValue)
+
+            let hosting = NSHostingView(rootView: content)
+            hosting.translatesAutoresizingMaskIntoConstraints = false
+            glass.setValue(hosting, forKey: "contentView")
+            return glass
+        }
+
+        let fallback = NSVisualEffectView()
+        fallback.material = .underWindowBackground
+        fallback.state = .active
+        fallback.blendingMode = .behindWindow
+
+        let hosting = NSHostingView(rootView: content)
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        fallback.addSubview(hosting)
+        NSLayoutConstraint.activate([
+            hosting.leadingAnchor.constraint(equalTo: fallback.leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: fallback.trailingAnchor),
+            hosting.topAnchor.constraint(equalTo: fallback.topAnchor),
+            hosting.bottomAnchor.constraint(equalTo: fallback.bottomAnchor)
+        ])
+        return fallback
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let hosting = nsView.value(forKey: "contentView") as? NSHostingView<Content> {
+            hosting.rootView = content
+        } else if let hosting = nsView.subviews.compactMap({ $0 as? NSHostingView<Content> }).first {
+            hosting.rootView = content
+        }
+
+        applyCornerRadiusIfSupported(on: nsView)
+        callPrivateVariantSetter(on: nsView, value: variantRawValue)
+
+        // Micro-jitter forces WindowServer backdrop resampling so animated wallpapers stay live.
+        let jitter = sin(trigger * 100) * 0.000001
+        nsView.alphaValue = 1.0 - CGFloat(abs(jitter))
+        nsView.needsDisplay = true
+    }
+
+    private func callPrivateVariantSetter(on object: AnyObject, value: Int) {
+        let selector = NSSelectorFromString("set_variant:")
+        guard
+            let method = class_getInstanceMethod(object_getClass(object), selector)
+        else { return }
+
+        typealias SetterIMP = @convention(c) (AnyObject, Selector, Int) -> Void
+        let implementation = method_getImplementation(method)
+        let function = unsafeBitCast(implementation, to: SetterIMP.self)
+        function(object, selector, value)
+    }
+
+    private func applyCornerRadiusIfSupported(on object: AnyObject) {
+        let selector = NSSelectorFromString("setCornerRadius:")
+        guard class_getInstanceMethod(object_getClass(object), selector) != nil else { return }
+        object.setValue(cornerRadius, forKey: "cornerRadius")
     }
 }
 

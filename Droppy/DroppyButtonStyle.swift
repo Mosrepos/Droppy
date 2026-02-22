@@ -207,7 +207,7 @@ private struct DroppyCircleButtonContent: View {
     }
 
     private var foregroundColor: Color {
-        // Transparent mode should always adapt to the current appearance.
+        // Liquid mode should always adapt to the current appearance.
         if useTransparent {
             return isEnabled ? AdaptiveColors.primaryTextAuto.opacity(0.92) : AdaptiveColors.secondaryTextAuto.opacity(0.65)
         }
@@ -225,7 +225,7 @@ private struct DroppyCircleButtonContent: View {
             .frame(width: size, height: size)
             .background(
                 Group {
-                    // Transparent mode: use glass material (overrides solidFill)
+                    // Liquid mode: use glass material (overrides solidFill)
                     if useTransparent {
                         Circle()
                             .droppyGlassFill()
@@ -236,7 +236,7 @@ private struct DroppyCircleButtonContent: View {
                 }
             )
             .overlay(
-                // Border only in transparent mode (matches basket buttons)
+                // Border only in Liquid mode (matches basket buttons)
                 useTransparent ? Circle().stroke(AdaptiveColors.overlayAuto(borderOpacity), lineWidth: 1) : nil
             )
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
@@ -267,7 +267,7 @@ private struct DroppyCircleButtonContent: View {
 
 /// Accent-colored pill button for primary actions (e.g., "To Shelf", "Select All")
 struct DroppyAccentButtonStyle: ButtonStyle {
-    var color: Color = .blue
+    var color: Color = AdaptiveColors.selectionBlueAuto
     var size: DroppyButtonSize = .small
     
     func makeBody(configuration: Configuration) -> some View {
@@ -356,7 +356,7 @@ struct DroppyToggleButtonStyle: ButtonStyle {
     var isOn: Bool
     var size: CGFloat = 50
     var cornerRadius: CGFloat = 16
-    var accentColor: Color = .blue
+    var accentColor: Color = AdaptiveColors.selectionBlueAuto
     
     func makeBody(configuration: Configuration) -> some View {
         DroppyToggleButtonContent(
@@ -432,7 +432,7 @@ private struct DroppyToggleButtonContent: View {
 /// Supports selection state with matched geometry effect compatibility
 struct DroppySelectableButtonStyle: ButtonStyle {
     var isSelected: Bool
-    var accentColor: Color = .blue
+    var accentColor: Color = AdaptiveColors.selectionBlueAuto
     
     func makeBody(configuration: Configuration) -> some View {
         DroppySelectableButtonContent(
@@ -537,7 +537,7 @@ private struct DroppySidebarButtonContent: View {
     
     private var backgroundColor: Color {
         if isSelected {
-            return isHovering ? .blue : .blue.opacity(0.8)
+            return isHovering ? AdaptiveColors.selectionBlueAuto : AdaptiveColors.selectionBlueAuto.opacity(0.8)
         } else if configuration.isPressed {
             return AdaptiveColors.overlayAuto(0.22)
         } else if isHovering {
@@ -612,17 +612,17 @@ extension View {
     }
     
     /// Apply an accent-colored Droppy pill button
-    func droppyAccentButton(color: Color = .blue, size: DroppyButtonSize = .small) -> some View {
+    func droppyAccentButton(color: Color = AdaptiveColors.selectionBlueAuto, size: DroppyButtonSize = .small) -> some View {
         self.buttonStyle(DroppyAccentButtonStyle(color: color, size: size))
     }
     
     /// Apply the Droppy toggle button style for selectable options
-    func droppyToggleButton(isOn: Bool, size: CGFloat = 50, cornerRadius: CGFloat = 16, accentColor: Color = .blue) -> some View {
+    func droppyToggleButton(isOn: Bool, size: CGFloat = 50, cornerRadius: CGFloat = 16, accentColor: Color = AdaptiveColors.selectionBlueAuto) -> some View {
         self.buttonStyle(DroppyToggleButtonStyle(isOn: isOn, size: size, cornerRadius: cornerRadius, accentColor: accentColor))
     }
     
     /// Apply the Droppy selectable button style for mode selectors
-    func droppySelectableButton(isSelected: Bool, accentColor: Color = .blue) -> some View {
+    func droppySelectableButton(isSelected: Bool, accentColor: Color = AdaptiveColors.selectionBlueAuto) -> some View {
         self.buttonStyle(DroppySelectableButtonStyle(isSelected: isSelected, accentColor: accentColor))
     }
     

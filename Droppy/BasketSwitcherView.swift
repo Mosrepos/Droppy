@@ -21,11 +21,14 @@ private let basketSwitcherDropTypes: [UTType] = [
 ]
 
 private struct BasketSwitcherContainerBackground: View {
+    @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
+
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
     }
 
     private var usesNativeGlass: Bool {
+        guard useTransparentBackground else { return false }
         if #available(macOS 26.0, *) {
             return true
         }
@@ -34,7 +37,7 @@ private struct BasketSwitcherContainerBackground: View {
 
     var body: some View {
         shape
-            .droppyNativeGlassFill(true)
+            .droppyNativeGlassFill(useTransparentBackground)
             .overlay {
                 if !usesNativeGlass {
                     shape
