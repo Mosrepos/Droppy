@@ -27,6 +27,7 @@ final class HUDManager {
         case battery = 70            // Charge state changes
         case capsLock = 60           // Keyboard state
         case highAlert = 55          // High Alert (stay awake) state changes
+        case pomodoro = 54           // Pomodoro timer state changes
         case lockScreen = 110        // Lock/unlock transition gate (must not overlap with any other HUD)
         case notification = 45       // Notification HUD (extension)
         case dnd = 40                // Focus mode changes
@@ -43,6 +44,7 @@ final class HUDManager {
             case .battery: return 2.5           // Medium duration
             case .capsLock: return 1.0          // Very short, just confirmation
             case .highAlert: return 2.0         // Medium, shows active/inactive state
+            case .pomodoro: return 2.0          // Medium, mirrors High Alert behavior
             case .lockScreen: return 2.0        // Medium
             case .notification: return 3.0      // Notification from external app
             case .dnd: return 2.0               // Medium
@@ -296,6 +298,11 @@ final class HUDManager {
     /// Whether High Alert HUD is visible
     var isHighAlertHUDVisible: Bool {
         activeHUD?.type == .highAlert
+    }
+
+    /// Whether Pomodoro HUD is visible
+    var isPomodoroHUDVisible: Bool {
+        activeHUD?.type == .pomodoro
     }
     
     /// Whether AirPods HUD is visible

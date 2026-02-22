@@ -373,27 +373,30 @@ final class QuickShareSuccessWindowController: NSObject, NSWindowDelegate {
     
     private var window: NSPanel?
     private let windowState = QuickShareWindowState()
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     /// Show the window immediately in uploading state
     static func showUploading(filename: String, fileCount: Int) {
-        // Close existing window if any
-        shared?.close()
-        
-        let controller = QuickShareSuccessWindowController()
-        shared = controller
-        controller.windowState.uploadState = .uploading(filename: filename, fileCount: fileCount)
-        controller.showWindow()
+        DispatchQueue.main.async {
+            let controller = shared ?? QuickShareSuccessWindowController()
+            shared = controller
+            controller.cancelDeferredTeardown()
+            controller.windowState.uploadState = .uploading(filename: filename, fileCount: fileCount)
+            controller.showWindow()
+        }
     }
     
     /// Legacy method - show directly with success URL (for backwards compatibility)
     static func show(shareURL: String) {
-        // Close existing window if any
-        shared?.close()
-        
-        let controller = QuickShareSuccessWindowController()
-        shared = controller
-        controller.windowState.uploadState = .success(shareURL: shareURL)
-        controller.showWindow()
+        DispatchQueue.main.async {
+            let controller = shared ?? QuickShareSuccessWindowController()
+            shared = controller
+            controller.cancelDeferredTeardown()
+            controller.windowState.uploadState = .success(shareURL: shareURL)
+            controller.showWindow()
+        }
     }
     
     /// Update the current window to show success state
@@ -423,6 +426,23 @@ final class QuickShareSuccessWindowController: NSObject, NSWindowDelegate {
     }
     
     private func showWindow() {
+        cancelDeferredTeardown()
+
+        if let existing = window {
+            if existing.isVisible {
+                existing.makeKeyAndOrderFront(nil)
+            } else {
+                AppKitMotion.prepareForPresent(existing, initialScale: 1.0)
+                existing.orderFront(nil)
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    existing.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(existing, initialScale: 1.0, duration: 0.2)
+            }
+            return
+        }
+
         let contentView = QuickShareSuccessView(
             uploadState: Binding(
                 get: { [weak self] in self?.windowState.uploadState ?? .uploading(filename: "", fileCount: 1) },
@@ -470,75 +490,58 @@ final class QuickShareSuccessWindowController: NSObject, NSWindowDelegate {
         newWindow.level = NSWindow.Level(Int(NSWindow.Level.popUpMenu.rawValue) + 2)
         
         window = newWindow
-        
-        // Start scaled down and invisible for spring animation
-        newWindow.alphaValue = 0
-        if let contentView = newWindow.contentView {
-            contentView.wantsLayer = true
-            contentView.layer?.transform = CATransform3DMakeScale(0.85, 0.85, 1.0)
-            contentView.layer?.opacity = 0
-        }
-        
-        // Show window
+
+        AppKitMotion.prepareForPresent(newWindow, initialScale: 1.0)
         newWindow.orderFront(nil)
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
             newWindow.makeKeyAndOrderFront(nil)
         }
-        
-        // Spring animation (matches onboarding)
-        if let layer = newWindow.contentView?.layer {
-            // Fade in
-            let fadeAnim = CABasicAnimation(keyPath: "opacity")
-            fadeAnim.fromValue = 0
-            fadeAnim.toValue = 1
-            fadeAnim.duration = 0.25
-            fadeAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            fadeAnim.fillMode = .forwards
-            fadeAnim.isRemovedOnCompletion = false
-            layer.add(fadeAnim, forKey: "fadeIn")
-            layer.opacity = 1
-            
-            // Scale with spring overshoot
-            let scaleAnim = CASpringAnimation(keyPath: "transform.scale")
-            scaleAnim.fromValue = 0.85
-            scaleAnim.toValue = 1.0
-            scaleAnim.mass = 1.0
-            scaleAnim.stiffness = 250
-            scaleAnim.damping = 22
-            scaleAnim.initialVelocity = 6
-            scaleAnim.duration = scaleAnim.settlingDuration
-            scaleAnim.fillMode = .forwards
-            scaleAnim.isRemovedOnCompletion = false
-            layer.add(scaleAnim, forKey: "scaleSpring")
-            layer.transform = CATransform3DIdentity
-        }
-        
-        // Fade window alpha
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            newWindow.animator().alphaValue = 1.0
-        })
+        AppKitMotion.animateIn(newWindow, initialScale: 1.0, duration: 0.2)
     }
     
     func close() {
-        guard let panel = window else { return }
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            self?.window = nil
+        guard let panel = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
+
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+            guard let self else { return }
             panel.orderOut(nil)
-            QuickShareSuccessWindowController.shared = nil
-        })
+            AppKitMotion.resetPresentationState(panel)
+            self.isClosing = false
+            self.scheduleDeferredTeardown()
+        }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     // MARK: - NSWindowDelegate
     
     func windowWillClose(_ notification: Notification) {
         window = nil
-        QuickShareSuccessWindowController.shared = nil
+        isClosing = false
+        cancelDeferredTeardown()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        close()
+        return false
     }
 }

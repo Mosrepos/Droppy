@@ -65,6 +65,12 @@ struct InlineHUDView: View {
     
     /// PREMIUM: Delayed mute state for drain-then-color effect
     @State private var displayedMuted = false
+    @State private var displayedValue: CGFloat = 0
+
+    private func normalized(_ rawValue: CGFloat) -> CGFloat {
+        guard rawValue.isFinite else { return 0 }
+        return max(0, min(1, rawValue))
+    }
     
     /// PREMIUM: Fill color based on HUD type (uses displayedMuted for delayed transition)
     private var fillColor: Color {
@@ -201,7 +207,7 @@ struct InlineHUDView: View {
             if type.showsSlider {
                 GeometryReader { geo in
                     let width = geo.size.width
-                    let progress = max(0, min(1, value))
+                    let progress = displayedValue
                     let fillWidth = max(4, width * progress)
                     let trackHeight: CGFloat = 4
                     
@@ -210,7 +216,7 @@ struct InlineHUDView: View {
                         Capsule()
                             .fill(trackColor)
                             .frame(height: trackHeight)
-                            .animation(.easeInOut(duration: 0.25), value: isMuted)
+                            .animation(DroppyAnimation.smooth(duration: 0.12), value: displayedMuted)
                         
                         // PREMIUM: Gradient fill with glow
                         if progress > 0 {
@@ -245,17 +251,16 @@ struct InlineHUDView: View {
                                 .shadow(color: fillColor.opacity(0.3), radius: 1)
                                 .shadow(color: fillColor.opacity(0.15 + (progress * 0.15)), radius: 3)
                                 .shadow(color: fillColor.opacity(0.1 + (progress * 0.1)), radius: 5 + (progress * 3))
-                                .animation(.easeInOut(duration: 0.25), value: isMuted)
+                                .animation(DroppyAnimation.smooth(duration: 0.12), value: displayedMuted)
                         }
                     }
                     .frame(height: trackHeight)
                     .frame(maxHeight: .infinity, alignment: .center)
-                    .animation(.interpolatingSpring(stiffness: 350, damping: 28), value: value)
                 }
                 .frame(height: 28)
                 
                 // PREMIUM: Animated percentage text with rolling number effect
-                Text("\(Int(max(0, min(1, value)) * 100))")
+                Text("\(Int(displayedValue * 100))")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(
                         useAdaptiveForegrounds
@@ -265,8 +270,8 @@ struct InlineHUDView: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .frame(width: 32, alignment: .leading)
-                    .contentTransition(.numericText(value: Double(Int(value * 100))))
-                    .animation(DroppyAnimation.state, value: Int(value * 100))
+                    .contentTransition(.numericText(value: Double(Int(displayedValue * 100))))
+                    .animation(DroppyAnimation.state, value: Int(displayedValue * 100))
             } else {
                 let isOn = value > 0
                 Text(type.displayText(for: value).uppercased())
@@ -290,24 +295,23 @@ struct InlineHUDView: View {
         }
         // Match width of center controls
         .frame(width: type.showsSlider ? 170 : 116)
-        // PREMIUM: Delayed mute color transition - bar drains first, then color changes
+        // Keep mute color transitions immediate so reflection color tracks value updates.
         .onChange(of: shouldShowMuted) { _, newMuted in
-            if newMuted {
-                // When muting: delay color change so bar drains to 0 first
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        displayedMuted = true
-                    }
-                }
-            } else {
-                // When unmuting: immediately show green
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    displayedMuted = false
-                }
+            withAnimation(DroppyAnimation.smooth(duration: 0.12)) {
+                displayedMuted = newMuted
             }
+        }
+        .onChange(of: value) { _, newValue in
+            withAnimation(DroppyAnimation.tracking) {
+                displayedValue = normalized(newValue)
+            }
+        }
+        .onChange(of: type) { _, _ in
+            displayedValue = normalized(value)
         }
         .onAppear {
             displayedMuted = shouldShowMuted
+            displayedValue = normalized(value)
         }
     }
 }
@@ -436,10 +440,10 @@ struct AppleMusicBadge: View {
     }
 }
 
-// MARK: - Media Control Button (with premium nudge effects)
+// MARK: - Media Control Button
 
-/// Media control button with premium press animations
-/// - nudgeDirection: .left for previous, .right for next, .none for play/pause (uses wiggle)
+/// Media control button.
+/// - nudgeDirection: .left/.right uses looping chevron motion, .none uses native play/pause morphing
 struct MediaControlButton: View {
     let icon: String
     let size: CGFloat
@@ -449,8 +453,8 @@ struct MediaControlButton: View {
     let action: () -> Void
     
     @State private var isHovering = false
-    @State private var pressOffset: CGFloat = 0
-    @State private var rotationAngle: Double = 0
+    @State private var skipMarqueeProgress: CGFloat = 0
+    @State private var chevronCycleToken: Int = 0
     
     enum NudgeDirection {
         case left, right, none
@@ -458,19 +462,12 @@ struct MediaControlButton: View {
     
     var body: some View {
         Button {
-            triggerPressEffect()
+            triggerControlAnimation()
             action()
         } label: {
-            Image(systemName: icon)
-                .font(.system(size: size, weight: .bold))
-                .foregroundStyle(foregroundColor)
-                .frame(width: size + tapPadding, height: size + tapPadding)
-                .contentShape(Rectangle())
-                .contentTransition(.symbolEffect(.replace))
+            iconView
         }
         .buttonStyle(MediaButtonStyle(isHovering: isHovering))
-        .offset(x: pressOffset)
-        .rotationEffect(.degrees(rotationAngle))
         .onHover { hovering in
             withAnimation(DroppyAnimation.hover) {
                 isHovering = hovering
@@ -478,39 +475,77 @@ struct MediaControlButton: View {
         }
     }
     
-    /// Premium press effect - nudge for prev/next, wiggle for play/pause
-    private func triggerPressEffect() {
+    @ViewBuilder
+    private var iconView: some View {
         switch nudgeDirection {
         case .left:
-            // Nudge left briefly
-            withAnimation(DroppyAnimation.mediaPress) {
-                pressOffset = -6
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                withAnimation(DroppyAnimation.mediaRelease) {
-                    pressOffset = 0
-                }
-            }
+            marqueeSkipIcon(mirrored: true)
         case .right:
-            // Nudge right briefly
-            withAnimation(DroppyAnimation.mediaPress) {
-                pressOffset = 6
+            marqueeSkipIcon(mirrored: false)
+        case .none:
+            // Play/pause relies on native symbol replace morph only.
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .bold))
+                .foregroundStyle(foregroundColor)
+                .frame(width: size + tapPadding, height: size + tapPadding)
+                .contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace.byLayer))
+        }
+    }
+    
+    private var chevronStep: CGFloat { size * 0.50 }
+    private var chevronWidth: CGFloat { size * 0.54 }
+    private var chevronHeight: CGFloat { size * 0.96 }
+    private var chevronViewportWidth: CGFloat { chevronStep + chevronWidth }
+    private var chevronMaskInset: CGFloat { max(1, size * 0.04) }
+    
+    private func marqueeSkipIcon(mirrored: Bool) -> some View {
+        ZStack(alignment: .leading) {
+            ForEach(0..<3, id: \.self) { index in
+                Image(systemName: "play.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: chevronWidth, height: chevronHeight, alignment: .leading)
+                    .offset(x: (CGFloat(index) - 1 + skipMarqueeProgress) * chevronStep)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                withAnimation(DroppyAnimation.mediaRelease) {
-                    pressOffset = 0
+        }
+        .frame(width: chevronViewportWidth, height: size, alignment: .leading)
+        .mask(
+            Rectangle()
+                .frame(width: max(1, chevronViewportWidth - (chevronMaskInset * 2)), height: size)
+                .offset(x: chevronMaskInset)
+        )
+        .foregroundStyle(foregroundColor)
+        .scaleEffect(x: mirrored ? -1 : 1, y: 1)
+        .frame(width: size + tapPadding, height: size + tapPadding)
+        .contentShape(Rectangle())
+    }
+    
+    private func triggerControlAnimation() {
+        switch nudgeDirection {
+        case .left, .right:
+            chevronCycleToken += 1
+            let token = chevronCycleToken
+            var resetTransaction = Transaction(animation: nil)
+            resetTransaction.disablesAnimations = true
+            withTransaction(resetTransaction) {
+                skipMarqueeProgress = 0
+            }
+            
+            withAnimation(DroppyAnimation.mediaPress) {
+                skipMarqueeProgress = 1
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                guard token == chevronCycleToken else { return }
+                var noAnimation = Transaction(animation: nil)
+                noAnimation.disablesAnimations = true
+                withTransaction(noAnimation) {
+                    skipMarqueeProgress = 0
                 }
             }
         case .none:
-            // Wiggle for play/pause
-            withAnimation(DroppyAnimation.mediaEmphasis) {
-                rotationAngle = 8
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                withAnimation(DroppyAnimation.mediaSettle) {
-                    rotationAngle = 0
-                }
-            }
+            break
         }
     }
 }
@@ -666,13 +701,13 @@ struct MusicVisualizerBars: View {
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.easeInOut(duration: 0.35).repeatForever(autoreverses: true)) {
+            withAnimation(DroppyAnimation.smooth(duration: 0.35).repeatForever(autoreverses: true)) {
                 heights[1] = 0.4
             }
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true)) {
+            withAnimation(DroppyAnimation.smooth(duration: 0.45).repeatForever(autoreverses: true)) {
                 heights[2] = 0.9
             }
         }

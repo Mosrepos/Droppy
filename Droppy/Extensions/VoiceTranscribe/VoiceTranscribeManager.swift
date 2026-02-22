@@ -2,15 +2,41 @@
 //  VoiceTranscribeManager.swift
 //  Droppy
 //
-//  Core manager for audio recording and transcription using WhisperKit
+//  Core manager for audio recording and transcription using external runtime helper
 //
 
 import SwiftUI
 @preconcurrency import AVFoundation
 import Combine
-import WhisperKit
-import CoreML
 import UniformTypeIdentifiers
+import CryptoKit
+
+private nonisolated final class VoiceRuntimeOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+    private let limit: Int
+
+    init(limit: Int = 2 * 1024 * 1024) {
+        self.limit = limit
+    }
+
+    func append(_ chunk: Data) {
+        guard !chunk.isEmpty else { return }
+        lock.lock()
+        data.append(chunk)
+        if data.count > limit {
+            data.removeFirst(data.count - limit)
+        }
+        lock.unlock()
+    }
+
+    func snapshot() -> Data {
+        lock.lock()
+        let snapshot = data
+        lock.unlock()
+        return snapshot
+    }
+}
 
 // MARK: - Transcription Model
 
@@ -65,6 +91,515 @@ enum VoiceRecordingState: Equatable {
     }
 }
 
+// MARK: - External Runtime (GitHub Releases)
+
+enum VoiceRuntimeInstallState: Equatable {
+    case checking
+    case notInstalled
+    case installing(progress: Double)
+    case installed(version: String)
+    case updateAvailable(currentVersion: String, latestVersion: String)
+    case failed(String)
+}
+
+private struct VoiceRuntimeManifest: Codable {
+    struct Artifact: Codable {
+        let arch: String
+        let url: URL
+        let sha256: String
+        let sizeBytes: Int64
+        let teamID: String
+    }
+
+    let id: String
+    let version: String
+    let protocolVersion: Int
+    let minAppVersion: String?
+    let executableName: String
+    let artifacts: [Artifact]
+}
+
+@MainActor
+final class VoiceTranscribeRuntimeManager: ObservableObject {
+    static let shared = VoiceTranscribeRuntimeManager()
+
+    @Published private(set) var state: VoiceRuntimeInstallState = .checking
+    @Published private(set) var installedVersion: String?
+    @Published private(set) var latestVersion: String?
+    @Published private(set) var lastError: String?
+
+    private let installedVersionKey = "voiceTranscribeRuntimeInstalledVersion"
+    private let installedExecutableKey = "voiceTranscribeRuntimeInstalledExecutablePath"
+    private let latestVersionKey = "voiceTranscribeRuntimeLatestVersion"
+    private let manifestBaseURLString = "https://github.com/iordv/Droppy/releases/download/voice-runtime/voice-transcribe-runtime-manifest.txt"
+    private let expectedExtensionID = "voiceTranscribe"
+    private let expectedProtocolVersion = 1
+
+    private var installTask: Task<Void, Never>?
+
+    private init() {
+        installedVersion = UserDefaults.standard.string(forKey: installedVersionKey)
+        latestVersion = UserDefaults.standard.string(forKey: latestVersionKey)
+        recomputeStateWithoutNetwork()
+        Task { await refresh() }
+    }
+
+    var isInstalled: Bool {
+        switch state {
+        case .installed, .updateAvailable:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var isInstalling: Bool {
+        if case .installing = state { return true }
+        return false
+    }
+
+    var installProgress: Double {
+        if case .installing(let progress) = state { return progress }
+        return 0
+    }
+
+    var executableURL: URL? {
+        guard let executablePath = UserDefaults.standard.string(forKey: installedExecutableKey),
+              !executablePath.isEmpty else {
+            return nil
+        }
+        let url = URL(fileURLWithPath: executablePath, isDirectory: false)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func refresh() async {
+        state = .checking
+        lastError = nil
+
+        guard let manifestURL = manifestURL() else {
+            state = .failed("Runtime manifest URL is invalid.")
+            lastError = "Runtime manifest URL is invalid."
+            return
+        }
+
+        do {
+            let manifest = try await fetchManifest(from: manifestURL)
+            latestVersion = manifest.version
+            UserDefaults.standard.set(manifest.version, forKey: latestVersionKey)
+            try validateManifest(manifest)
+
+            guard let artifact = artifactForCurrentArchitecture(from: manifest) else {
+                throw RuntimeInstallError.unsupportedArchitecture(Self.currentArchitecture)
+            }
+
+            if let installedVersion = installedVersion,
+               let executableURL = executableURL,
+               FileManager.default.fileExists(atPath: executableURL.path) {
+                if installedVersion.compare(manifest.version, options: .numeric) == .orderedAscending {
+                    state = .updateAvailable(currentVersion: installedVersion, latestVersion: manifest.version)
+                } else {
+                    state = .installed(version: installedVersion)
+                }
+            } else {
+                _ = artifact
+                state = .notInstalled
+            }
+        } catch {
+            // Offline install should keep already-installed runtime available.
+            if let installedVersion = installedVersion, executableURL != nil {
+                state = .installed(version: installedVersion)
+            } else {
+                let message = friendlyErrorMessage(error)
+                state = .failed(message)
+                lastError = message
+            }
+        }
+    }
+
+    func installOrUpdateRuntime() {
+        guard !isInstalling else { return }
+
+        installTask?.cancel()
+        installTask = Task { [weak self] in
+            guard let self else { return }
+            await self.performInstallOrUpdate()
+            self.installTask = nil
+        }
+    }
+
+    func cancelInstall() {
+        installTask?.cancel()
+        installTask = nil
+        recomputeStateWithoutNetwork()
+    }
+
+    func uninstallRuntime() async {
+        installTask?.cancel()
+        installTask = nil
+
+        let fileManager = FileManager.default
+        let root = Self.runtimeInstallRoot
+        do {
+            if fileManager.fileExists(atPath: root.path) {
+                try fileManager.removeItem(at: root)
+            }
+            UserDefaults.standard.removeObject(forKey: installedVersionKey)
+            UserDefaults.standard.removeObject(forKey: installedExecutableKey)
+            installedVersion = nil
+            state = .notInstalled
+            NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.voiceTranscribe)
+        } catch {
+            let message = "Failed to remove runtime files: \(error.localizedDescription)"
+            state = .failed(message)
+            lastError = message
+        }
+    }
+
+    private func performInstallOrUpdate() async {
+        do {
+            guard let manifestURL = manifestURL() else {
+                throw RuntimeInstallError.invalidManifestURL
+            }
+            state = .installing(progress: 0.02)
+            let manifest = try await fetchManifest(from: manifestURL)
+            latestVersion = manifest.version
+            UserDefaults.standard.set(manifest.version, forKey: latestVersionKey)
+
+            try validateManifest(manifest)
+            try Task.checkCancellation()
+
+            guard let artifact = artifactForCurrentArchitecture(from: manifest) else {
+                throw RuntimeInstallError.unsupportedArchitecture(Self.currentArchitecture)
+            }
+
+            if let minAppVersion = manifest.minAppVersion {
+                let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                if currentVersion.compare(minAppVersion, options: .numeric) == .orderedAscending {
+                    throw RuntimeInstallError.appVersionTooOld(required: minAppVersion, current: currentVersion)
+                }
+            }
+
+            state = .installing(progress: 0.08)
+
+            let tempRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent("DroppyVoiceRuntimeInstall-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+            let archiveURL = tempRoot.appendingPathComponent("runtime.tar.gz", isDirectory: false)
+            let extractedURL = tempRoot.appendingPathComponent("extracted", isDirectory: true)
+            try FileManager.default.createDirectory(at: extractedURL, withIntermediateDirectories: true)
+
+            state = .installing(progress: 0.12)
+            let downloadedData = try await downloadArtifactData(from: artifact.url)
+            try Task.checkCancellation()
+
+            state = .installing(progress: 0.45)
+            try verifySHA256(data: downloadedData, expectedHex: artifact.sha256)
+            try downloadedData.write(to: archiveURL, options: .atomic)
+            try Task.checkCancellation()
+
+            state = .installing(progress: 0.58)
+            _ = try await runProcess("/usr/bin/tar", arguments: ["-xzf", archiveURL.path, "-C", extractedURL.path])
+            try Task.checkCancellation()
+
+            state = .installing(progress: 0.70)
+            let runtimeRoot = try resolveRuntimeRoot(in: extractedURL)
+            let executableURL = try resolveExecutable(named: manifest.executableName, in: runtimeRoot)
+            let executableRelativePath = try relativePath(for: executableURL, root: runtimeRoot)
+            try ensureExecutableBit(at: executableURL)
+            try await verifyCodeSignature(at: executableURL, expectedTeamID: artifact.teamID)
+            try Task.checkCancellation()
+
+            state = .installing(progress: 0.86)
+            try installAtomically(runtimeRoot: runtimeRoot, version: manifest.version)
+            let installedExecutableURL = Self.runtimeInstallRoot
+                .appendingPathComponent(manifest.version, isDirectory: true)
+                .appendingPathComponent(executableRelativePath, isDirectory: false)
+
+            UserDefaults.standard.set(manifest.version, forKey: installedVersionKey)
+            UserDefaults.standard.set(installedExecutableURL.path, forKey: installedExecutableKey)
+            installedVersion = manifest.version
+            lastError = nil
+
+            state = .installed(version: manifest.version)
+            NotificationCenter.default.post(name: .extensionStateChanged, object: ExtensionType.voiceTranscribe)
+            AnalyticsService.shared.trackExtensionActivation(extensionId: "voiceTranscribeRuntime")
+        } catch is CancellationError {
+            recomputeStateWithoutNetwork()
+        } catch {
+            let message = friendlyErrorMessage(error)
+            state = .failed(message)
+            lastError = message
+        }
+    }
+
+    private func recomputeStateWithoutNetwork() {
+        if let installedVersion = UserDefaults.standard.string(forKey: installedVersionKey),
+           let executablePath = UserDefaults.standard.string(forKey: installedExecutableKey),
+           FileManager.default.fileExists(atPath: executablePath) {
+            self.installedVersion = installedVersion
+            if let latestVersion = UserDefaults.standard.string(forKey: latestVersionKey),
+               installedVersion.compare(latestVersion, options: .numeric) == .orderedAscending {
+                state = .updateAvailable(currentVersion: installedVersion, latestVersion: latestVersion)
+            } else {
+                state = .installed(version: installedVersion)
+            }
+            return
+        }
+
+        state = .notInstalled
+        installedVersion = nil
+    }
+
+    private func validateManifest(_ manifest: VoiceRuntimeManifest) throws {
+        guard manifest.id == expectedExtensionID else {
+            throw RuntimeInstallError.invalidManifest("Unexpected extension id '\(manifest.id)'.")
+        }
+        guard manifest.protocolVersion == expectedProtocolVersion else {
+            throw RuntimeInstallError.invalidManifest(
+                "Unsupported protocol version \(manifest.protocolVersion). Expected \(expectedProtocolVersion)."
+            )
+        }
+        guard !manifest.executableName.isEmpty else {
+            throw RuntimeInstallError.invalidManifest("Manifest executable name is empty.")
+        }
+        guard !manifest.artifacts.isEmpty else {
+            throw RuntimeInstallError.invalidManifest("Manifest has no artifacts.")
+        }
+    }
+
+    private func manifestURL() -> URL? {
+        guard var components = URLComponents(string: manifestBaseURLString) else { return nil }
+        components.queryItems = [
+            URLQueryItem(name: "cb", value: String(Int(Date().timeIntervalSince1970)))
+        ]
+        return components.url
+    }
+
+    private func fetchManifest(from url: URL) async throws -> VoiceRuntimeManifest {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse else {
+            throw RuntimeInstallError.network("Manifest response was invalid.")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw RuntimeInstallError.network("Manifest request failed with HTTP \(http.statusCode).")
+        }
+        do {
+            return try JSONDecoder().decode(VoiceRuntimeManifest.self, from: data)
+        } catch {
+            throw RuntimeInstallError.invalidManifest("Manifest could not be decoded.")
+        }
+    }
+
+    private func artifactForCurrentArchitecture(from manifest: VoiceRuntimeManifest) -> VoiceRuntimeManifest.Artifact? {
+        manifest.artifacts.first(where: { $0.arch == Self.currentArchitecture })
+    }
+
+    private func downloadArtifactData(from url: URL) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse else {
+            throw RuntimeInstallError.network("Runtime download response was invalid.")
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw RuntimeInstallError.network("Runtime download failed with HTTP \(http.statusCode).")
+        }
+        return data
+    }
+
+    private func verifySHA256(data: Data, expectedHex: String) throws {
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard digest.lowercased() == expectedHex.lowercased() else {
+            throw RuntimeInstallError.checksumMismatch
+        }
+    }
+
+    private func resolveRuntimeRoot(in extractedURL: URL) throws -> URL {
+        let topLevel = try FileManager.default.contentsOfDirectory(
+            at: extractedURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        if topLevel.count == 1 {
+            let candidate = topLevel[0]
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                return candidate
+            }
+        }
+
+        return extractedURL
+    }
+
+    private func resolveExecutable(named executableName: String, in root: URL) throws -> URL {
+        let directPath = root.appendingPathComponent(executableName, isDirectory: false)
+        if FileManager.default.fileExists(atPath: directPath.path) {
+            return directPath
+        }
+
+        let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+        while let candidate = enumerator?.nextObject() as? URL {
+            if candidate.lastPathComponent == executableName {
+                return candidate
+            }
+        }
+
+        throw RuntimeInstallError.executableMissing(executableName)
+    }
+
+    private func relativePath(for fileURL: URL, root: URL) throws -> String {
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        let filePath = fileURL.path
+        guard filePath.hasPrefix(rootPath) else {
+            throw RuntimeInstallError.invalidManifest("Runtime executable path was outside extracted package.")
+        }
+        return String(filePath.dropFirst(rootPath.count))
+    }
+
+    private func ensureExecutableBit(at executableURL: URL) throws {
+        var attributes = try FileManager.default.attributesOfItem(atPath: executableURL.path)
+        let currentPermissions = attributes[.posixPermissions] as? NSNumber
+        let value = (currentPermissions?.uint16Value ?? 0o755) | 0o111
+        attributes[.posixPermissions] = NSNumber(value: value)
+        try FileManager.default.setAttributes(attributes, ofItemAtPath: executableURL.path)
+    }
+
+    private func verifyCodeSignature(at executableURL: URL, expectedTeamID: String) async throws {
+        let (_, stdErr) = try await runProcess(
+            "/usr/bin/codesign",
+            arguments: ["-dv", "--verbose=4", executableURL.path]
+        )
+
+        let lines = stdErr.split(separator: "\n").map(String.init)
+        guard let teamLine = lines.first(where: { $0.hasPrefix("TeamIdentifier=") }) else {
+            throw RuntimeInstallError.signatureInvalid("No TeamIdentifier found.")
+        }
+        let teamID = teamLine.replacingOccurrences(of: "TeamIdentifier=", with: "")
+        guard teamID == expectedTeamID else {
+            throw RuntimeInstallError.signatureInvalid("Unexpected TeamIdentifier '\(teamID)'.")
+        }
+    }
+
+    private func installAtomically(runtimeRoot: URL, version: String) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: Self.runtimeInstallRoot, withIntermediateDirectories: true)
+
+        let destination = Self.runtimeInstallRoot.appendingPathComponent(version, isDirectory: true)
+        let tempDestination = Self.runtimeInstallRoot.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
+
+        if fileManager.fileExists(atPath: tempDestination.path) {
+            try fileManager.removeItem(at: tempDestination)
+        }
+
+        try fileManager.copyItem(at: runtimeRoot, to: tempDestination)
+
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+
+        try fileManager.moveItem(at: tempDestination, to: destination)
+    }
+
+    private func runProcess(_ executablePath: String, arguments: [String]) async throws -> (String, String) {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = arguments
+
+            let out = Pipe()
+            let err = Pipe()
+            process.standardOutput = out
+            process.standardError = err
+
+            process.terminationHandler = { proc in
+                let stdOutData = out.fileHandleForReading.readDataToEndOfFile()
+                let stdErrData = err.fileHandleForReading.readDataToEndOfFile()
+                let stdOut = String(data: stdOutData, encoding: .utf8) ?? ""
+                let stdErr = String(data: stdErrData, encoding: .utf8) ?? ""
+
+                if proc.terminationStatus == 0 {
+                    continuation.resume(returning: (stdOut, stdErr))
+                } else {
+                    continuation.resume(throwing: RuntimeInstallError.processFailed(
+                        command: executablePath,
+                        status: proc.terminationStatus,
+                        errorOutput: stdErr.isEmpty ? stdOut : stdErr
+                    ))
+                }
+            }
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func friendlyErrorMessage(_ error: Error) -> String {
+        if let runtimeError = error as? RuntimeInstallError {
+            return runtimeError.errorDescription ?? "Runtime installation failed."
+        }
+        return error.localizedDescription
+    }
+
+    private enum RuntimeInstallError: LocalizedError {
+        case invalidManifestURL
+        case invalidManifest(String)
+        case unsupportedArchitecture(String)
+        case appVersionTooOld(required: String, current: String)
+        case network(String)
+        case checksumMismatch
+        case executableMissing(String)
+        case signatureInvalid(String)
+        case processFailed(command: String, status: Int32, errorOutput: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidManifestURL:
+                return "Runtime manifest URL is invalid."
+            case .invalidManifest(let message):
+                return "Invalid runtime manifest: \(message)"
+            case .unsupportedArchitecture(let arch):
+                return "No runtime artifact available for architecture '\(arch)'."
+            case .appVersionTooOld(let required, let current):
+                return "This runtime requires Droppy \(required)+ (current: \(current))."
+            case .network(let message):
+                return message
+            case .checksumMismatch:
+                return "Runtime checksum verification failed."
+            case .executableMissing(let name):
+                return "Runtime executable '\(name)' was not found in package."
+            case .signatureInvalid(let message):
+                return "Runtime signature verification failed: \(message)"
+            case .processFailed(_, _, let errorOutput):
+                let trimmed = errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? "Runtime install command failed." : trimmed
+            }
+        }
+    }
+
+    private static var runtimeInstallRoot: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base
+            .appendingPathComponent("Droppy", isDirectory: true)
+            .appendingPathComponent("Extensions", isDirectory: true)
+            .appendingPathComponent("voiceTranscribe", isDirectory: true)
+    }
+
+    private static var currentArchitecture: String {
+#if arch(arm64)
+        return "arm64"
+#elseif arch(x86_64)
+        return "x86_64"
+#else
+        return "unknown"
+#endif
+    }
+}
+
 // MARK: - Voice Transcribe Manager
 
 @MainActor
@@ -74,7 +609,14 @@ final class VoiceTranscribeManager: ObservableObject {
     // MARK: - Published Properties
     
     @Published var state: VoiceRecordingState = .idle
-    @Published var selectedModel: WhisperModel = .small
+    @Published var selectedModel: WhisperModel = .small {
+        didSet {
+            UserDefaults.standard.set(selectedModel.rawValue, forKey: "voiceTranscribeModel")
+            Task { @MainActor in
+                await refreshModelStatusFromRuntime()
+            }
+        }
+    }
     @Published var isModelDownloaded: Bool = false
     @Published var downloadProgress: Double = 0
     @Published var transcriptionResult: String = ""
@@ -108,7 +650,6 @@ final class VoiceTranscribeManager: ObservableObject {
     private var recordingTimer: Timer?
     private var levelTimer: Timer?
     private var recordingURL: URL?
-    private var whisperKit: WhisperKit?
     private var downloadTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
     private var quickRecordHotkey: GlobalHotKey?   // Carbon-based for reliability
@@ -116,6 +657,9 @@ final class VoiceTranscribeManager: ObservableObject {
     private var processingTimer: Timer?
     private var processingStartedAt: Date?
     private var lastObservedProgressAt: Date?
+    private var warmingModels = Set<WhisperModel>()
+    private var cancellables = Set<AnyCancellable>()
+    private let runtimeManager = VoiceTranscribeRuntimeManager.shared
     
     // Model storage directory
     private var modelsDirectory: URL {
@@ -162,57 +706,197 @@ final class VoiceTranscribeManager: ObservableObject {
     private init() {
         try? FileManager.default.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
         loadPreferences()
+        bindRuntimeState()
         loadShortcutPreferences()
         checkModelStatus()
     }
     
     // MARK: - Public Methods
+
+    private var runtimeMissingMessage: String {
+        "Install the Voice Transcribe runtime in Extensions before using this feature."
+    }
+
+    private enum RuntimeIPCError: LocalizedError {
+        case runtimeNotInstalled
+        case executableMissing
+        case invalidResponse(String)
+        case helperError(String)
+        case processFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .runtimeNotInstalled:
+                return "Runtime is not installed."
+            case .executableMissing:
+                return "Runtime executable is missing."
+            case .invalidResponse(let details):
+                return details
+            case .helperError(let message):
+                return message
+            case .processFailed(let message):
+                return message
+            }
+        }
+    }
+
+    private func runRuntimeCommand(_ action: String, arguments: [String: Any] = [:]) async throws -> [String: Any] {
+        guard runtimeManager.isInstalled else {
+            throw RuntimeIPCError.runtimeNotInstalled
+        }
+        guard let executableURL = runtimeManager.executableURL else {
+            throw RuntimeIPCError.executableMissing
+        }
+
+        let requestObject: [String: Any] = [
+            "action": action,
+            "arguments": arguments
+        ]
+
+        let requestData = try JSONSerialization.data(withJSONObject: requestObject, options: [])
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = executableURL
+            process.arguments = ["--json-rpc"]
+
+            let stdIn = Pipe()
+            let stdOut = Pipe()
+            let stdErr = Pipe()
+            process.standardInput = stdIn
+            process.standardOutput = stdOut
+            process.standardError = stdErr
+
+            let stdoutBuffer = VoiceRuntimeOutputBuffer()
+            let stderrBuffer = VoiceRuntimeOutputBuffer()
+
+            stdOut.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    return
+                }
+                stdoutBuffer.append(chunk)
+            }
+
+            stdErr.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    return
+                }
+                stderrBuffer.append(chunk)
+            }
+
+            process.terminationHandler = { proc in
+                stdOut.fileHandleForReading.readabilityHandler = nil
+                stdErr.fileHandleForReading.readabilityHandler = nil
+
+                let outRemainder = stdOut.fileHandleForReading.readDataToEndOfFile()
+                let errRemainder = stdErr.fileHandleForReading.readDataToEndOfFile()
+                stdoutBuffer.append(outRemainder)
+                stderrBuffer.append(errRemainder)
+
+                let outData = stdoutBuffer.snapshot()
+                let errData = stderrBuffer.snapshot()
+
+                let errText = String(data: errData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                guard proc.terminationStatus == 0 else {
+                    let message = errText.isEmpty ? "Runtime command '\(action)' failed with exit \(proc.terminationStatus)." : errText
+                    continuation.resume(throwing: RuntimeIPCError.processFailed(message))
+                    return
+                }
+
+                guard let json = try? JSONSerialization.jsonObject(with: outData, options: []),
+                      let dict = json as? [String: Any] else {
+                    let outText = String(data: outData, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let preview = [outText.prefix(240), errText.prefix(240)]
+                        .map(String.init)
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " | ")
+                    let reason = preview.isEmpty ? "Runtime returned an invalid response." : "Runtime returned an invalid response: \(preview)"
+                    continuation.resume(throwing: RuntimeIPCError.invalidResponse(reason))
+                    return
+                }
+
+                if let ok = dict["ok"] as? Bool, ok == false {
+                    let message = (dict["error"] as? String)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let resolvedMessage = message.flatMap { $0.isEmpty ? nil : $0 } ?? "Runtime command failed."
+                    continuation.resume(throwing: RuntimeIPCError.helperError(resolvedMessage))
+                    return
+                }
+
+                if let payload = dict["payload"] as? [String: Any] {
+                    continuation.resume(returning: payload)
+                } else {
+                    continuation.resume(returning: dict)
+                }
+            }
+
+            do {
+                try process.run()
+                stdIn.fileHandleForWriting.write(requestData)
+                stdIn.fileHandleForWriting.closeFile()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func refreshModelStatusFromRuntime() async {
+        guard runtimeManager.isInstalled else {
+            isModelDownloaded = false
+            return
+        }
+
+        do {
+            let result = try await runRuntimeCommand("status", arguments: ["model": selectedModel.rawValue])
+            if let installed = result["installed"] as? Bool {
+                isModelDownloaded = installed
+            } else if let installedModels = result["installedModels"] as? [String] {
+                isModelDownloaded = installedModels.contains(selectedModel.rawValue)
+            } else {
+                isModelDownloaded = false
+            }
+
+            if isModelDownloaded {
+                savePreferences()
+                warmModelInBackgroundIfNeeded(selectedModel)
+            } else {
+                UserDefaults.standard.removeObject(forKey: "voiceTranscribeModelDownloaded_\(selectedModel.rawValue)")
+            }
+        } catch {
+            // Avoid resetting UI to "Download Model" during transient startup/runtime races.
+            if isModelDownloaded {
+                return
+            }
+            let cachedInstalled = UserDefaults.standard.bool(forKey: "voiceTranscribeModelDownloaded_\(selectedModel.rawValue)")
+            isModelDownloaded = cachedInstalled
+        }
+    }
     
     /// Start recording audio
     func startRecording() {
+        guard runtimeManager.isInstalled else {
+            state = .error(runtimeMissingMessage)
+            return
+        }
+
         // Don't start if extension is disabled
         guard !ExtensionType.voiceTranscribe.isRemoved else {
             print("[VoiceTranscribe] Extension is disabled, ignoring")
             return
         }
         
-        print("VoiceTranscribe: startRecording called, state: \(state), isModelDownloaded: \(isModelDownloaded), whisperKit: \(whisperKit != nil)")
+        print("VoiceTranscribe: startRecording called, state: \(state), isModelDownloaded: \(isModelDownloaded)")
         
         guard state == .idle else {
             print("VoiceTranscribe: Cannot start recording - state is \(state), not idle")
             return
-        }
-        
-        // Start recording immediately - we can transcribe later
-        // Model loading happens in parallel if needed
-        if whisperKit == nil && isModelDownloaded {
-            print("VoiceTranscribe: Model not in memory, loading in background…")
-            Task {
-                do {
-                    // Use download: true - WhisperKit skips download if model exists in cache
-                    // This ensures it properly locates the model in HuggingFace cache
-                    let kit = try await WhisperKit(
-                        model: selectedModel.rawValue,
-                        verbose: false,
-                        logLevel: .error,
-                        prewarm: false,
-                        load: false,
-                        download: true  // Required to locate model in cache
-                    )
-                    // Load and prewarm models
-                    try await kit.loadModels()
-                    try await kit.prewarmModels()
-                    whisperKit = kit
-                    print("VoiceTranscribe: Model loaded in background")
-                } catch {
-                    print("VoiceTranscribe: Background model load failed: \(error)")
-                    // Model might be corrupted or deleted - clear the flag so user can re-download
-                    await MainActor.run {
-                        self.isModelDownloaded = false
-                        self.savePreferences()
-                    }
-                }
-            }
         }
         
         // Always request mic and start recording
@@ -422,6 +1106,11 @@ final class VoiceTranscribeManager: ObservableObject {
     
     /// Transcribe an existing audio file
     func transcribeFile(at url: URL) {
+        guard runtimeManager.isInstalled else {
+            state = .error(runtimeMissingMessage)
+            return
+        }
+
         guard state == .idle else {
             print("VoiceTranscribe: Cannot transcribe file - not idle")
             return
@@ -453,84 +1142,56 @@ final class VoiceTranscribeManager: ObservableObject {
     
     /// Download and initialize the selected model
     func downloadModel() {
+        guard runtimeManager.isInstalled else {
+            state = .error(runtimeMissingMessage)
+            return
+        }
+
         guard !isDownloading else { return }
         
         isDownloading = true
         downloadProgress = 0.02
         
         downloadTask = Task {
-            do {
-                // Start progress polling timer
-                var progressObservation: NSKeyValueObservation?
-                
-                // Phase 1: Download and initialize (0-60%)
-                downloadProgress = 0.05
-                
-                try Task.checkCancellation()
-                
-                // Create WhisperKit - this triggers the download
-                let kit = try await WhisperKit(
-                    model: selectedModel.rawValue,
-                    verbose: false,
-                    logLevel: .none,
-                    prewarm: false,
-                    load: false,
-                    download: true
-                )
-                whisperKit = kit
-                
-                // Observe progress for subsequent operations
-                progressObservation = kit.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        // Map 0-1 progress to our current phase range
-                        let phase = self.downloadProgress
-                        if phase < 0.6 {
-                            // Download phase: 5% to 60%
-                            self.downloadProgress = 0.05 + (progress.fractionCompleted * 0.55)
-                        } else if phase < 0.85 {
-                            // Load phase: 60% to 85%
-                            self.downloadProgress = 0.6 + (progress.fractionCompleted * 0.25)
-                        } else {
-                            // Prewarm phase: 85% to 100%
-                            self.downloadProgress = 0.85 + (progress.fractionCompleted * 0.15)
-                        }
+            let progressPulseTask = Task { [weak self] in
+                guard let self else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    guard self.isDownloading else { continue }
+                    if self.downloadProgress < 0.985 {
+                        self.downloadProgress = min(0.985, self.downloadProgress + 0.008)
                     }
                 }
-                
+            }
+
+            do {
+                downloadProgress = 0.12
+                _ = try await runRuntimeCommand("installModel", arguments: [
+                    "model": selectedModel.rawValue
+                ])
                 try Task.checkCancellation()
-                
-                // Phase 2: Load models (60-85%)
-                downloadProgress = 0.6
-                try await whisperKit?.loadModels()
-                
-                try Task.checkCancellation()
-                
-                // Phase 3: Prewarm (85-100%)
-                downloadProgress = 0.85
-                try await whisperKit?.prewarmModels()
-                
-                progressObservation?.invalidate()
-                
+                downloadProgress = 0.95
+
+                await refreshModelStatusFromRuntime()
+                if !isModelDownloaded {
+                    throw RuntimeIPCError.helperError("Runtime did not report model as installed.")
+                }
+
                 downloadProgress = 1.0
-                isModelDownloaded = true
                 savePreferences()
-                
-                // Track extension activation for analytics (only track once per install)
                 AnalyticsService.shared.trackExtensionActivation(extensionId: "voiceTranscribe")
-                
-                print("VoiceTranscribe: Model \(selectedModel.rawValue) loaded successfully")
-                
+                print("VoiceTranscribe: Model \(selectedModel.rawValue) installed via runtime helper")
+                warmModelInBackgroundIfNeeded(selectedModel)
             } catch is CancellationError {
                 print("VoiceTranscribe: Download cancelled by user")
-                whisperKit = nil
                 downloadProgress = 0
             } catch {
-                print("VoiceTranscribe: Failed to load model: \(error)")
+                print("VoiceTranscribe: Failed to install model: \(error)")
                 state = .error("Failed to download model: \(error.localizedDescription)")
                 isModelDownloaded = false
             }
-            
+
+            progressPulseTask.cancel()
             isDownloading = false
             downloadTask = nil
         }
@@ -542,51 +1203,34 @@ final class VoiceTranscribeManager: ObservableObject {
         downloadTask = nil
         isDownloading = false
         downloadProgress = 0
-        whisperKit = nil
         print("VoiceTranscribe: Download cancelled")
     }
     
     /// Delete the downloaded model from disk
     func deleteModel() {
-        // Clear the WhisperKit instance first
-        whisperKit = nil
+        downloadTask?.cancel()
+        downloadTask = nil
         isModelDownloaded = false
         isMenuBarEnabled = false
         downloadProgress = 0
-        
-        // Delete ALL WhisperKit model files from disk
-        let fileManager = FileManager.default
-        
-        // HuggingFace cache location (where WhisperKit stores models)
-        if let cachesDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first {
-            let hubDir = cachesDir.appendingPathComponent("huggingface/hub")
-            
-            // Delete all whisperkit-related directories
-            if let contents = try? fileManager.contentsOfDirectory(at: hubDir, includingPropertiesForKeys: nil) {
-                for item in contents {
-                    // WhisperKit models contain "whisperkit" or "whisper" in the name
-                    let name = item.lastPathComponent.lowercased()
-                    if name.contains("whisper") {
-                        do {
-                            try fileManager.removeItem(at: item)
-                            print("VoiceTranscribe: Deleted model cache at \(item.path)")
-                        } catch {
-                            print("VoiceTranscribe: Failed to delete \(item.path): \(error)")
-                        }
-                    }
-                }
+
+        Task {
+            do {
+                _ = try await runRuntimeCommand("deleteModel", arguments: [
+                    "model": selectedModel.rawValue
+                ])
+            } catch {
+                print("VoiceTranscribe: Failed to delete model in runtime helper: \(error)")
             }
         }
-        
-        // Clear ALL model download states from UserDefaults
+
         for model in WhisperModel.allCases {
             UserDefaults.standard.removeObject(forKey: "voiceTranscribeModelDownloaded_\(model.rawValue)")
+            UserDefaults.standard.removeObject(forKey: "voiceTranscribeModelWarmed_\(model.rawValue)")
         }
-        
-        // Update menu bar
+
         VoiceTranscribeMenuBar.shared.setVisible(false)
-        
-        print("VoiceTranscribe: All models deleted from disk")
+        print("VoiceTranscribe: Model deletion requested via runtime helper")
     }
     
     // MARK: - Private Methods
@@ -654,92 +1298,31 @@ final class VoiceTranscribeManager: ObservableObject {
             )
         }
         setTranscriptionProgress(0.05, status: "Preparing recording…")
-        
-        // Ensure we have a loaded model
-        if whisperKit == nil {
-            setTranscriptionProgress(0.1, status: "Loading AI model…")
-            do {
-                let kit = try await WhisperKit(
-                    model: selectedModel.rawValue,
-                    verbose: false,
-                    logLevel: .none,
-                    prewarm: false,
-                    load: false,
-                    download: true  // Required to locate model in cache
-                )
-                try await kit.loadModels()
-                try await kit.prewarmModels()
-                try Task.checkCancellation()
-                whisperKit = kit
-                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio…")
-            } catch is CancellationError {
-                finishProcessingSession()
-                state = .idle
-                return
-            } catch {
-                finishProcessingSession()
-                state = .error("Failed to load model: \(error.localizedDescription)")
-                return
-            }
-        }
-        
-        guard let whisper = whisperKit else {
-            finishProcessingSession()
-            state = .error("Model not initialized")
-            return
-        }
-        
-        // Observe transcription progress
-        let progressObservation = whisper.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                // Map progress: 0.2 to 0.95 (leave room for loading and completion)
-                self.setTranscriptionProgress(
-                    0.2 + (progress.fractionCompleted * 0.75),
-                    status: "Transcribing audio…"
-                )
-            }
-        }
-        defer { progressObservation.invalidate() }
-        setTranscriptionProgress(0.2, status: "Transcribing audio…")
-        
+
         do {
-            // Configure transcription options
-            var options = DecodingOptions()
-            
-            // Set language if not auto
-            if selectedLanguage != "auto" {
-                options.language = selectedLanguage
-            }
-            
-            // Transcribe the audio file
-            let results = try await whisper.transcribe(audioPath: url.path, decodeOptions: options)
+            setTranscriptionProgress(0.2, status: "Transcribing audio…")
+            let result = try await runRuntimeCommand("transcribe", arguments: [
+                "model": selectedModel.rawValue,
+                "language": selectedLanguage,
+                "audioPath": url.path
+            ])
             try Task.checkCancellation()
             setTranscriptionProgress(0.98, status: "Finalizing transcript…")
-            
-            // Extract text from results
-            if let result = results.first {
-                transcriptionResult = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                
-                // Keep recording for "Save Audio" feature
+
+            let text = (result["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                transcriptionResult = text
                 lastRecordingURL = url
-                
-                print("VoiceTranscribe: Transcription complete - \(result.text.count) chars")
-                
+                print("VoiceTranscribe: Transcription complete - \(text.count) chars")
                 presentTranscriptionResult()
-                
-                // Reset to idle so new recordings can start
-                finishProcessingSession()
-                state = .idle
             } else {
                 transcriptionResult = ""
-                // No successful result, clean up recording
                 lastRecordingURL = nil
                 try? FileManager.default.removeItem(at: url)
-                finishProcessingSession()
-                state = .idle  // Reset even if no result
             }
-            
+
+            finishProcessingSession()
+            state = .idle
         } catch is CancellationError {
             finishProcessingSession()
             state = .idle
@@ -768,11 +1351,11 @@ final class VoiceTranscribeManager: ObservableObject {
             currentTranscriptionInputDuration = audioDuration(at: url)
         }
         
-        // Copy and convert file to WAV format for WhisperKit compatibility
+        // Copy and convert file to WAV format for runtime helper compatibility
         let tempWavURL = recordingsDirectory.appendingPathComponent("upload_\(Date().timeIntervalSince1970).wav")
         
         do {
-            // Convert audio to WAV format (16kHz, mono, 16-bit) - required by WhisperKit
+            // Convert audio to WAV format (16kHz, mono, 16-bit) for consistent helper input.
             setTranscriptionProgress(0.08, status: "Converting audio…")
             if let convertedURL = try await convertToWav(source: url, destination: tempWavURL) {
                 print("VoiceTranscribe: Converted audio to WAV: \(convertedURL.path)")
@@ -787,76 +1370,23 @@ final class VoiceTranscribeManager: ObservableObject {
             state = .error("Failed to process audio file: \(error.localizedDescription)")
             return
         }
-        
-        // Ensure we have a loaded model
-        if whisperKit == nil {
-            setTranscriptionProgress(0.1, status: "Loading AI model…")
-            do {
-                print("VoiceTranscribe: Loading WhisperKit model…")
-                let kit = try await WhisperKit(
-                    model: selectedModel.rawValue,
-                    verbose: true,  // Enable verbose for debugging
-                    logLevel: .info,
-                    prewarm: false,
-                    load: false,
-                    download: true
-                )
-                try await kit.loadModels()
-                try await kit.prewarmModels()
-                try Task.checkCancellation()
-                whisperKit = kit
-                print("VoiceTranscribe: Model loaded successfully")
-                setTranscriptionProgress(0.2, status: "Model ready. Transcribing audio…")
-            } catch is CancellationError {
-                try? FileManager.default.removeItem(at: tempWavURL)
-                finishProcessingSession()
-                state = .idle
-                return
-            } catch {
-                try? FileManager.default.removeItem(at: tempWavURL)
-                finishProcessingSession()
-                state = .error("Failed to load model: \(error.localizedDescription)")
-                return
-            }
-        }
-        
-        guard let whisper = whisperKit else {
-            try? FileManager.default.removeItem(at: tempWavURL)
-            finishProcessingSession()
-            state = .error("Model not initialized")
-            return
-        }
-        
-        // Observe transcription progress
-        let progressObservation = whisper.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.setTranscriptionProgress(
-                    0.2 + (progress.fractionCompleted * 0.75),
-                    status: "Transcribing audio…"
-                )
-            }
-        }
-        defer { progressObservation.invalidate() }
-        setTranscriptionProgress(0.2, status: "Transcribing audio…")
-        
+
         do {
-            var options = DecodingOptions()
-            if selectedLanguage != "auto" {
-                options.language = selectedLanguage
-            }
-            
+            setTranscriptionProgress(0.2, status: "Transcribing audio…")
             print("VoiceTranscribe: Starting transcription of \(tempWavURL.path)")
-            let results = try await whisper.transcribe(audioPath: tempWavURL.path, decodeOptions: options)
+            let result = try await runRuntimeCommand("transcribe", arguments: [
+                "model": selectedModel.rawValue,
+                "language": selectedLanguage,
+                "audioPath": tempWavURL.path
+            ])
             try Task.checkCancellation()
-            print("VoiceTranscribe: Transcription returned \(results.count) results")
-            
+            print("VoiceTranscribe: Runtime helper transcription completed")
             setTranscriptionProgress(0.98, status: "Finalizing transcript…")
-            
-            if let result = results.first {
-                transcriptionResult = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                print("VoiceTranscribe: File transcription complete - \(transcriptionResult.count) chars: '\(transcriptionResult.prefix(100))…'")
-                
+
+            let text = (result["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                transcriptionResult = text
+                print("VoiceTranscribe: File transcription complete - \(transcriptionResult.count) chars")
                 presentTranscriptionResult()
                 finishProcessingSession()
                 state = .idle
@@ -897,7 +1427,7 @@ final class VoiceTranscribeManager: ObservableObject {
         }
     }
     
-    /// Convert audio file to WAV format required by WhisperKit (16kHz, mono, 16-bit PCM)
+    /// Convert audio file to WAV format for runtime helper input (16kHz, mono, 16-bit PCM)
     private func convertToWav(source: URL, destination: URL) async throws -> URL? {
         let asset = AVAsset(url: source)
         
@@ -978,7 +1508,11 @@ final class VoiceTranscribeManager: ObservableObject {
                    self.transcriptionProgress < 0.92 {
                     self.transcriptionProgress = min(0.92, self.transcriptionProgress + 0.003)
                     if self.processingElapsed > 12 {
-                        self.transcriptionStatus = "Still transcribing. Large recordings can take several minutes."
+                        if self.selectedModel == .large && self.currentTranscriptionInputDuration < 15 {
+                            self.transcriptionStatus = "First run with Large model can take 1-2 minutes while macOS optimizes it."
+                        } else {
+                            self.transcriptionStatus = "Still transcribing. Large recordings can take several minutes."
+                        }
                     }
                 }
             }
@@ -1019,9 +1553,28 @@ final class VoiceTranscribeManager: ObservableObject {
     }
     
     private func checkModelStatus() {
-        // Use UserDefaults to track if model was previously downloaded
-        // WhisperKit caches models automatically in its own location
-        isModelDownloaded = UserDefaults.standard.bool(forKey: "voiceTranscribeModelDownloaded_\(selectedModel.rawValue)")
+        Task { @MainActor in
+            await refreshModelStatusFromRuntime()
+        }
+    }
+
+    private func bindRuntimeState() {
+        runtimeManager.$state
+            .sink { [weak self] state in
+                guard let self else { return }
+
+                switch state {
+                case .installed, .updateAvailable:
+                    Task { @MainActor [weak self] in
+                        await self?.refreshModelStatusFromRuntime()
+                    }
+                case .notInstalled:
+                    self.isModelDownloaded = false
+                default:
+                    break
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func loadPreferences() {
@@ -1036,6 +1589,7 @@ final class VoiceTranscribeManager: ObservableObject {
            let model = WhisperModel(rawValue: modelRaw) {
             selectedModel = model
         }
+        isModelDownloaded = UserDefaults.standard.bool(forKey: "voiceTranscribeModelDownloaded_\(selectedModel.rawValue)")
         if let lang = UserDefaults.standard.string(forKey: "voiceTranscribeLanguage") {
             selectedLanguage = lang
         }
@@ -1051,6 +1605,28 @@ final class VoiceTranscribeManager: ObservableObject {
         // Save download state per model
         if isModelDownloaded {
             UserDefaults.standard.set(true, forKey: "voiceTranscribeModelDownloaded_\(selectedModel.rawValue)")
+        }
+    }
+
+    private func warmModelInBackgroundIfNeeded(_ model: WhisperModel) {
+        guard runtimeManager.isInstalled else { return }
+        guard isModelDownloaded else { return }
+        let warmKey = "voiceTranscribeModelWarmed_\(model.rawValue)"
+        guard !UserDefaults.standard.bool(forKey: warmKey) else { return }
+        guard !warmingModels.contains(model) else { return }
+
+        warmingModels.insert(model)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.warmingModels.remove(model) }
+
+            do {
+                _ = try await self.runRuntimeCommand("warmModel", arguments: ["model": model.rawValue])
+                UserDefaults.standard.set(true, forKey: warmKey)
+                print("VoiceTranscribe: Warmed model \(model.rawValue) in background")
+            } catch {
+                print("VoiceTranscribe: Background warmup failed for \(model.rawValue): \(error)")
+            }
         }
     }
 }
@@ -1070,7 +1646,7 @@ extension VoiceTranscribeManager {
 
 extension VoiceTranscribeManager {
     /// Clean up all Voice Transcribe resources when extension is removed
-    /// Deletes downloaded WhisperKit model and resets all state
+    /// Deletes downloaded runtime/model resources and resets all state
     func cleanup() {
         // Stop any active recording
         if state == .recording {
@@ -1087,23 +1663,6 @@ extension VoiceTranscribeManager {
         isDownloading = false
         downloadProgress = 0
         
-        // Release WhisperKit instance
-        whisperKit = nil
-        
-        // Delete model files
-        let modelsDir = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support"))
-            .appendingPathComponent("Droppy/WhisperModels")
-        
-        do {
-            if FileManager.default.fileExists(atPath: modelsDir.path) {
-                try FileManager.default.removeItem(at: modelsDir)
-                print("[VoiceTranscribe] Deleted model directory")
-            }
-        } catch {
-            print("[VoiceTranscribe] Failed to delete models: \(error)")
-        }
-        
         // Reset state
         isModelDownloaded = false
         transcriptionResult = ""
@@ -1113,11 +1672,17 @@ extension VoiceTranscribeManager {
         UserDefaults.standard.removeObject(forKey: "voiceTranscribeLanguage")
         for model in WhisperModel.allCases {
             UserDefaults.standard.removeObject(forKey: "voiceTranscribeModelDownloaded_\(model.rawValue)")
+            UserDefaults.standard.removeObject(forKey: "voiceTranscribeModelWarmed_\(model.rawValue)")
         }
         
         // Hide menu bar item
         VoiceTranscribeMenuBar.shared.setVisible(false)
         isMenuBarEnabled = false
+
+        Task {
+            _ = try? await runRuntimeCommand("deleteAllModels")
+            await VoiceTranscribeRuntimeManager.shared.uninstallRuntime()
+        }
         
         print("[VoiceTranscribe] Cleanup complete")
     }
@@ -1208,6 +1773,7 @@ extension VoiceTranscribeManager {
             ) { [weak self] in
                 guard let self = self else { return }
                 guard !ExtensionType.voiceTranscribe.isRemoved else { return }
+                guard self.runtimeManager.isInstalled else { return }
                 guard self.isModelDownloaded else { return }
                 
                 print("[VoiceTranscribe] ✅ Quick Record triggered via GlobalHotKey")
@@ -1224,6 +1790,7 @@ extension VoiceTranscribeManager {
             ) { [weak self] in
                 guard let self = self else { return }
                 guard !ExtensionType.voiceTranscribe.isRemoved else { return }
+                guard self.runtimeManager.isInstalled else { return }
                 guard self.isModelDownloaded else { return }
                 
                 print("[VoiceTranscribe] ✅ Invisi-Record triggered via GlobalHotKey")

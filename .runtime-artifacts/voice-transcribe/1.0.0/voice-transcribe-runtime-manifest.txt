@@ -1,0 +1,23 @@
+{
+  "id": "voiceTranscribe",
+  "version": "1.0.0",
+  "protocolVersion": 1,
+  "minAppVersion": null,
+  "executableName": "droppy-voice-runtime",
+  "artifacts": [
+    {
+      "arch": "arm64",
+      "url": "https://github.com/iordv/Droppy/releases/download/voice-runtime/voice-transcribe-runtime-arm64.tar.gz",
+      "sha256": "9b94b78cc45ba855ed21b0a5406ec6d47205a1ac1d4d28a4cf572d705f0041c5",
+      "sizeBytes": 1412639,
+      "teamID": "NARHG44L48"
+    },
+    {
+      "arch": "x86_64",
+      "url": "https://github.com/iordv/Droppy/releases/download/voice-runtime/voice-transcribe-runtime-x86_64.tar.gz",
+      "sha256": "09f8043d4949d3dc889ab0de7169d3a33b1e526be90f1d8fa9531bf719599275",
+      "sizeBytes": 1518079,
+      "teamID": "NARHG44L48"
+    }
+  ]
+}

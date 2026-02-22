@@ -11,33 +11,43 @@ import SwiftUI
 
 /// Window controller for the Quickshare Manager
 final class QuickshareManagerWindowController: NSObject, NSWindowDelegate {
-    static var shared: QuickshareManagerWindowController?
+    static let shared = QuickshareManagerWindowController()
     
     private var window: NSPanel?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
+
+    private override init() {
+        super.init()
+    }
     
     /// Show the Quickshare Manager window
     static func show() {
-        if let existing = shared, let window = existing.window, window.isVisible {
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-        
-        // Clear old reference if window was closed
-        if shared?.window == nil {
-            shared = nil
-        }
-        
-        let controller = QuickshareManagerWindowController()
-        shared = controller
-        controller.showWindow()
+        shared.showWindow()
     }
     
     private func showWindow() {
+        if let window {
+            cancelDeferredTeardown()
+            NSApp.activate(ignoringOtherApps: true)
+            if window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                AppKitMotion.prepareForPresent(window, initialScale: 0.9)
+                window.orderFront(nil)
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(window, initialScale: 0.9, duration: 0.2)
+            }
+            return
+        }
+
         // Use QuickshareInfoView (the new consolidated UI)
         let contentView = QuickshareInfoView(
-            installCount: nil,
-            rating: nil, // Stats optional in standalone manager
+            installCount: nil, // Stats optional in standalone manager
             onClose: {
                 QuickshareManagerWindowController.hide()
             }
@@ -93,20 +103,51 @@ final class QuickshareManagerWindowController: NSObject, NSWindowDelegate {
     
     /// Hide the Quickshare Manager window
     static func hide() {
-        guard let panel = shared?.window else { return }
+        shared.hideWindow()
+    }
 
-        AppKitMotion.animateOut(panel, targetScale: 0.96, duration: 0.18) {
-            shared?.window = nil
+    private func hideWindow() {
+        guard let panel = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
+
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+            guard let self else { return }
             panel.orderOut(nil)
             AppKitMotion.resetPresentationState(panel)
-            shared = nil
+            self.isClosing = false
+            self.scheduleDeferredTeardown()
         }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     // MARK: - NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        hideWindow()
+        return false
+    }
     
     func windowWillClose(_ notification: Notification) {
         window = nil
-        QuickshareManagerWindowController.shared = nil
+        isClosing = false
+        cancelDeferredTeardown()
     }
 }

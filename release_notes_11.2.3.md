@@ -1,0 +1,55 @@
+## Droppy beta v11.2.3
+
+- Fixed drag-jiggle basket behavior: with 1 basket it now opens a second basket, and with 2+ baskets it opens Basket Switcher instead of re-summoning all hidden baskets.
+- Fixed a multi-basket UI refresh issue where accent-colored handles could briefly disappear after jiggle/switcher actions; basket accents now update instantly and consistently.
+- Fixed Menu Bar Manager hover auto-collapse so touching the upper menu bar strip no longer collapses it, while hover reveal still only triggers on actual menu bar icons.
+- Fixed Menu Bar Manager auto-collapse so, after reveal, moving left within the menu bar no longer closes it; it now only auto-collapses after leaving the menu-bar strip.
+- Fixed Menu Bar Manager icon detection for crowded menu bars by supporting shared status windows, cropping each icon from its real window region, and improving menu-bar window discovery so real icons no longer drop to fallback placeholders after rescans.
+- Fixed Menu Bar Manager scanning/remap reliability for newly opened apps and shared status windows, removed stale ghost placeholder entries.
+- Updated Floating Bar transparency mode to use native macOS 26 liquid-glass styling for a consistent system-like appearance.
+- Applied native macOS 26 Liquid Glass to the Floating Basket and Basket Quick Actions, with automatic older-macOS material behavior.
+- Reworked Basket Switcher rendering to use a separate dimming window behind the glass panel, so native Liquid Glass now samples the real desktop/background like the Floating Basket and Floating Bar.
+- Applied native macOS 26 Liquid Glass styling to Clipboard surfaces (main window, toast, and tag panels), with automatic fallback behavior on older macOS.
+- Fixed a CPU drain where clipboard/switcher UI teardown could leave preview resources (including video playback) active after closing, and tightened overlay hosting cleanup to prevent lingering background work.
+- Upgraded transparent UI surfaces (Screenshot Editor, Updater, onboarding) to native macOS 26 Liquid Glass.
+- Reworked Settings into a full liquid-glass window: a dedicated title bar (Settings), custom left close button, blue Updates action on the right, and interactive hoverable capsule buttons.
+- Refined the Settings sidebar to match macOS more closely: icons now use consistent squircle badges, row/button sizing is unified, and tab clicks now respond instantly with immediate selection feedback while content loads right after.
+- Upgraded Settings search to a smart, native-like experience: it now finds features/options via keywords and synonyms, shows grouped contextual matches in the sidebar, and instantly opens the relevant settings content when selected.
+- Fixed inconsistent basket photo thumbnails that could appear horizontally compressed after re-opening; stacked previews now render with stable aspect ratio.
+- Redesigned Clipboard to fully support liquid glass, be faster, more reliable and smooth.
+- Fixed expanded media visualizer initialization so paused tracks reopen with low/inactive bars instead of full-height bars.
+- Fixed Tag Manager presentation by replacing system sheet rendering with an in-window liquid-glass modal, removing the clipped border artifact behind Clipboard and preventing background shortcut actions while the tag modal is open.
+- Clipboard preview pane now fills available space for image and file/video previews, removing the small centered preview look and using full-area media rendering.
+- Unified extension/settings sheet hosting with native liquid-glass chrome (including non-transparency compatibility), removing clipped/double top-border artifacts; applied same fix to clipboard zoom sheet hosting.
+- Standardized Clipboard media/document preview corner radius to match the outer preview container, so screenshots/PDFs/files now always use identical rounded corners.
+- All extension windows now support native liquid glass design as well.
+- Extension detail windows in Settings are now fully draggable and resizable, and they keep the user’s custom position/size instead of snapping back when switching extension details.
+- Refined the Extracted Text window to updater-style chrome: removed native titlebar controls and toolbar strip, so only Droppy’s custom liquid header is shown.
+- Reworked album hover interactions: album art now morphs into a full source view (Spotify/Apple Music/browser/app) with a smooth badge-to-cover transition, replacing the old parallax hover effect.
+- Removed the expanded media HUD album-art parallax hover effect, so album art now stays clean and static while preserving existing tap and nudge animations.
+- AI Background Removal is now fully deterministic and much more reliable: install now provisions and validates the model upfront, HEIC and other problematic image inputs are normalized before inference, runtime process hangs are prevented with robust output draining + timeouts, and users now get clear error/summary alerts instead of silent failures.
+- Replaced media controls with native SF Symbols behavior: play/pause now morphs cleanly, and next/previous now animate the chevrons directionally (left/right) with by-layer motion.
+- Fixed AI background remover install failures by switching to a live model checkpoint URL and improving 404 install error handling so setup failures are explicit and actionable.
+- Added AI “Remove Background” to Clipboard context menus for image items (when the extension is active), with proper error alerts and automatic insertion of the processed result back into Clipboard history.
+- Fixed Clipboard memory retention by tearing down the Clipboard window/view tree on hide and triggering immediate memory reclaim, and reduced startup memory by removing eager thumbnail warmup/initialization at launch.
+- Fixed multiple memory retention hotspots by fully tearing down Clipboard UI on close, adding aggressive reclaim hooks, bounding metadata/image caches, improving icon cache memory accounting, and removing eager startup warmup so memory usage drops more reliably after heavy interactions.
+- Unified window show/hide motion across Droppy and fixed clipboard open jank by keeping the clipboard window warm, suppressing list pop-in during open, and moving hard memory reclaim to delayed idle cleanup.
+- Improved app-wide memory stability by tightening observer/timer lifecycles and reducing background task churn, plus optimized audio processing memory pressure with safe runtime pooling.
+- Unified and completed app-wide window motion flow (including Settings/License/Update), fixed clipboard open pop-in/lag by keeping it warm, and improved close-time memory reclaim strategy with delayed hard cleanup.
+- Simplified tag reordering in Tag Management by removing drag-and-drop and adding dedicated up/down arrow controls for faster, more reliable ordering.
+- Unified window open/close behavior app-wide with warm reopen + faster deferred teardown, reduced hidden-window memory retention from 20s to 8s and improved transient window lifecycle cleanup (capture/editor/voice/onboarding/quickshare).
+- Improved Task/Calendar opening performance by batching sync updates, removing extra recompute/resizing work during open/expand, coalescing timeline recomputes, and removing heavy first-open animations for smoother open under heavy sync data.
+- Standardized Droppy button accent blue to match the clipboard selected-row highlight, replacing previous hardcoded blue button accents across the app.
+- Improved onboarding HUD toggle label layout so long titles (like “Droppy Updates”) no longer get clipped/truncated in constrained window sizes.
+- Renamed the settings sidebar section label from “About & Updates” to “About” for a cleaner navigation title.
+- Refined license card design with cleaner handcrafted styling: removed decorative motion/noise, improved typography hierarchy, added polished status badges, and aligned active/preview cards to a consistent professional layout.
+- Unified Screenshot Editor header alignment with Settings/Clipboard by centering the title between content area and right actions, while keeping the close button as a non-influencing leading overlay.
+- Added an optional “Open editor instantly” setting for Element Capture so screenshots can jump straight into Screenshot Editor instead of opening the preview window first.
+- Improved High Alert visibility in light mode by using a higher-contrast orange for the timer, icon, and status indicator.
+- Fixed fullscreen floating-bar behavior so it only stays visible when the menu bar is actually revealed, and made liquid-glass HUD updates (volume/brightness reflection + color sync) instant and smooth during held key presses.
+- Improved Menu Bar Manager floating bar reliability for Beta 2: wake recovery now self-heals automatically within ~2s, rescans use stronger owner discovery to catch previously missed menu icons, Always Hidden entries now auto-remap more reliably across ID churn, and dashed placeholder icons were removed in favor of real icon continuity from cache/registry.
+- Smoothed volume and brightness HUD progress animations so bars now flow continuously up/down during key-repeat instead of jumping between steps, while keeping liquid-glass reflection response immediate.
+- Renamed Transparency Mode to Liquid Mode across app terminology and release notes for consistent Liquid Glass naming.
+- Added full Beats Studio battery integration in the AirPods/Headphones HUD flow by improving Beats device detection and supporting additional native Bluetooth battery fields for accurate percentages.
+- Added a new Donate button in the Settings title bar (next to Updates) that opens Buy Me a Coffee.
+- Expanded Beats battery/HUD compatibility across more Beats models (Solo/Studio/Powerbeats/Fit/BeatsX/urBeats) and improved Bluetooth battery reading for both single-cell and left/right-reported Beats devices.

@@ -8,6 +8,7 @@
 
 import SwiftUI
 import ImageIO
+import CryptoKit
 
 /// A cached async image that stores loaded images to prevent re-fetching
 /// and fallback icon flashing on view recreation.
@@ -20,6 +21,18 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     @State private var isLoading = false
     @State private var hasFailed = false
     @State private var loadTask: Task<Void, Never>?
+    @State private var loadingURL: URL?
+
+    init(
+        url: URL?,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.url = url
+        self.content = content
+        self.placeholder = placeholder
+        _image = State(initialValue: url.flatMap { ExtensionIconCache.shared.memoryImage(for: $0) })
+    }
     
     var body: some View {
         Group {
@@ -41,48 +54,64 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         .onAppear {
             startLoading()
         }
-        .onChange(of: url) { _, _ in
-            image = nil
-            hasFailed = false
-            isLoading = false
-            startLoading()
-        }
-        .onDisappear {
+        .onChange(of: url) { previousURL, newURL in
+            guard previousURL != newURL else { return }
             loadTask?.cancel()
             loadTask = nil
+            loadingURL = nil
+            isLoading = false
+            image = newURL.flatMap { ExtensionIconCache.shared.memoryImage(for: $0) }
+            hasFailed = newURL == nil
+            startLoading()
         }
     }
     
     private func startLoading() {
-        loadTask?.cancel()
-        loadTask = nil
-
         guard let url = url else {
+            loadTask?.cancel()
+            loadTask = nil
+            loadingURL = nil
+            isLoading = false
+            image = nil
             hasFailed = true
             return
         }
         
-        // Check cache first
-        if let cached = ExtensionIconCache.shared.cachedImage(for: url) {
+        // Fast path: in-memory cache on main thread.
+        if let cached = ExtensionIconCache.shared.memoryImage(for: url) {
             self.image = cached
             self.hasFailed = false
             self.isLoading = false
+            self.loadingURL = nil
+            self.loadTask = nil
             return
         }
         
-        guard !isLoading else { return }
+        if let task = loadTask, isLoading, loadingURL == url, !task.isCancelled {
+            return
+        }
+
+        if loadingURL != url {
+            loadTask?.cancel()
+            loadTask = nil
+            isLoading = false
+        }
+
         isLoading = true
         hasFailed = false
+        loadingURL = url
         
-        loadTask = Task {
+        loadTask = Task.detached(priority: .utility) {
             let loadedImage = await ExtensionIconCache.shared.loadImage(for: url)
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard self.loadingURL == url else { return }
                 self.image = loadedImage
                 self.hasFailed = loadedImage == nil
                 self.isLoading = false
                 self.loadTask = nil
+                self.loadingURL = nil
             }
         }
     }
@@ -94,16 +123,27 @@ final class ExtensionIconCache {
     static let shared = ExtensionIconCache()
 
     private let cache = NSCache<NSURL, NSImage>()
+    private let fileManager = FileManager.default
+    private let diskCacheDirectory: URL
+    private let diskCacheSizeLimit = 256 * 1024 * 1024
     private var inFlightTasks: [URL: Task<NSImage?, Never>] = [:]
     private let lock = NSLock()
 
     private init() {
-        cache.countLimit = 120
-        cache.totalCostLimit = 12 * 1024 * 1024
+        cache.countLimit = 2_000
+        cache.totalCostLimit = 256 * 1024 * 1024
+
+        let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        diskCacheDirectory = cachesDirectory.appendingPathComponent("ExtensionIconCache", isDirectory: true)
+        try? fileManager.createDirectory(at: diskCacheDirectory, withIntermediateDirectories: true)
+    }
+
+    func memoryImage(for url: URL) -> NSImage? {
+        cache.object(forKey: url as NSURL)
     }
 
     func cachedImage(for url: URL) -> NSImage? {
-        cache.object(forKey: url as NSURL)
+        memoryImage(for: url)
     }
 
     func clearCache() {
@@ -115,10 +155,12 @@ final class ExtensionIconCache {
             task.cancel()
         }
         cache.removeAllObjects()
+        try? fileManager.removeItem(at: diskCacheDirectory)
+        try? fileManager.createDirectory(at: diskCacheDirectory, withIntermediateDirectories: true)
     }
 
     func loadImage(for url: URL) async -> NSImage? {
-        if let cached = cachedImage(for: url) {
+        if let cached = memoryImage(for: url) {
             return cached
         }
 
@@ -128,6 +170,14 @@ final class ExtensionIconCache {
 
         let task = Task<NSImage?, Never> { [weak self] in
             defer { self?.removeInFlightTask(for: url) }
+
+            if let cached = self?.memoryImage(for: url) {
+                return cached
+            }
+
+            if let diskCached = self?.diskImage(for: url) {
+                return diskCached
+            }
 
             var request = URLRequest(url: url)
             request.cachePolicy = .returnCacheDataElseLoad
@@ -146,6 +196,7 @@ final class ExtensionIconCache {
                 }
 
                 self?.store(image, for: url)
+                self?.persistToDisk(data, for: url)
                 return image
             } catch {
                 return nil
@@ -154,6 +205,22 @@ final class ExtensionIconCache {
 
         setInFlightTask(task, for: url)
         return await task.value
+    }
+
+    func prewarm(urls: [URL]) async {
+        let uniqueURLs = Array(Set(urls))
+        await withTaskGroup(of: Void.self) { group in
+            for url in uniqueURLs {
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    _ = await self.loadImage(for: url)
+                }
+            }
+        }
+    }
+
+    func prewarm(urlStrings: [String]) async {
+        await prewarm(urls: urlStrings.compactMap(URL.init(string:)))
     }
 
     private func existingInFlightTask(for url: URL) -> Task<NSImage?, Never>? {
@@ -179,6 +246,73 @@ final class ExtensionIconCache {
         let pixelHeight = Int(max(image.size.height, 1))
         let estimatedCost = max(pixelWidth * pixelHeight * 4, 1)
         cache.setObject(image, forKey: url as NSURL, cost: estimatedCost)
+    }
+
+    private func persistToDisk(_ data: Data, for url: URL) {
+        let fileURL = diskFileURL(for: url)
+        if
+            fileManager.fileExists(atPath: fileURL.path),
+            let existingData = try? Data(contentsOf: fileURL),
+            Self.decodeImage(from: existingData) != nil
+        {
+            return
+        }
+        try? data.write(to: fileURL, options: .atomic)
+        pruneDiskCacheIfNeeded(maxBytes: diskCacheSizeLimit)
+    }
+
+    private func diskFileURL(for url: URL) -> URL {
+        diskCacheDirectory.appendingPathComponent(Self.diskCacheKey(for: url), isDirectory: false)
+    }
+
+    private static func diskCacheKey(for url: URL) -> String {
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func diskImage(for url: URL) -> NSImage? {
+        let fileURL = diskFileURL(for: url)
+        guard
+            let data = try? Data(contentsOf: fileURL),
+            let image = Self.decodeImage(from: data)
+        else {
+            return nil
+        }
+        store(image, for: url)
+        return image
+    }
+
+    private func pruneDiskCacheIfNeeded(maxBytes: Int) {
+        guard
+            let fileURLs = try? fileManager.contentsOfDirectory(
+                at: diskCacheDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return
+        }
+
+        var entries: [(url: URL, size: Int, modified: Date)] = []
+        var totalSize = 0
+
+        for fileURL in fileURLs {
+            let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let size = values?.fileSize ?? 0
+            let modified = values?.contentModificationDate ?? .distantPast
+            totalSize += size
+            entries.append((fileURL, size, modified))
+        }
+
+        guard totalSize > maxBytes else { return }
+
+        for entry in entries.sorted(by: { $0.modified < $1.modified }) {
+            try? fileManager.removeItem(at: entry.url)
+            totalSize -= entry.size
+            if totalSize <= maxBytes {
+                break
+            }
+        }
     }
 
     private static func decodeImage(from data: Data) -> NSImage? {

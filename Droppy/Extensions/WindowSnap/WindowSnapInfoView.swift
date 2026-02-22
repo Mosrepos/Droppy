@@ -65,10 +65,9 @@ struct WindowSnapInfoView: View {
     @State private var appSearchQuery = ""
 
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
 
     @Environment(\.dismiss) private var dismiss
-    @State private var showReviewsSheet = false
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
 
     private let manager = WindowSnapManager.shared
 
@@ -123,6 +122,7 @@ struct WindowSnapInfoView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 20) {
                     generalContent
+                    screenshotSection
                     excludesContent
                 }
                 .padding(.horizontal, 24)
@@ -151,9 +151,6 @@ struct WindowSnapInfoView: View {
         .onChange(of: resizeModeRaw) { _, _ in manager.refreshConfiguration() }
         .onDisappear {
             stopRecording()
-        }
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .windowSnap)
         }
     }
 
@@ -185,27 +182,6 @@ struct WindowSnapInfoView: View {
                 }
                 .foregroundStyle(.secondary)
 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
 
                 Text("Productivity")
                     .font(.caption.weight(.semibold))
@@ -243,6 +219,27 @@ struct WindowSnapInfoView: View {
                 featureRow(icon: "rectangle.split.2x2", text: "Live snap zones with edge/corner previews")
                 featureRow(icon: "display", text: "Multi-monitor support")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var screenshotSection: some View {
+        if let screenshotURL = WindowSnapExtension.screenshotURL {
+            CachedAsyncImage(url: screenshotURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                            .stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1)
+                    )
+            } placeholder: {
+                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                    .fill(AdaptiveColors.overlayAuto(0.08))
+                    .frame(height: 170)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -655,7 +652,7 @@ struct WindowSnapInfoView: View {
     private var buttonSection: some View {
         HStack(spacing: 10) {
             Button {
-                dismiss()
+                closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
             } label: {
                 Text("Close")
             }

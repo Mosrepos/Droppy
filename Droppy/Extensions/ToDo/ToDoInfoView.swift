@@ -16,6 +16,7 @@ struct ToDoInfoView: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
 
     @AppStorage(AppPreferenceKey.todoInstalled) private var isInstalled = PreferenceDefault.todoInstalled
     @AppStorage(AppPreferenceKey.todoAutoCleanupHours) private var autoCleanupHours = PreferenceDefault.todoAutoCleanupHours
@@ -30,14 +31,12 @@ struct ToDoInfoView: View {
     @AppStorage(AppPreferenceKey.todoShowTaskWeekNumber) private var showTaskWeekNumber = PreferenceDefault.todoShowTaskWeekNumber
     @AppStorage(AppPreferenceKey.todoShowTaskViewTimezone) private var showTaskViewTimezone = PreferenceDefault.todoShowTaskViewTimezone
     @State private var manager = ToDoManager.shared
-    @State private var showReviewsSheet = false
     @State private var focusedCalendarIndex: Int? = nil
     @State private var focusedListIndex: Int? = nil
     @State private var quickOpenShortcut: SavedShortcut? = nil
 
     // Stats passed from parent
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,9 +70,6 @@ struct ToDoInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .todo)
-        }
         .onAppear {
             if syncCalendarEnabled {
                 manager.refreshCalendarListsNow()
@@ -133,27 +129,6 @@ struct ToDoInfoView: View {
                 }
                 .foregroundStyle(.secondary)
 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
 
                 // Category Badge
                 Text("Productivity")
@@ -866,7 +841,7 @@ struct ToDoInfoView: View {
 
     private var footerSection: some View {
         HStack {
-            Button("Close") { dismiss() }
+            Button("Close") { closePanelOrDismiss(panelCloseAction, dismiss: dismiss) }
                 .buttonStyle(DroppyPillButtonStyle(size: .small))
 
             Spacer()
@@ -879,7 +854,7 @@ struct ToDoInfoView: View {
                 } label: {
                     Text("action.install")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
         }
         .padding(DroppySpacing.lg)

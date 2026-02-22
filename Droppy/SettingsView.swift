@@ -3,10 +3,18 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    private enum TrafficLightKind {
+        case close
+        case minimize
+        case zoom
+    }
+
     @State private var selectedTab: SettingsTab = .general
+    @State private var sidebarSelectedTab: SettingsTab = .general
     @AppStorage(AppPreferenceKey.showInMenuBar) private var showInMenuBar = PreferenceDefault.showInMenuBar
     @AppStorage(AppPreferenceKey.showInDock) private var showInDock = PreferenceDefault.showInDock
     @AppStorage(AppPreferenceKey.showQuickshareInMenuBar) private var showQuickshareInMenuBar = PreferenceDefault.showQuickshareInMenuBar
+    @AppStorage(AppPreferenceKey.showQuickshareInSidebar) private var showQuickshareInSidebar = PreferenceDefault.showQuickshareInSidebar
     @AppStorage(AppPreferenceKey.startAtLogin) private var startAtLogin = PreferenceDefault.startAtLogin
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
     @AppStorage(AppPreferenceKey.enableNotchShelf) private var enableNotchShelf = PreferenceDefault.enableNotchShelf
@@ -61,10 +69,12 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.caffeineEnabled) private var enableCaffeine = PreferenceDefault.caffeineEnabled
     @AppStorage(AppPreferenceKey.caffeineMode) private var caffeineModeRaw = PreferenceDefault.caffeineMode
     @AppStorage(AppPreferenceKey.caffeineInstantlyExpandShelfOnHover) private var caffeineInstantlyExpandShelfOnHover = PreferenceDefault.caffeineInstantlyExpandShelfOnHover
+    @AppStorage(AppPreferenceKey.pomodoroInstalled) private var isPomodoroInstalled = PreferenceDefault.pomodoroInstalled
+    @AppStorage(AppPreferenceKey.pomodoroEnabled) private var enablePomodoro = PreferenceDefault.pomodoroEnabled
+    @AppStorage(AppPreferenceKey.pomodoroInstantlyExpandShelfOnHover) private var pomodoroInstantlyExpandShelfOnHover = PreferenceDefault.pomodoroInstantlyExpandShelfOnHover
     @AppStorage(AppPreferenceKey.cameraInstalled) private var isCameraInstalled = PreferenceDefault.cameraInstalled
     @AppStorage(AppPreferenceKey.cameraEnabled) private var enableCamera = PreferenceDefault.cameraEnabled
     @AppStorage(AppPreferenceKey.cameraPreferredDeviceID) private var cameraPreferredDeviceID = PreferenceDefault.cameraPreferredDeviceID
-    @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
     @AppStorage(AppPreferenceKey.showMediaPlayer) private var showMediaPlayer = PreferenceDefault.showMediaPlayer
     @AppStorage(AppPreferenceKey.showExternalMouseSwitchButton) private var showExternalMouseSwitchButton = PreferenceDefault.showExternalMouseSwitchButton
     @AppStorage(AppPreferenceKey.autoFadeMediaHUD) private var autoFadeMediaHUD = PreferenceDefault.autoFadeMediaHUD
@@ -103,6 +113,10 @@ struct SettingsView: View {
     @State private var showQuickActionsWarning = false  // Warning when enabling Quick Actions
     @State private var basketDragRevealShortcut: SavedShortcut?
     @State private var basketSwitcherShortcut: SavedShortcut?
+    @State private var sidebarSearchQuery = ""
+    @State private var extensionsSelectedCategory: ExtensionCategory? = nil
+    @State private var hoveredTrafficLight: TrafficLightKind?
+    @Namespace private var extensionsCategoryAnimation
     
     // Hover states for special buttons
     @State private var isCoffeeHovering = false
@@ -113,8 +127,6 @@ struct SettingsView: View {
     @State private var scrollOffset: CGFloat = 0
     
     
-    /// Extension to open from deep link (e.g., droppy://extension/ai-bg)
-    @State private var deepLinkedExtension: ExtensionType?
     @ObservedObject private var cameraManager = CameraManager.shared
     
     /// Detects if the BUILT-IN display has a physical notch.
@@ -244,6 +256,21 @@ struct SettingsView: View {
     
     private var isAnyMediaKeyHUDReplacementEnabled: Bool {
         enableHUDReplacement && (enableVolumeHUDReplacement || enableBrightnessHUDReplacement)
+    }
+
+    private var shouldEnableLockScreenMonitoring: Bool {
+        enableLockScreenHUD
+    }
+
+    private func refreshLockScreenFeatureState() {
+        // Keep manager wired; media panel itself is currently hard-disabled.
+        LockScreenMediaPanelManager.shared.configure(musicManager: MusicManager.shared)
+
+        if shouldEnableLockScreenMonitoring {
+            LockScreenManager.shared.enable()
+        } else {
+            LockScreenManager.shared.disable()
+        }
     }
 
     private var shouldKeepNotchWindowOpen: Bool {
@@ -511,6 +538,476 @@ struct SettingsView: View {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }
+
+    private var visibleTabs: [SettingsTab] {
+        SettingsTab.allCases.filter { tab in
+            switch tab {
+            case .quickshare:
+                return showQuickshareInSidebar && !ExtensionType.quickshare.isRemoved
+            default:
+                return true
+            }
+        }
+    }
+
+    private struct SettingsSearchEntry: Identifiable {
+        let id: String
+        let tab: SettingsTab
+        let title: String
+        let detail: String
+        let keywords: [String]
+    }
+
+    private struct SettingsSearchMatch: Identifiable {
+        let entry: SettingsSearchEntry
+        let score: Int
+
+        var id: String { entry.id }
+    }
+
+    private struct SettingsSearchGroup: Identifiable {
+        let tab: SettingsTab
+        let matches: [SettingsSearchMatch]
+
+        var id: String { tab.id }
+    }
+
+    private var settingsSearchIndex: [SettingsSearchEntry] {
+        [
+            SettingsSearchEntry(id: "general-start-login", tab: .general, title: "Start at Login", detail: "Launch Droppy automatically when macOS starts.", keywords: ["startup", "boot", "launch", "open at login"]),
+            SettingsSearchEntry(id: "general-menubar", tab: .general, title: "Menu Bar Icon", detail: "Show or hide Droppy in the menu bar.", keywords: ["status bar", "tray", "icon"]),
+            SettingsSearchEntry(id: "general-dock", tab: .general, title: "Dock Icon", detail: "Show or hide Droppy in the Dock.", keywords: ["dock visibility", "app icon"]),
+            SettingsSearchEntry(id: "general-transparent", tab: .general, title: "Liquid mode", detail: "Use Liquid Glass settings surfaces.", keywords: ["glass", "blur", "background style"]),
+            SettingsSearchEntry(id: "general-notch-hide", tab: .general, title: "Hide Physical Notch", detail: "Blend notch area to reduce visual distraction.", keywords: ["notch", "cover notch", "display cutout"]),
+            SettingsSearchEntry(id: "general-notch-hide-external", tab: .general, title: "Hide Notch on External Displays", detail: "Apply notch hiding behavior on connected displays.", keywords: ["external monitor", "display", "screen"]),
+            SettingsSearchEntry(id: "general-screenshot-hide", tab: .general, title: "Hide Notch from Screenshots", detail: "Exclude notch styling from captured screenshots.", keywords: ["screenshot", "capture", "recording"]),
+            SettingsSearchEntry(id: "general-right-click-hide", tab: .general, title: "Right-Click Hide", detail: "Allow hiding notch surface via right click.", keywords: ["context click", "dismiss"]),
+            SettingsSearchEntry(id: "general-quick-actions", tab: .general, title: "Quick Actions", detail: "Enable fast actions like mail, cloud and share.", keywords: ["actions", "shortcuts", "workflow"]),
+            SettingsSearchEntry(id: "general-quick-actions-mail", tab: .general, title: "Quick Actions Mail App", detail: "Choose the mail client used by quick actions.", keywords: ["email", "mail client", "compose"]),
+            SettingsSearchEntry(id: "general-quick-actions-cloud", tab: .general, title: "Quick Actions Cloud Provider", detail: "Choose upload destination provider.", keywords: ["upload", "cloud", "drive", "provider"]),
+            SettingsSearchEntry(id: "general-power-folders", tab: .general, title: "Power Folders", detail: "Enable folder-aware organization features.", keywords: ["folders", "smart folders", "organization"]),
+            SettingsSearchEntry(id: "general-smart-export", tab: .general, title: "Smart Export", detail: "Auto-route and export dropped content.", keywords: ["export", "automation", "routing", "save"]),
+            SettingsSearchEntry(id: "general-tracked-folders", tab: .general, title: "Tracked Folders", detail: "Watch and process files from selected folders.", keywords: ["watch folder", "monitor", "sync"]),
+            SettingsSearchEntry(id: "general-analytics", tab: .general, title: "Analytics", detail: "Control usage telemetry and diagnostics.", keywords: ["privacy", "tracking", "diagnostics"]),
+
+            SettingsSearchEntry(id: "shelf-enable", tab: .shelf, title: "Enable Notch Shelf", detail: "Turn the shelf UI on or off.", keywords: ["shelf", "notch", "main shelf"]),
+            SettingsSearchEntry(id: "shelf-auto-expand", tab: .shelf, title: "Auto Expand Shelf", detail: "Expand shelf automatically on trigger.", keywords: ["expand", "open automatically", "hover"]),
+            SettingsSearchEntry(id: "shelf-auto-collapse", tab: .shelf, title: "Auto Collapse Shelf", detail: "Collapse shelf after inactivity.", keywords: ["collapse", "close automatically", "inactive", "display off"]),
+            SettingsSearchEntry(id: "shelf-expand-delay", tab: .shelf, title: "Auto Expand Delay", detail: "Delay before shelf expands.", keywords: ["delay", "timing", "latency"]),
+            SettingsSearchEntry(id: "shelf-collapse-delay", tab: .shelf, title: "Auto Collapse Delay", detail: "Delay before shelf collapses.", keywords: ["delay", "timing", "inactive", "sleep"]),
+            SettingsSearchEntry(id: "shelf-hide-fullscreen", tab: .shelf, title: "Hide on Fullscreen", detail: "Hide shelf while fullscreen apps are active.", keywords: ["fullscreen", "display", "video"]),
+            SettingsSearchEntry(id: "shelf-hide-media-fullscreen", tab: .shelf, title: "Hide Media in Fullscreen", detail: "Hide media overlay in fullscreen contexts.", keywords: ["media", "fullscreen", "display off"]),
+            SettingsSearchEntry(id: "shelf-open-media-expand", tab: .shelf, title: "Open Media HUD on Expand", detail: "Show media controls when shelf opens.", keywords: ["media controls", "music", "now playing"]),
+            SettingsSearchEntry(id: "shelf-dynamic-island", tab: .shelf, title: "Dynamic Island Style", detail: "Use Dynamic Island-inspired shelf look.", keywords: ["island", "style", "appearance"]),
+            SettingsSearchEntry(id: "shelf-dynamic-island-transparent", tab: .shelf, title: "Dynamic Island Transparency", detail: "Adjust transparent island rendering.", keywords: ["glass", "opacity", "appearance"]),
+            SettingsSearchEntry(id: "shelf-width-offset", tab: .shelf, title: "Shelf Width Offset", detail: "Fine-tune shelf width.", keywords: ["size", "width", "layout"]),
+            SettingsSearchEntry(id: "shelf-height-offset", tab: .shelf, title: "Shelf Height Offset", detail: "Fine-tune shelf height/position.", keywords: ["size", "height", "layout", "position"]),
+
+            SettingsSearchEntry(id: "basket-enable", tab: .basket, title: "Enable Floating Basket", detail: "Turn floating basket mode on or off.", keywords: ["basket", "floating", "drop zone"]),
+            SettingsSearchEntry(id: "basket-autohide", tab: .basket, title: "Basket Auto-Hide", detail: "Hide basket when idle.", keywords: ["auto hide", "inactive", "cleanup"]),
+            SettingsSearchEntry(id: "basket-autohide-delay", tab: .basket, title: "Basket Auto-Hide Delay", detail: "Delay before basket hides.", keywords: ["delay", "timing"]),
+            SettingsSearchEntry(id: "basket-instant-drag", tab: .basket, title: "Instant Basket on Drag", detail: "Reveal basket instantly while dragging.", keywords: ["drag", "instant", "reveal"]),
+            SettingsSearchEntry(id: "basket-instant-delay", tab: .basket, title: "Instant Basket Delay", detail: "Configure instant reveal latency.", keywords: ["delay", "drag latency"]),
+            SettingsSearchEntry(id: "basket-jiggle", tab: .basket, title: "Basket Jiggle Sensitivity", detail: "Adjust movement sensitivity for reveal.", keywords: ["sensitivity", "jiggle", "gesture"]),
+            SettingsSearchEntry(id: "basket-multi", tab: .basket, title: "Multi-Basket", detail: "Use multiple basket slots/workspaces.", keywords: ["multiple baskets", "slots", "workspace"]),
+
+            SettingsSearchEntry(id: "clipboard-main", tab: .clipboard, title: "Clipboard Manager", detail: "Manage clipboard history and reuse.", keywords: ["clipboard", "history", "pasteboard"]),
+            SettingsSearchEntry(id: "clipboard-search", tab: .clipboard, title: "Clipboard Search", detail: "Search entries and extracted content.", keywords: ["find", "filter", "history search"]),
+            SettingsSearchEntry(id: "clipboard-autofocus", tab: .clipboard, title: "Auto-Focus Search", detail: "Focus search input automatically on open.", keywords: ["focus", "cursor", "typing"]),
+            SettingsSearchEntry(id: "clipboard-ocr-copy", tab: .clipboard, title: "OCR Auto-Copy", detail: "Auto-copy recognized text from images.", keywords: ["ocr", "text extraction", "scan text"]),
+            SettingsSearchEntry(id: "clipboard-shortcuts", tab: .clipboard, title: "Clipboard Shortcuts", detail: "Configure open/paste keyboard shortcuts.", keywords: ["hotkey", "shortcut", "keyboard"]),
+            SettingsSearchEntry(id: "clipboard-accessibility", tab: .clipboard, title: "Accessibility Paste Support", detail: "Grant permissions for reliable paste actions.", keywords: ["permissions", "accessibility", "paste"]),
+
+            SettingsSearchEntry(id: "hud-volume", tab: .huds, title: "Volume HUD", detail: "Enable custom volume indicator.", keywords: ["sound", "audio", "volume overlay"]),
+            SettingsSearchEntry(id: "hud-brightness", tab: .huds, title: "Brightness HUD", detail: "Enable custom brightness indicator.", keywords: ["display brightness", "screen brightness"]),
+            SettingsSearchEntry(id: "hud-battery", tab: .huds, title: "Battery HUD", detail: "Show battery state overlays.", keywords: ["power", "charging", "battery level"]),
+            SettingsSearchEntry(id: "hud-caps", tab: .huds, title: "Caps Lock HUD", detail: "Show caps lock status popup.", keywords: ["caps lock", "keyboard state"]),
+            SettingsSearchEntry(id: "hud-airpods", tab: .huds, title: "AirPods HUD", detail: "Show AirPods battery and connection HUD.", keywords: ["earbuds", "airpods battery", "headphones"]),
+            SettingsSearchEntry(id: "hud-dnd", tab: .huds, title: "Focus / DND HUD", detail: "Show focus mode changes in HUD.", keywords: ["do not disturb", "focus", "notifications"]),
+            SettingsSearchEntry(id: "hud-lockscreen-animation", tab: .huds, title: "Lock/Unlock Animation", detail: "Show lock and unlock animation.", keywords: ["lock screen", "lock", "unlock", "animation"]),
+            SettingsSearchEntry(id: "hud-notification", tab: .huds, title: "Notification HUD", detail: "Preview notification overlays.", keywords: ["notifications", "alerts", "preview"]),
+            SettingsSearchEntry(id: "hud-media", tab: .huds, title: "Media Player HUD", detail: "Enable now-playing controls and metadata.", keywords: ["media", "music", "player", "now playing"]),
+            SettingsSearchEntry(id: "hud-album-glow", tab: .huds, title: "Album Art Glow", detail: "Add glow effect around album artwork.", keywords: ["album art", "glow", "visual effect"]),
+            SettingsSearchEntry(id: "hud-real-visualizer", tab: .huds, title: "Real Audio Visualizer", detail: "Visualize live audio output.", keywords: ["visualizer", "spectrum", "audio analysis"]),
+            SettingsSearchEntry(id: "hud-gradient-visualizer", tab: .huds, title: "Gradient Visualizer", detail: "Use gradient-based audio visuals.", keywords: ["visualizer", "gradient", "animation"]),
+
+            SettingsSearchEntry(id: "extensions-main", tab: .extensions, title: "Extensions", detail: "Manage installed Droppy extensions.", keywords: ["plugins", "add-ons", "modules"]),
+            SettingsSearchEntry(id: "extensions-ai-bg", tab: .extensions, title: "AI Background Removal", detail: "Remove image backgrounds with local AI processing.", keywords: ["remove background", "cutout", "background eraser"]),
+            SettingsSearchEntry(id: "extensions-alfred", tab: .extensions, title: "Alfred Workflow", detail: "Integrate Droppy actions into Alfred.", keywords: ["alfred", "workflow", "launcher"]),
+            SettingsSearchEntry(id: "extensions-finder", tab: .extensions, title: "Finder Services", detail: "Integrate actions directly in Finder.", keywords: ["finder", "context menu", "services"]),
+            SettingsSearchEntry(id: "extensions-spotify", tab: .extensions, title: "Spotify Integration", detail: "Control Spotify playback from Droppy surfaces.", keywords: ["spotify", "music", "player", "media"]),
+            SettingsSearchEntry(id: "extensions-apple-music", tab: .extensions, title: "Apple Music Integration", detail: "Control Apple Music playback from Droppy.", keywords: ["apple music", "music", "player", "media"]),
+            SettingsSearchEntry(id: "extensions-element-capture", tab: .extensions, title: "Element Capture", detail: "Capture screen elements and regions.", keywords: ["screenshot", "capture", "selection"]),
+            SettingsSearchEntry(id: "extensions-window-snap", tab: .extensions, title: "Window Snap", detail: "Arrange windows with quick snapping tools.", keywords: ["window management", "snap", "layout"]),
+            SettingsSearchEntry(id: "extensions-voice", tab: .extensions, title: "Voice Transcribe", detail: "Record and transcribe voice quickly.", keywords: ["dictation", "transcription", "voice"]),
+            SettingsSearchEntry(id: "extensions-video-target-size", tab: .extensions, title: "Video Target Size", detail: "Compress videos to exact file sizes.", keywords: ["video compression", "ffmpeg", "target size"]),
+            SettingsSearchEntry(id: "extensions-termi-notch", tab: .extensions, title: "Termi-Notch", detail: "Run terminal actions from the notch experience.", keywords: ["terminal", "shell", "command line"]),
+            SettingsSearchEntry(id: "extensions-notchface", tab: .extensions, title: "Notchface", detail: "Live camera preview extension for the notch.", keywords: ["camera", "facecam", "webcam"]),
+            SettingsSearchEntry(id: "extensions-quickshare", tab: .extensions, title: "Droppy Quickshare", detail: "Instant file sharing via quick upload links.", keywords: ["quickshare", "share", "upload", "link"]),
+            SettingsSearchEntry(id: "extensions-notify-me", tab: .extensions, title: "Notify me!", detail: "Notification HUD extension.", keywords: ["notification", "alerts", "notify"]),
+            SettingsSearchEntry(id: "extensions-high-alert", tab: .extensions, title: "High Alert", detail: "Keep your Mac awake with quick controls.", keywords: ["caffeine", "prevent sleep", "keep awake"]),
+            SettingsSearchEntry(id: "extensions-pomodoro", tab: .extensions, title: "Pomodoro", detail: "Focus timer extension with session controls.", keywords: ["pomodoro", "focus timer", "work session", "break timer"]),
+            SettingsSearchEntry(id: "extensions-menu-bar-manager", tab: .extensions, title: "Menu Bar Manager", detail: "Organize, hide, and manage menu bar icons.", keywords: ["menu bar manager", "menubar manager", "menu bar", "status icons"]),
+            SettingsSearchEntry(id: "extensions-reminders", tab: .extensions, title: "Reminders", detail: "Tasks & Notes extension with Apple Reminders sync.", keywords: ["todo", "to do", "tasks", "apple reminders", "notes"]),
+            SettingsSearchEntry(id: "extensions-teleprompty", tab: .extensions, title: "Teleprompty", detail: "Floating teleprompter in the notch environment.", keywords: ["teleprompter", "prompt", "script"]),
+
+            SettingsSearchEntry(id: "quickshare-main", tab: .quickshare, title: "Droppy Quickshare", detail: "Configure fast sharing and uploads.", keywords: ["share", "upload", "quick share"]),
+            SettingsSearchEntry(id: "quickshare-manager", tab: .quickshare, title: "Quickshare Upload Manager", detail: "Manage recent shared files and links.", keywords: ["uploads", "history", "links"]),
+            SettingsSearchEntry(id: "quickshare-sidebar", tab: .quickshare, title: "Quickshare in Sidebar", detail: "Show or hide quickshare tab in settings sidebar.", keywords: ["sidebar", "visibility", "tab"]),
+
+            SettingsSearchEntry(id: "accessibility-main", tab: .accessibility, title: "Accessibility", detail: "Manage permission and usability settings.", keywords: ["permissions", "access", "assistive"]),
+            SettingsSearchEntry(id: "accessibility-haptics", tab: .accessibility, title: "Haptic Feedback", detail: "Enable subtle tactile feedback.", keywords: ["vibration", "feedback"]),
+            SettingsSearchEntry(id: "accessibility-indicators", tab: .accessibility, title: "Visual Indicators", detail: "Control accessibility indicator elements.", keywords: ["indicators", "visibility", "ui cues"]),
+            SettingsSearchEntry(id: "accessibility-prompts", tab: .accessibility, title: "Permission Prompts", detail: "Open and review required app permissions.", keywords: ["system settings", "grant access", "security"]),
+
+            SettingsSearchEntry(id: "about-updates", tab: .about, title: "Check for Updates", detail: "Find and install the latest Droppy version.", keywords: ["update", "new version", "release"]),
+            SettingsSearchEntry(id: "about-version", tab: .about, title: "Version Information", detail: "View build and version details.", keywords: ["version", "build", "about"]),
+            SettingsSearchEntry(id: "about-license", tab: .about, title: "License", detail: "Activate and manage your Droppy license.", keywords: ["activation", "pro", "subscription"]),
+            SettingsSearchEntry(id: "about-support", tab: .about, title: "Support", detail: "Open support and troubleshooting resources.", keywords: ["help", "docs", "contact"])
+        ]
+    }
+
+    private func normalizedSearchText(_ value: String) -> String {
+        value
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9\\s]", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func searchScore(for entry: SettingsSearchEntry, query: String, tokens: [String]) -> Int? {
+        let title = normalizedSearchText(entry.title)
+        let detail = normalizedSearchText(entry.detail)
+        let keywords = normalizedSearchText(entry.keywords.joined(separator: " "))
+        let tab = normalizedSearchText(entry.tab.title)
+        let haystack = "\(title) \(detail) \(keywords) \(tab)"
+        let words = Set(haystack.split(separator: " ").map(String.init))
+
+        let tokenMatches = tokens.allSatisfy { token in
+            haystack.contains(token) || words.contains(where: { $0.hasPrefix(token) })
+        }
+        guard tokenMatches else { return nil }
+
+        var score = 0
+        if title == query { score += 240 }
+        if title.hasPrefix(query) { score += 170 }
+        if title.contains(query) { score += 120 }
+        if keywords.contains(query) { score += 80 }
+        if detail.contains(query) { score += 60 }
+        if tab.contains(query) { score += 40 }
+
+        let titleWords = Set(title.split(separator: " ").map(String.init))
+        let keywordWords = Set(keywords.split(separator: " ").map(String.init))
+
+        for token in tokens {
+            if titleWords.contains(token) {
+                score += 45
+            } else if titleWords.contains(where: { $0.hasPrefix(token) }) {
+                score += 30
+            } else if keywordWords.contains(token) {
+                score += 25
+            } else if keywordWords.contains(where: { $0.hasPrefix(token) }) {
+                score += 15
+            } else if detail.contains(token) {
+                score += 10
+            }
+        }
+
+        return score
+    }
+
+    private var settingsSearchGroups: [SettingsSearchGroup] {
+        let query = normalizedSearchText(sidebarSearchQuery)
+        guard !query.isEmpty else { return [] }
+
+        let tokens = query.split(separator: " ").map(String.init)
+        let visibleIDs = Set(visibleTabs.map(\.id))
+        let scoredMatches = settingsSearchIndex.compactMap { entry -> SettingsSearchMatch? in
+            guard visibleIDs.contains(entry.tab.id) else { return nil }
+            guard let score = searchScore(for: entry, query: query, tokens: tokens) else { return nil }
+            return SettingsSearchMatch(entry: entry, score: score)
+        }
+        .sorted {
+            if $0.score != $1.score {
+                return $0.score > $1.score
+            }
+            return $0.entry.title.localizedCaseInsensitiveCompare($1.entry.title) == .orderedAscending
+        }
+
+        return visibleTabs.compactMap { tab in
+            let tabMatches = scoredMatches.filter { $0.entry.tab == tab }
+            guard !tabMatches.isEmpty else { return nil }
+            return SettingsSearchGroup(tab: tab, matches: Array(tabMatches.prefix(4)))
+        }
+    }
+
+    private var filteredVisibleTabs: [SettingsTab] {
+        let query = sidebarSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return visibleTabs }
+        return visibleTabs.filter { $0.title.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var settingsTitleBar: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Text("Settings")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.88))
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                Button {
+                    UpdateChecker.shared.checkAndNotify()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Updates")
+                    }
+                }
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
+                .help("Check for Updates")
+
+                Button {
+                    DonateWindowController.shared.showWindow()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Donate")
+                    }
+                }
+                .buttonStyle(DroppyAccentButtonStyle(color: Color(red: 0.95, green: 0.60, blue: 0.20), size: .small))
+                .help("Support Droppy")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            ZStack {
+                SettingsWindowDragView()
+            }
+        )
+    }
+
+    private var sidebarSearchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 14))
+
+            TextField("Search", text: $sidebarSearchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .onSubmit {
+                    if let topMatch = settingsSearchGroups.first?.matches.first {
+                        selectSettingsTab(topMatch.entry.tab)
+                    }
+                }
+
+            Button {
+                sidebarSearchQuery = ""
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(DroppyCircleButtonStyle(size: 20))
+            .opacity(sidebarSearchQuery.isEmpty ? 0 : 1)
+            .disabled(sidebarSearchQuery.isEmpty)
+        }
+        .droppyTextInputChrome(
+            cornerRadius: DroppyRadius.large,
+            horizontalPadding: 10,
+            verticalPadding: 8
+        )
+    }
+
+    private var trafficLightsRow: some View {
+        HStack(spacing: 8) {
+            trafficLightButton(
+                kind: .close,
+                color: Color(red: 1.0, green: 0.37, blue: 0.34),
+                symbol: "xmark",
+                action: closeSettingsWindow
+            )
+            trafficLightButton(
+                kind: .minimize,
+                color: Color(red: 1.0, green: 0.74, blue: 0.18),
+                symbol: "minus",
+                action: minimizeSettingsWindow
+            )
+            trafficLightButton(
+                kind: .zoom,
+                color: Color(red: 0.17, green: 0.82, blue: 0.33),
+                symbol: "plus",
+                action: zoomSettingsWindow
+            )
+            Spacer()
+        }
+        .onHover { hovering in
+            if !hovering {
+                hoveredTrafficLight = nil
+            }
+        }
+    }
+
+    private func trafficLightButton(
+        kind: TrafficLightKind,
+        color: Color,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(color)
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.black.opacity(0.2), lineWidth: 0.6)
+                    )
+
+                Image(systemName: symbol)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.black.opacity(0.65))
+                    .opacity(hoveredTrafficLight == nil ? 0 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredTrafficLight = hovering ? kind : nil
+        }
+    }
+
+    private var settingsLeftPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            trafficLightsRow
+                .padding(.top, 10)
+                .padding(.horizontal, 12)
+
+            sidebarSearchField
+                .padding(.horizontal, 10)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if sidebarSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ForEach(filteredVisibleTabs) { tab in
+                            if let header = tab.sectionHeader {
+                                SettingsSectionHeader(title: header)
+                            }
+
+                            SettingsSidebarItem(
+                                tab: tab,
+                                isSelected: sidebarSelectedTab == tab
+                            ) {
+                                selectSettingsTab(tab)
+                            }
+                        }
+                    } else if settingsSearchGroups.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("No Results")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.92))
+                            Text("Try searching a feature, option, or synonym.")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(AdaptiveColors.secondaryTextAuto)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.top, 14)
+                    } else {
+                        ForEach(settingsSearchGroups) { group in
+                            searchResultGroup(group)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 10)
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(width: 224)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .droppyTransparentFill(useTransparentBackground, fallback: AdaptiveColors.panelBackgroundAuto)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.18), lineWidth: 1)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+    }
+
+    private func closeSettingsWindow() {
+        SettingsWindowController.shared.close()
+    }
+
+    @ViewBuilder
+    private func searchResultGroup(_ group: SettingsSearchGroup) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SettingsSidebarItem(
+                tab: group.tab,
+                isSelected: sidebarSelectedTab == group.tab
+            ) {
+                selectSettingsTab(group.tab)
+            }
+
+            ForEach(group.matches) { match in
+                Button {
+                    selectSettingsTab(match.entry.tab)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(match.entry.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AdaptiveColors.primaryTextAuto.opacity(0.95))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(match.entry.detail)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(AdaptiveColors.secondaryTextAuto.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 46)
+                    .padding(.trailing, 10)
+                    .padding(.vertical, 6)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func selectSettingsTab(_ tab: SettingsTab) {
+        guard sidebarSelectedTab != tab else { return }
+
+        var instantTransaction = Transaction()
+        instantTransaction.animation = nil
+        withTransaction(instantTransaction) {
+            sidebarSelectedTab = tab
+        }
+
+        DispatchQueue.main.async {
+            guard selectedTab != tab else { return }
+            var contentTransaction = Transaction()
+            contentTransaction.animation = nil
+            withTransaction(contentTransaction) {
+                selectedTab = tab
+            }
+        }
+    }
+
+    private func minimizeSettingsWindow() {
+        NSApp.keyWindow?.miniaturize(nil)
+    }
+
+    private func zoomSettingsWindow() {
+        NSApp.keyWindow?.zoom(nil)
+    }
     
     private var settingsForm: some View {
         Form {
@@ -526,7 +1023,11 @@ struct SettingsView: View {
             case .huds:
                 hudSettings
             case .extensions:
-                integrationsSettings
+                Section {
+                    integrationsSettings
+                } header: {
+                    extensionsCategoryHeader
+                }
             case .quickshare:
                 quickshareSettings
             case .accessibility:
@@ -537,7 +1038,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .toggleStyle(CenteredSwitchToggleStyle())
-        .scrollContentBackground(useTransparentBackground ? .visible : .hidden)
+        .scrollContentBackground(.hidden)
         .background(
             GeometryReader { geo in
                 Color.clear
@@ -555,15 +1056,8 @@ struct SettingsView: View {
     private var topScrollScrim: some View {
         // Top blur scrim - only visible while scrolling
         VStack(spacing: 0) {
-            Group {
-                if useTransparentBackground {
-                    // withinWindow is required to blur content inside this window
-                    SettingsVisualEffectView(material: .headerView, blendingMode: .withinWindow)
-                } else {
-                    Rectangle()
-                        .fill(AdaptiveColors.panelBackgroundAuto)
-                }
-            }
+            // withinWindow is required to blur content inside this window
+            SettingsVisualEffectView(material: .headerView, blendingMode: .withinWindow)
             .frame(height: 68)
             .frame(maxWidth: .infinity)
             // Fade the scrim into the content
@@ -595,16 +1089,9 @@ struct SettingsView: View {
             
             // Blur/fade overlay at top - appears when scrolling
             VStack(spacing: 0) {
-                Group {
-                    if useTransparentBackground {
-                        // Keep the root glass surface readable without stacking another blur pass.
-                        Rectangle()
-                            .fill(AdaptiveColors.overlayAuto(0.06))
-                    } else {
-                        // Match panel tone in opaque mode to avoid a dark strip in light mode
-                        AdaptiveColors.panelBackgroundAuto
-                    }
-                }
+                // Keep the root glass surface readable without stacking another blur pass.
+                Rectangle()
+                    .fill(AdaptiveColors.overlayAuto(0.06))
                 .frame(height: 80)
                 .mask(
                     LinearGradient(
@@ -619,7 +1106,6 @@ struct SettingsView: View {
                 )
                 Spacer()
             }
-            .ignoresSafeArea()
             .allowsHitTesting(false)
             // Only show while actually scrolling to avoid static top-edge artifacts.
             .opacity(scrollOffset < -6 ? 1 : 0)
@@ -628,25 +1114,35 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ZStack {
-            NavigationSplitView {
-                SettingsSidebar(selectedTab: $selectedTab)
-                    .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
-            } detail: {
+        HStack(spacing: 0) {
+            settingsLeftPanel
+
+            VStack(spacing: 0) {
+                settingsTitleBar
                 settingsDetail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 12)
+                    .padding(.leading, 0)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 12)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .droppyTransparentBackground(useTransparentBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AdaptiveColors.overlayAuto(0.16), lineWidth: 1)
+        )
         .onTapGesture {
             isHistoryLimitEditing = false
         }
         // Apply blue accent color for toggles
         .tint(.droppyAccent)
-        // Apply transparent material or solid black
-        .background(useTransparentBackground ? AnyShapeStyle(.ultraThinMaterial) : AdaptiveColors.panelBackgroundOpaqueStyle)
         // CRITICAL: Always use dark color scheme to ensure text is readable
-        // In both solid black and transparent material modes, we need light text
+        // In both solid black and Liquid material modes, we need light text
         
-        // Force complete view rebuild when transparency mode changes
+        // Force complete view rebuild when Liquid mode changes
         // This fixes the issue where background doesn't update immediately
         .id(useTransparentBackground)
         // Handle deep links to open specific extensions
@@ -658,6 +1154,7 @@ struct SettingsView: View {
             loadBasketSwitcherShortcut()
             // Check if there's a pending tab to open (e.g., from menu bar "Manage Uploads")
             if let pendingTab = SettingsWindowController.shared.pendingTabToOpen {
+                sidebarSelectedTab = pendingTab
                 selectedTab = pendingTab
                 SettingsWindowController.shared.clearPendingTab()
                 // Resize window for this tab
@@ -665,29 +1162,32 @@ struct SettingsView: View {
             }
             // Check if there's a pending extension from a deep link
             else if let pending = SettingsWindowController.shared.pendingExtensionToOpen {
+                sidebarSelectedTab = .extensions
                 selectedTab = .extensions
                 SettingsWindowController.shared.clearPendingExtension()
                 // Resize window for extensions tab
                 SettingsWindowController.shared.resizeForTab(isExtensions: true)
-                // Delay to allow card views to fully initialize before presenting sheet
+                // Delay to allow extensions tab content to initialize before opening panel
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    deepLinkedExtension = pending
+                    presentExtensionDetailPanel(for: pending)
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openExtensionFromDeepLink)) { notification in
             // Always navigate to Extensions tab
+            sidebarSelectedTab = .extensions
             selectedTab = .extensions
-            // If a specific extension type was provided, open its sheet
+            // If a specific extension type was provided, open its panel
             if let extensionType = notification.object as? ExtensionType {
                 // Small delay to allow tab switch animation
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    deepLinkedExtension = extensionType
+                    presentExtensionDetailPanel(for: extensionType)
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSmartExportSettings)) { _ in
             // Navigate to General tab where Smart Export is located
+            sidebarSelectedTab = .general
             selectedTab = .general
         }
         .onChange(of: showIdleNotchOnExternalDisplays) { _, newValue in
@@ -710,6 +1210,13 @@ struct SettingsView: View {
             }
         }
         .onChange(of: selectedTab) { _, newTab in
+            if sidebarSelectedTab != newTab {
+                var transaction = Transaction()
+                transaction.animation = nil
+                withTransaction(transaction) {
+                    sidebarSelectedTab = newTab
+                }
+            }
             // Resize window when switching to/from extensions tab
             // Defer to next runloop to avoid NSHostingView reentrant layout
             DispatchQueue.main.async {
@@ -797,8 +1304,8 @@ struct SettingsView: View {
             Section {
                 Toggle(isOn: $useTransparentBackground) {
                     VStack(alignment: .leading) {
-                        Text("Transparent Background")
-                        Text("Use glass effect for windows")
+                        Text("Liquid mode")
+                        Text("Use Liquid Glass effect for windows")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -1662,8 +2169,8 @@ struct SettingsView: View {
             Section {
                 Toggle(isOn: $useTransparentBackground) {
                     VStack(alignment: .leading) {
-                        Text("Transparent Background")
-                        Text("Use glass effect for windows")
+                        Text("Liquid mode")
+                        Text("Use Liquid Glass effect for windows")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -2467,29 +2974,6 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Lock Screen
-                HStack(spacing: 12) {
-                    LockScreenHUDIcon()
-                    
-                    Toggle(isOn: $enableLockScreenHUD) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Lock Screen")
-                            Text("Show lock/unlock animation")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .onChange(of: enableLockScreenHUD) { _, newValue in
-                    if newValue {
-                        NotchWindowController.shared.setupNotchWindow()
-                        LockScreenManager.shared.enable()
-                    } else {
-                        LockScreenManager.shared.disable()
-                        closeNotchWindowIfUnused()
-                    }
-                }
-                
                 // Droppy Updates
                 HStack(spacing: 12) {
                     UpdateHUDIcon()
@@ -2514,7 +2998,7 @@ struct SettingsView: View {
                 Text("System")
             }
             
-            // MARK: Extensions (Notify Me, Terminal Notch, Caffeine, Camera)
+            // MARK: Extensions (Notify Me, Terminal Notch, Caffeine, Pomodoro, Camera)
             Section {
                 // Notify me! (Notification HUD Extension)
                 HStack(spacing: 12) {
@@ -2723,6 +3207,68 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
 
+                // Pomodoro Extension
+                if isPomodoroInstalled {
+                    HStack(spacing: 12) {
+                        ExtensionIconView<PomodoroExtension>(definition: PomodoroExtension.self, size: 40)
+                            .opacity(enablePomodoro ? 1.0 : 0.5)
+
+                        Toggle(isOn: $enablePomodoro) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("Pomodoro")
+                                    if PomodoroManager.shared.isActive {
+                                        Text(PomodoroManager.shared.formattedRemaining)
+                                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(.orange)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                                    }
+                                }
+                                Text("Stay focused with timed sessions")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if enablePomodoro {
+                        Toggle(isOn: $pomodoroInstantlyExpandShelfOnHover) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Instant Shelf Expand on Hover")
+                                Text("Skip the Pomodoro mini timer on hover and open the shelf directly")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } else {
+                    // Extension is not installed - clickable card to open Extension Store
+                    Button {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("OpenExtensionStore"),
+                            object: nil,
+                            userInfo: ["extension": PomodoroExtension.id]
+                        )
+                    } label: {
+                        HStack(spacing: 12) {
+                            ExtensionIconView<PomodoroExtension>(definition: PomodoroExtension.self, size: 40)
+                                .opacity(0.5)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Pomodoro")
+                                    .foregroundStyle(.secondary)
+                                Text("Enable in Extension Store")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 // Notchface Extension
                 if isCameraInstalled {
                     HStack(spacing: 12) {
@@ -2856,8 +3402,31 @@ struct SettingsView: View {
                 Text("Audio")
             }
             
-            // MARK: Screen State (Focus Mode only - Lock Screen moved to dedicated tab)
+            // MARK: Screen State
             Section {
+                // Lock/Unlock Animation
+                HStack(spacing: 12) {
+                    LockScreenHUDIcon()
+
+                    Toggle(isOn: $enableLockScreenHUD) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Lock/Unlock Animation")
+                            Text("Show lock and unlock animation")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .onChange(of: enableLockScreenHUD) { _, newValue in
+                    if newValue {
+                        NotchWindowController.shared.setupNotchWindow()
+                    }
+                    refreshLockScreenFeatureState()
+                    if !newValue {
+                        closeNotchWindowIfUnused()
+                    }
+                }
+
                 // Focus Mode
                 HStack(spacing: 12) {
                     FocusModeHUDIcon()
@@ -2906,7 +3475,7 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } header: {
-                Text("Focus")
+                Text("Screen State")
             }
         }
     }
@@ -2945,61 +3514,85 @@ struct SettingsView: View {
             quickActionsCloudProvider = QuickActionsCloudProvider.droppyQuickshare.rawValue
         }
     }
-    
+
     private var integrationsSettings: some View {
-        ExtensionsShopView()
-            .sheet(item: $deepLinkedExtension, onDismiss: {
-                SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-            }) { extensionType in
-                // AI Background Removal has its own view
-                if extensionType == .aiBackgroundRemoval {
-                    AIInstallView()
-                        .presentationBackground(.clear)
-                } else if extensionType == .windowSnap {
-                    // Window Snap has its own detailed configuration view
-                    WindowSnapInfoView(installCount: nil, rating: nil)
-                        .presentationBackground(.clear)
-                } else if extensionType == .elementCapture {
-                    // Element Capture has its own detailed configuration view
-                    ElementCaptureInfoView(currentShortcut: .constant(nil), installCount: nil, rating: nil)
-                        .presentationBackground(.clear)
-                } else if extensionType == .voiceTranscribe {
-                    // Voice Transcribe has its own detailed configuration view
-                    VoiceTranscribeInfoView(installCount: nil, rating: nil)
-                        .presentationBackground(.clear)
-                } else if extensionType == .ffmpegVideoCompression {
-                    // FFmpeg Video Compression has its own install view
-                    FFmpegInstallView(installCount: nil, rating: nil)
-                        .presentationBackground(.clear)
-                } else if extensionType == .camera {
-                    CameraInfoView(installCount: nil, rating: nil)
-                        .presentationBackground(.clear)
-                } else if extensionType == .menuBarManager {
-                    // Menu Bar Manager has its own configuration view
-                    MenuBarManagerInfoView(installCount: nil, rating: nil)
-                        .presentationBackground(.clear)
-                } else {
-                    // All other extensions use ExtensionInfoView
-                    ExtensionInfoView(extensionType: extensionType) {
-                        // Handle action based on type
-                        switch extensionType {
-                        case .alfred:
-                            if let workflowPath = Bundle.main.path(forResource: "Droppy", ofType: "alfredworkflow") {
-                                NSWorkspace.shared.open(URL(fileURLWithPath: workflowPath))
+        ExtensionsShopView(selectedCategory: extensionsSelectedCategory)
+    }
+
+    private var extensionsCategoryHeader: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(ExtensionCategory.allCases.filter { $0 != .all }) { category in
+                    CategoryPillButton(
+                        category: category,
+                        isSelected: extensionsSelectedCategory == category,
+                        namespace: extensionsCategoryAnimation
+                    ) {
+                        withAnimation(DroppyAnimation.state) {
+                            if extensionsSelectedCategory == category {
+                                extensionsSelectedCategory = nil
+                            } else {
+                                extensionsSelectedCategory = category
                             }
-                        case .finder, .finderServices:
-                            _ = openFinderServicesSettings()
-                        case .spotify:
-                            SpotifyAuthManager.shared.startAuthentication()
-                        case .appleMusic:
-                            AppleMusicController.shared.refreshState()
-                        case .elementCapture, .aiBackgroundRemoval, .windowSnap, .voiceTranscribe, .ffmpegVideoCompression, .terminalNotch, .camera, .quickshare, .notificationHUD, .caffeine, .menuBarManager, .todo, .teleprompty:
-                            break // No action needed - these have their own configuration UI
                         }
                     }
-                    .presentationBackground(.clear)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func presentExtensionDetailPanel(for extensionType: ExtensionType) {
+        ExtensionDetailWindowController.shared.present(
+            id: "settings-extension-\(extensionType.rawValue)",
+            parent: SettingsWindowController.shared.activeSettingsWindow
+        ) {
+            extensionSheetContent(for: extensionType)
+        }
+    }
+
+    @ViewBuilder
+    private func extensionSheetContent(for extensionType: ExtensionType) -> some View {
+        // AI Background Removal has its own view
+        if extensionType == .aiBackgroundRemoval {
+            AIInstallView()
+        } else if extensionType == .windowSnap {
+            // Window Snap has its own detailed configuration view
+            WindowSnapInfoView(installCount: nil)
+        } else if extensionType == .elementCapture {
+            // Element Capture has its own detailed configuration view
+            ElementCaptureInfoView(currentShortcut: .constant(nil), installCount: nil)
+        } else if extensionType == .voiceTranscribe {
+            // Voice Transcribe has its own detailed configuration view
+            VoiceTranscribeInfoView(installCount: nil)
+        } else if extensionType == .ffmpegVideoCompression {
+            // FFmpeg Video Compression has its own install view
+            FFmpegInstallView(installCount: nil)
+        } else if extensionType == .camera {
+            CameraInfoView(installCount: nil)
+        } else if extensionType == .menuBarManager {
+            // Menu Bar Manager has its own configuration view
+            MenuBarManagerInfoView(installCount: nil)
+        } else {
+            // All other extensions use ExtensionInfoView
+            ExtensionInfoView(extensionType: extensionType) {
+                // Handle action based on type
+                switch extensionType {
+                case .alfred:
+                    if let workflowPath = Bundle.main.path(forResource: "Droppy", ofType: "alfredworkflow") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: workflowPath))
+                    }
+                case .finder, .finderServices:
+                    _ = openFinderServicesSettings()
+                case .spotify:
+                    SpotifyAuthManager.shared.startAuthentication()
+                case .appleMusic:
+                    AppleMusicController.shared.refreshState()
+                case .elementCapture, .aiBackgroundRemoval, .windowSnap, .voiceTranscribe, .ffmpegVideoCompression, .terminalNotch, .camera, .quickshare, .notificationHUD, .caffeine, .menuBarManager, .pomodoro, .todo, .teleprompty:
+                    break // No action needed - these have their own configuration UI
+                }
+            }
+        }
     }
 
     
@@ -3017,8 +3610,8 @@ struct SettingsView: View {
             Section {
                 Toggle(isOn: $useTransparentBackground) {
                     VStack(alignment: .leading) {
-                        Text("Transparent Background")
-                        Text("Use glass effect for windows (not shelf)")
+                        Text("Liquid mode")
+                        Text("Use Liquid Glass effect for windows (not shelf)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -3268,7 +3861,7 @@ struct SettingsView: View {
                             Text("Open")
                         }
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 }
             } header: {
                 Text("About")
@@ -3938,6 +4531,23 @@ struct SettingsView: View {
 }
 
 // MARK: - Visual Effect View (Settings)
+
+private struct SettingsWindowDragView: NSViewRepresentable {
+    func makeNSView(context: Context) -> SettingsWindowDraggableView {
+        SettingsWindowDraggableView()
+    }
+
+    func updateNSView(_ nsView: SettingsWindowDraggableView, context: Context) {}
+}
+
+private final class SettingsWindowDraggableView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        window.performDrag(with: event)
+    }
+}
 
 private struct SettingsVisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
@@ -4634,7 +5244,7 @@ struct ProtectOriginalsWarningSheet: View {
                 } label: {
                     Text("Keep Protection")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .scaleEffect(isHoveringConfirm ? 1.05 : 1.0)
                 .onHover { isHoveringConfirm = $0 }
                 .animation(DroppyAnimation.hover, value: isHoveringConfirm)
@@ -4764,7 +5374,7 @@ struct StabilizeMediaInfoSheet: View {
                 } label: {
                     Text("Got It")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
@@ -4891,7 +5501,7 @@ struct AutoFocusSearchInfoSheet: View {
                 } label: {
                     Text("Got It")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
@@ -4982,7 +5592,7 @@ struct FullDiskAccessSheet: View {
                 } label: {
                     Text("Open Settings")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
@@ -5095,7 +5705,7 @@ struct MenuBarHiddenSheet: View {
                 } label: {
                     Text("Hide Icon")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
@@ -5423,7 +6033,7 @@ struct QuickActionsInfoSheet: View {
                 } label: {
                     Text("Got It")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }

@@ -17,8 +17,13 @@ final class ExternalMouseMonitor: ObservableObject {
     private init() {
         startPolling()
     }
+    
+    deinit {
+        stopPolling()
+    }
 
     private func startPolling() {
+        stopPolling()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .seconds(5), leeway: .seconds(1))
         timer.setEventHandler { [weak self] in
@@ -26,6 +31,12 @@ final class ExternalMouseMonitor: ObservableObject {
         }
         pollTimer = timer
         timer.resume()
+    }
+    
+    private func stopPolling() {
+        pollTimer?.setEventHandler {}
+        pollTimer?.cancel()
+        pollTimer = nil
     }
 
     private func refreshState() {

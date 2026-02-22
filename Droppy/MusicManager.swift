@@ -455,15 +455,43 @@ final class MusicManager: ObservableObject {
 
     /// Check if a bundle identifier is a browser
     private func isBrowserBundle(_ bundleId: String) -> Bool {
-        let browserBundles = [
+        let explicitBrowserBundleIDs: Set<String> = [
+            // Safari
             "com.apple.Safari",
+            "com.apple.SafariTechnologyPreview",
+            // Chromium family
             "com.google.Chrome",
-            "company.thebrowser.Browser", // Arc
-            "org.mozilla.firefox",
+            "com.google.Chrome.beta",
+            "com.google.Chrome.canary",
+            "org.chromium.Chromium",
             "com.brave.Browser",
             "com.microsoft.edgemac",
+            "com.operasoftware.Opera",
+            "com.operasoftware.OperaGX",
+            "com.vivaldi.Vivaldi",
+            "com.DuckDuckGo.desktop.browser",
+            // Arc/The Browser Company
+            "company.thebrowser.Browser",
+            // Firefox family
+            "org.mozilla.firefox",
+            "org.mozilla.firefoxdeveloperedition",
+            "org.mozilla.nightly",
+            "app.zen-browser.zen",
+            // Other known browsers
+            "com.kagi.kagimacOS.Orion",
         ]
-        return browserBundles.contains(bundleId) || bundleId.lowercased().contains("browser")
+
+        if explicitBrowserBundleIDs.contains(bundleId) {
+            return true
+        }
+
+        let tokenHaystack = "\(bundleId) \(getAppName(from: bundleId) ?? "")".lowercased()
+        let browserTokens = [
+            "browser", "chrome", "chromium", "safari", "firefox", "duckduckgo",
+            "arc", "brave", "edge", "opera", "vivaldi", "orion",
+            "dia", "atlas", "comet", "zen",
+        ]
+        return browserTokens.contains(where: { tokenHaystack.contains($0) })
     }
 
     /// Activate a browser tab matching the current song and send a key
@@ -931,11 +959,18 @@ final class MusicManager: ObservableObject {
     private var outputPipe: Pipe?
     private var hasReceivedStreamUpdate: Bool = false
     private var fallbackTimingTimer: Timer?
+    private var fallbackTimingTimerInterval: TimeInterval?
     private var isFallbackFetchInFlight = false
     private var lastFallbackFetchAt: Date = .distantPast
+    private var isBrowserTabProbeInFlight = false
+    private var lastBrowserTabProbeAt: Date = .distantPast
     private let fallbackTimingSyncInterval: TimeInterval = 1.0
     private let fallbackStaleThreshold: TimeInterval = 1.25
     private let fallbackFetchCooldown: TimeInterval = 0.75
+    private let browserFallbackTimingSyncInterval: TimeInterval = 0.25
+    private let browserFallbackStaleThreshold: TimeInterval = 0.3
+    private let browserFallbackFetchCooldown: TimeInterval = 0.2
+    private let browserTabProbeCooldown: TimeInterval = 0.3
     private var spotifyPausedSourceReacquireTimer: Timer?
     private var spotifyPausedSourceReacquireDeadline: Date = .distantPast
     private var isSpotifyPausedSourceReacquireFetchInFlight = false
@@ -943,6 +978,7 @@ final class MusicManager: ObservableObject {
     private let spotifyPausedSourceReacquireWindow: TimeInterval = 6.0
     private var transientIdleGraceDeadline: Date = .distantPast
     private let transientIdleGraceWindow: TimeInterval = 3.0
+    private var transientIdleClearWorkItem: DispatchWorkItem?
 
     // Defer high-frequency media updates while NSMenu is actively tracking.
     // This keeps status-item menu highlight responsive.
@@ -1042,6 +1078,8 @@ final class MusicManager: ObservableObject {
 
     /// Clear the media display (used when filtered source app terminates)
     private func clearMediaDisplay() {
+        transientIdleClearWorkItem?.cancel()
+        transientIdleClearWorkItem = nil
         stopSpotifyPausedSourceReacquire()
         songTitle = ""
         artistName = ""
@@ -1065,6 +1103,25 @@ final class MusicManager: ObservableObject {
         transientIdleGraceDeadline = .distantPast
         stopAppleMusicMetadataSyncTimer()
         stopFallbackTimingSync()
+    }
+
+    private func scheduleTransientIdleClear() {
+        transientIdleClearWorkItem?.cancel()
+        guard transientIdleGraceDeadline != .distantPast else { return }
+
+        let delay = max(0, transientIdleGraceDeadline.timeIntervalSinceNow)
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.transientIdleGraceDeadline != .distantPast else { return }
+            guard Date() >= self.transientIdleGraceDeadline else { return }
+
+            // If no recovery update arrived within the grace window, treat the source as ended.
+            self.clearMediaDisplay()
+            self.updateFallbackTimingSyncState()
+        }
+
+        transientIdleClearWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     
     /// Called when screen wakes from sleep - restart the adapter to prevent frozen HUD
@@ -1359,11 +1416,26 @@ final class MusicManager: ObservableObject {
         return !isAppleMusicSource
     }
 
+    private var effectiveFallbackTimingSyncInterval: TimeInterval {
+        isBrowserSource ? browserFallbackTimingSyncInterval : fallbackTimingSyncInterval
+    }
+
+    private var effectiveFallbackStaleThreshold: TimeInterval {
+        isBrowserSource ? browserFallbackStaleThreshold : fallbackStaleThreshold
+    }
+
+    private var effectiveFallbackFetchCooldown: TimeInterval {
+        isBrowserSource ? browserFallbackFetchCooldown : fallbackFetchCooldown
+    }
+
     private func stopFallbackTimingSync() {
         fallbackTimingTimer?.invalidate()
         fallbackTimingTimer = nil
+        fallbackTimingTimerInterval = nil
         isFallbackFetchInFlight = false
         lastFallbackFetchAt = .distantPast
+        isBrowserTabProbeInFlight = false
+        lastBrowserTabProbeAt = .distantPast
     }
 
     private func requestTimingResyncIfNeeded(reason: String, force: Bool = false) {
@@ -1373,9 +1445,11 @@ final class MusicManager: ObservableObject {
 
         let now = Date()
         if !force {
-            guard now.timeIntervalSince(lastFallbackFetchAt) >= fallbackFetchCooldown else { return }
-            guard now.timeIntervalSince(timestampDate) > fallbackStaleThreshold else { return }
+            guard now.timeIntervalSince(lastFallbackFetchAt) >= effectiveFallbackFetchCooldown else { return }
+            guard now.timeIntervalSince(timestampDate) > effectiveFallbackStaleThreshold else { return }
         }
+
+        probeBrowserTabPresenceIfNeeded(referenceNow: now)
 
         if isSpotifySource {
             SpotifyController.shared.isSpotifyPlaying { [weak self] isSpotifyPlaying in
@@ -1395,14 +1469,115 @@ final class MusicManager: ObservableObject {
         }
     }
 
+    private func probeBrowserTabPresenceIfNeeded(referenceNow now: Date = Date()) {
+        guard isBrowserSource, isPlaying else { return }
+        guard !isBrowserTabProbeInFlight else { return }
+        guard now.timeIntervalSince(lastBrowserTabProbeAt) >= browserTabProbeCooldown else { return }
+        guard let bundleId = bundleIdentifier else { return }
+
+        let titleToken = songTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let artistToken = artistName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !titleToken.isEmpty || !artistToken.isEmpty else { return }
+
+        lastBrowserTabProbeAt = now
+        isBrowserTabProbeInFlight = true
+        checkBrowserTabPresence(bundleId: bundleId, titleToken: titleToken, artistToken: artistToken) { [weak self] hasMatchingTab in
+            guard let self else { return }
+            self.isBrowserTabProbeInFlight = false
+
+            guard hasMatchingTab == false else { return }
+            guard self.bundleIdentifier == bundleId else { return }
+            guard self.isBrowserSource && self.isPlaying else { return }
+
+            // Browser media tab disappeared while MediaRemote still reports playing.
+            self.clearMediaDisplay()
+        }
+    }
+
+    private func checkBrowserTabPresence(
+        bundleId: String,
+        titleToken: String,
+        artistToken: String,
+        completion: @escaping (Bool?) -> Void
+    ) {
+        let escapedTitle = escapeForAppleScript(titleToken)
+        let escapedArtist = escapeForAppleScript(artistToken)
+        let escapedBundleId = escapeForAppleScript(bundleId)
+        let script = """
+        tell application id "\(escapedBundleId)"
+            repeat with w in windows
+                try
+                    repeat with t in tabs of w
+                        set tabTitle to ""
+                        try
+                            set tabTitle to title of t
+                        on error
+                            try
+                                set tabTitle to name of t
+                            end try
+                        end try
+                        if "\(escapedTitle)" is not "" and tabTitle contains "\(escapedTitle)" then
+                            return "found"
+                        end if
+                        if "\(escapedArtist)" is not "" and tabTitle contains "\(escapedArtist)" then
+                            return "found"
+                        end if
+                    end repeat
+                on error
+                    -- Some browsers don't expose tabs through AppleScript; use window title fallback.
+                    set winTitle to ""
+                    try
+                        set winTitle to name of w
+                    end try
+                    if "\(escapedTitle)" is not "" and winTitle contains "\(escapedTitle)" then
+                        return "found"
+                    end if
+                    if "\(escapedArtist)" is not "" and winTitle contains "\(escapedArtist)" then
+                        return "found"
+                    end if
+                end try
+            end repeat
+        end tell
+        return "missing"
+        """
+
+        appleScriptQueue.async {
+            let rawResult: String? = AppleScriptRuntime.execute {
+                var error: NSDictionary?
+                guard let appleScript = NSAppleScript(source: script) else {
+                    return nil
+                }
+                let descriptor = appleScript.executeAndReturnError(&error)
+                if error != nil {
+                    return nil
+                }
+                return descriptor.stringValue
+            }
+
+            let hasTab: Bool?
+            switch rawResult {
+            case "found": hasTab = true
+            case "missing": hasTab = false
+            default: hasTab = nil
+            }
+
+            DispatchQueue.main.async {
+                completion(hasTab)
+            }
+        }
+    }
+
     private func updateFallbackTimingSyncState() {
         if shouldRunFallbackTimingSync {
-            if fallbackTimingTimer == nil {
-                let timer = Timer.scheduledTimer(withTimeInterval: fallbackTimingSyncInterval, repeats: true) { [weak self] _ in
+            let desiredInterval = effectiveFallbackTimingSyncInterval
+            if fallbackTimingTimer == nil || fallbackTimingTimerInterval != desiredInterval {
+                fallbackTimingTimer?.invalidate()
+                let timer = Timer.scheduledTimer(withTimeInterval: desiredInterval, repeats: true) { [weak self] _ in
                     self?.requestTimingResyncIfNeeded(reason: "fallback_timer")
                 }
                 RunLoop.main.add(timer, forMode: .common)
                 fallbackTimingTimer = timer
+                fallbackTimingTimerInterval = desiredInterval
             }
             requestTimingResyncIfNeeded(reason: "fallback_start")
         } else {
@@ -1545,11 +1720,17 @@ final class MusicManager: ObservableObject {
             rawElapsed == nil &&
             !payload.isPlaying &&
             (payload.playbackRate ?? 0) <= 0
+        let shouldApplyTransientIdleGrace: Bool = {
+            guard let sourceBundle = incomingBundleFromPayload ?? previousBundleIdentifier else { return true }
+            // Browser tab-close should clear immediately; grace is for non-browser transient churn.
+            return !isBrowserBundle(sourceBundle)
+        }()
 
-        if payloadLooksIdle && hasVisibleTrackContext {
+        if payloadLooksIdle && hasVisibleTrackContext && shouldApplyTransientIdleGrace {
             let now = Date()
             if transientIdleGraceDeadline == .distantPast {
                 transientIdleGraceDeadline = now.addingTimeInterval(transientIdleGraceWindow)
+                scheduleTransientIdleClear()
                 musicManagerLog("MusicManager: Entering transient idle grace window")
                 return
             }
@@ -1559,6 +1740,8 @@ final class MusicManager: ObservableObject {
             }
         } else {
             transientIdleGraceDeadline = .distantPast
+            transientIdleClearWorkItem?.cancel()
+            transientIdleClearWorkItem = nil
         }
 
         // Source switched (or current source went idle) but payload has no active media:

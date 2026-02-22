@@ -32,6 +32,7 @@ class AudioSpectrum: NSView {
     private let barWidth: CGFloat
     private let spacing: CGFloat
     private let totalHeight: CGFloat
+    private let pausedBarScale: CGFloat = 0.2
     
     init(barCount: Int = 5, barWidth: CGFloat = 3, spacing: CGFloat = 2, height: CGFloat = 14, color: NSColor = .white) {
         self.barCount = barCount
@@ -86,9 +87,12 @@ class AudioSpectrum: NSView {
             gradientLayer.cornerRadius = barWidth
             gradientLayer.name = "barGradient"  // Tag for finding later
             barLayer.addSublayer(gradientLayer)
+
+            // Ensure a newly-mounted paused visualizer never renders at full-height bars.
+            barLayer.transform = CATransform3DMakeScale(1, pausedBarScale, 1)
             
             barLayers.append(barLayer)
-            barScales.append(0.35)
+            barScales.append(pausedBarScale)
             layer?.addSublayer(barLayer)
         }
     }
@@ -207,7 +211,7 @@ class AudioSpectrum: NSView {
         // Animate bars smoothly back to small/paused state
         for (i, barLayer) in barLayers.enumerated() {
             let currentScale = barScales[i]
-            let targetScale: CGFloat = 0.2 // Small bars when paused
+            let targetScale = pausedBarScale // Small bars when paused
             
             barScales[i] = targetScale
             
@@ -517,4 +521,3 @@ extension NSImage {
         .padding()
         .background(Color.black)
 }
-

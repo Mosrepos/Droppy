@@ -15,6 +15,7 @@ struct DisableExtensionButton: View {
     @State private var isHovering = false
     @State private var isProcessing = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     
     private var isDisabled: Bool {
         extensionType.isRemoved
@@ -113,6 +114,8 @@ struct DisableExtensionButton: View {
             return "This will disable Caffeine and allow your Mac to sleep normally. You can enable it again later."
         case .menuBarManager:
             return "This will restore all hidden menu bar items and disable the manager. You can enable it again later."
+        case .pomodoro:
+            return "This will disable Pomodoro and hide its focus timer controls. Your timer preferences stay saved."
         case .todo:
             return "This will disable the Todo extension. Your tasks will be preserved and you can enable it again later."
         case .teleprompty:
@@ -142,7 +145,7 @@ struct DisableExtensionButton: View {
             onStateChanged?()
             
             // Dismiss the sheet
-            dismiss()
+            closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
         }
     }
     private func enableExtension() {
@@ -193,7 +196,7 @@ struct DisableExtensionButton: View {
             onStateChanged?()
             
             // Dismiss the sheet
-            dismiss()
+            closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
         }
     }
 }

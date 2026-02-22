@@ -550,10 +550,7 @@ private struct MenuBarFloatingBarView: View {
                     .scaledToFit()
             }
         } else {
-            Image(systemName: "app.dashed")
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(AdaptiveColors.primaryTextAuto)
+            Color.clear
         }
     }
 

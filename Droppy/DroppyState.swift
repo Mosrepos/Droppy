@@ -416,6 +416,15 @@ final class DroppyState {
         let caffeineInstalled = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled)
         let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
         let caffeineButtonVisible = caffeineInstalled && caffeineEnabled
+        let pomodoroInstalled = UserDefaults.standard.preference(
+            AppPreferenceKey.pomodoroInstalled,
+            default: PreferenceDefault.pomodoroInstalled
+        )
+        let pomodoroEnabled = UserDefaults.standard.preference(
+            AppPreferenceKey.pomodoroEnabled,
+            default: PreferenceDefault.pomodoroEnabled
+        )
+        let pomodoroButtonVisible = pomodoroInstalled && pomodoroEnabled
         let cameraInstalled = UserDefaults.standard.preference(AppPreferenceKey.cameraInstalled, default: PreferenceDefault.cameraInstalled)
         let cameraEnabled = UserDefaults.standard.preference(AppPreferenceKey.cameraEnabled, default: PreferenceDefault.cameraEnabled)
         let cameraButtonVisible = cameraInstalled && cameraEnabled && !ExtensionType.camera.isRemoved
@@ -423,7 +432,7 @@ final class DroppyState {
         let telepromptyEnabled = UserDefaults.standard.preference(AppPreferenceKey.telepromptyEnabled, default: PreferenceDefault.telepromptyEnabled)
         let telepromptyButtonVisible = telepromptyInstalled && telepromptyEnabled && !ExtensionType.teleprompty.isRemoved
         let isDragging = DragMonitor.shared.isDragging
-        let hasFloatingButtons = terminalButtonVisible || !autoCollapseEnabled || isDragging || caffeineButtonVisible || cameraButtonVisible || telepromptyButtonVisible
+        let hasFloatingButtons = terminalButtonVisible || !autoCollapseEnabled || isDragging || caffeineButtonVisible || pomodoroButtonVisible || cameraButtonVisible || telepromptyButtonVisible
         
         if hasFloatingButtons {
             // Reserve space for offset + button/bar size + hover/animation headroom.

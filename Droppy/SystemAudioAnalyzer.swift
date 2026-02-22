@@ -161,9 +161,8 @@ final class SystemAudioAnalyzer: NSObject, ObservableObject {
             
             // Create delegate for stream lifecycle
             let delegate = StreamDelegate { [weak self] in
-                guard let self = self else { return }
-                Task { @MainActor [self] in
-                    self.handleStreamError()
+                Task { @MainActor [weak self] in
+                    self?.handleStreamError()
                 }
             }
             
@@ -172,9 +171,8 @@ final class SystemAudioAnalyzer: NSObject, ObservableObject {
             
             // Create audio output handler
             let audioOutput = AudioStreamOutput { [weak self] level in
-                guard let self = self else { return }
-                Task { @MainActor [self] in
-                    self.updateLevel(level)
+                Task { @MainActor [weak self] in
+                    self?.updateLevel(level)
                 }
             }
             
@@ -252,9 +250,8 @@ final class SystemAudioAnalyzer: NSObject, ObservableObject {
     private func startUpdateTimer() {
         stopUpdateTimer()
         updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor [self] in
-                self.smoothUpdate()
+            Task { @MainActor [weak self] in
+                self?.smoothUpdate()
             }
         }
     }
@@ -309,48 +306,50 @@ private class AudioStreamOutput: NSObject, SCStreamOutput {
     
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio else { return }
-        
-        // Get the raw data buffer from the sample buffer
-        guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
-            return
+
+        autoreleasepool {
+            // Get the raw data buffer from the sample buffer
+            guard let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
+                return
+            }
+
+            // Get the data length
+            let dataLength = CMBlockBufferGetDataLength(dataBuffer)
+            guard dataLength > 0 else { return }
+
+            // Create a buffer to copy audio data into
+            var audioData = [Float](repeating: 0, count: dataLength / MemoryLayout<Float>.size)
+
+            // Copy the audio data
+            let status = CMBlockBufferCopyDataBytes(
+                dataBuffer,
+                atOffset: 0,
+                dataLength: dataLength,
+                destination: &audioData
+            )
+
+            guard status == noErr else {
+                return
+            }
+
+            let frameCount = audioData.count
+            guard frameCount > 0 else { return }
+
+            // Calculate RMS using Accelerate framework (SIMD-optimized)
+            var rms: Float = 0
+            vDSP_rmsqv(audioData, 1, &rms, vDSP_Length(frameCount))
+
+            // Convert to dB and normalize to 0-1
+            let db = 20 * log10(max(rms, 0.00001))
+
+            // Map dB to 0-1 with wide range for sensitivity
+            let minDb: Float = -50
+            let maxDb: Float = -5
+            let normalizedDb = (db - minDb) / (maxDb - minDb)
+            let level = CGFloat(max(0, min(1, normalizedDb)))
+
+            levelCallback(level)
         }
-        
-        // Get the data length
-        let dataLength = CMBlockBufferGetDataLength(dataBuffer)
-        guard dataLength > 0 else { return }
-        
-        // Create a buffer to copy audio data into
-        var audioData = [Float](repeating: 0, count: dataLength / MemoryLayout<Float>.size)
-        
-        // Copy the audio data
-        let status = CMBlockBufferCopyDataBytes(
-            dataBuffer,
-            atOffset: 0,
-            dataLength: dataLength,
-            destination: &audioData
-        )
-        
-        guard status == noErr else {
-            return
-        }
-        
-        let frameCount = audioData.count
-        guard frameCount > 0 else { return }
-        
-        // Calculate RMS using Accelerate framework (SIMD-optimized)
-        var rms: Float = 0
-        vDSP_rmsqv(audioData, 1, &rms, vDSP_Length(frameCount))
-        
-        // Convert to dB and normalize to 0-1
-        let db = 20 * log10(max(rms, 0.00001))
-        
-        // Map dB to 0-1 with wide range for sensitivity
-        let minDb: Float = -50
-        let maxDb: Float = -5
-        let normalizedDb = (db - minDb) / (maxDb - minDb)
-        let level = CGFloat(max(0, min(1, normalizedDb)))
-        
-        levelCallback(level)
     }
 }
 
@@ -401,9 +400,8 @@ final class FallbackAudioAnalyzer: ObservableObject {
     private func startSimulation() {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor [self] in
-                self.updateSimulation()
+            Task { @MainActor [weak self] in
+                self?.updateSimulation()
             }
         }
         isActive = true

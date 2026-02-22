@@ -16,6 +16,9 @@ final class ScreenshotEditorWindowController {
     private var hostingView: NSHostingView<AnyView>?
     private var escapeMonitor: Any?
     private var globalEscapeMonitor: Any?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
 
     var currentWindowNumber: Int? { window?.windowNumber }
     
@@ -29,8 +32,8 @@ final class ScreenshotEditorWindowController {
     }
     
     func show(with image: NSImage) {
-        // Clean up any existing window
-        cleanUp()
+        cancelDeferredTeardown()
+        isClosing = false
 
         let sizing = calculateWindowSizing(for: image)
         let windowWidth = sizing.initialSize.width
@@ -52,40 +55,56 @@ final class ScreenshotEditorWindowController {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         
         // Create hosting view with layer clipping for proper rounded corners
-        let hosting = NSHostingView(rootView: AnyView(editorView))
-        hosting.frame = NSRect(origin: .zero, size: NSSize(width: windowWidth, height: windowHeight))
-        hosting.wantsLayer = true
-        hosting.layer?.masksToBounds = true
-        hosting.layer?.cornerRadius = cornerRadius
-        self.hostingView = hosting
+        if let hostingView {
+            hostingView.rootView = AnyView(editorView)
+            hostingView.frame = NSRect(origin: .zero, size: NSSize(width: windowWidth, height: windowHeight))
+            hostingView.layer?.cornerRadius = cornerRadius
+        } else {
+            let hosting = NSHostingView(rootView: AnyView(editorView))
+            hosting.frame = NSRect(origin: .zero, size: NSSize(width: windowWidth, height: windowHeight))
+            hosting.wantsLayer = true
+            hosting.layer?.masksToBounds = true
+            hosting.layer?.cornerRadius = cornerRadius
+            self.hostingView = hosting
+        }
         
-        // Create resizable window with hidden titlebar
-        let newWindow = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: windowWidth, height: windowHeight)),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        
-        // Hide titlebar but keep resize functionality
-        newWindow.titlebarAppearsTransparent = true
-        newWindow.titleVisibility = .hidden
-        newWindow.standardWindowButton(.closeButton)?.isHidden = true
-        newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        newWindow.standardWindowButton(.zoomButton)?.isHidden = true
-        
+        let editorWindow: NSWindow
+        if let existing = window {
+            editorWindow = existing
+            editorWindow.setContentSize(NSSize(width: windowWidth, height: windowHeight))
+        } else {
+            let newWindow = NSWindow(
+                contentRect: NSRect(origin: .zero, size: NSSize(width: windowWidth, height: windowHeight)),
+                styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            
+            // Hide titlebar but keep resize functionality
+            newWindow.titlebarAppearsTransparent = true
+            newWindow.titleVisibility = .hidden
+            newWindow.standardWindowButton(.closeButton)?.isHidden = true
+            newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            newWindow.standardWindowButton(.zoomButton)?.isHidden = true
+            
+            newWindow.backgroundColor = .clear
+            newWindow.isOpaque = false
+            newWindow.hasShadow = true
+            newWindow.level = .floating
+            newWindow.isMovableByWindowBackground = false  // Disabled so canvas drawing doesn't move window
+            newWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            newWindow.isReleasedWhenClosed = false
+            self.window = newWindow
+            editorWindow = newWindow
+        }
+
         // Size constraints are screen-aware so the editor can open larger by default
         // while still fitting on smaller displays.
-        newWindow.minSize = sizing.minSize
-        newWindow.maxSize = sizing.maxSize
-        
-        newWindow.contentView = hosting
-        newWindow.backgroundColor = .clear
-        newWindow.isOpaque = false
-        newWindow.hasShadow = true
-        newWindow.level = .floating
-        newWindow.isMovableByWindowBackground = false  // Disabled so canvas drawing doesn't move window
-        newWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        editorWindow.minSize = sizing.minSize
+        editorWindow.maxSize = sizing.maxSize
+        if let hostingView {
+            editorWindow.contentView = hostingView
+        }
         
         // Center on the active screen (mouse display) so multi-monitor setups feel natural.
         if let targetScreen = sizing.targetScreen {
@@ -94,17 +113,19 @@ final class ScreenshotEditorWindowController {
                 x: visibleFrame.midX - windowWidth / 2,
                 y: visibleFrame.midY - windowHeight / 2
             )
-            newWindow.setFrameOrigin(origin)
+            editorWindow.setFrameOrigin(origin)
         } else {
-            newWindow.center()
+            editorWindow.center()
         }
         
         // Show with animation
-        AppKitMotion.prepareForPresent(newWindow, initialScale: 0.94)
-        newWindow.makeKeyAndOrderFront(nil)
-        AppKitMotion.animateIn(newWindow, initialScale: 0.94, duration: 0.2)
-        
-        self.window = newWindow
+        if editorWindow.isVisible {
+            editorWindow.makeKeyAndOrderFront(nil)
+        } else {
+            AppKitMotion.prepareForPresent(editorWindow, initialScale: 0.94)
+            editorWindow.makeKeyAndOrderFront(nil)
+            AppKitMotion.animateIn(editorWindow, initialScale: 0.94, duration: 0.2)
+        }
         installEscapeMonitors()
         
         // Close the preview window
@@ -168,22 +189,45 @@ final class ScreenshotEditorWindowController {
     }
     
     func dismiss() {
-        guard let window = window else { return }
+        guard let window = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
         removeEscapeMonitors()
 
         AppKitMotion.animateOut(window, targetScale: 0.97, duration: 0.16) { [weak self] in
-            DispatchQueue.main.async {
-                self?.cleanUp()
-            }
+            window.orderOut(nil)
+            AppKitMotion.resetPresentationState(window)
+            self?.isClosing = false
+            self?.scheduleDeferredTeardown()
         }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let window = self.window, !window.isVisible else { return }
+            self.cleanUp()
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     private func cleanUp() {
         removeEscapeMonitors()
+        if let window {
+            AppKitMotion.resetPresentationState(window)
+        }
         window?.orderOut(nil)
         window?.contentView = nil
         window = nil
         hostingView = nil
+        isClosing = false
     }
 
     private func installEscapeMonitors() {

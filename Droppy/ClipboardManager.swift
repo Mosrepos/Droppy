@@ -470,6 +470,32 @@ class ClipboardManager: ObservableObject {
         try? FileManager.default.removeItem(at: fileURL)
         print("🗑️ Deleted image file: \(relativePath)")
     }
+
+    /// Adds a generated image (e.g. background-removed output) to clipboard history.
+    /// The result inherits user metadata from the source item where it makes sense.
+    @discardableResult
+    func addGeneratedImageToHistory(_ data: Data, basedOn sourceItem: ClipboardItem? = nil, sourceApp: String? = "Droppy") -> ClipboardItem? {
+        let newID = UUID()
+        guard let relativePath = saveImageToFile(data, id: newID) else {
+            return nil
+        }
+
+        let newItem = ClipboardItem(
+            id: newID,
+            type: .image,
+            imageFilePath: relativePath,
+            sourceApp: sourceApp,
+            isFavorite: sourceItem?.isFavorite ?? false,
+            isFlagged: sourceItem?.isFlagged ?? false,
+            isConcealed: sourceItem?.isConcealed ?? false,
+            customTitle: sourceItem?.customTitle,
+            tagId: sourceItem?.tagId
+        )
+
+        history.insert(newItem, at: 0)
+        enforceHistoryLimit()
+        return history.first(where: { $0.id == newID })
+    }
     
     // MARK: - Tags Persistence
     

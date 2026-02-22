@@ -174,7 +174,7 @@ struct ReorderSheetView: View {
             } label: {
                 Text("Done")
             }
-            .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+            .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
         }
         .padding(DroppySpacing.lg)
     }
@@ -533,68 +533,43 @@ class ReorderWindowController {
         panel.contentView = hostingView
         
         self.window = panel
-        
-        // PREMIUM: Start scaled down and invisible for spring animation
-        panel.alphaValue = 0
-        if let contentView = panel.contentView {
-            contentView.wantsLayer = true
-            contentView.layer?.transform = CATransform3DMakeScale(0.85, 0.85, 1.0)
-            contentView.layer?.opacity = 0
-        }
-        
+
+        AppKitMotion.prepareForPresent(panel, initialScale: 1.0)
         panel.orderFront(nil)
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
         }
-        
-        // PREMIUM: CASpringAnimation for bouncy appear
-        if let layer = panel.contentView?.layer {
-            let fadeAnim = CABasicAnimation(keyPath: "opacity")
-            fadeAnim.fromValue = 0
-            fadeAnim.toValue = 1
-            fadeAnim.duration = 0.2
-            fadeAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            fadeAnim.fillMode = .forwards
-            fadeAnim.isRemovedOnCompletion = false
-            layer.add(fadeAnim, forKey: "fadeIn")
-            layer.opacity = 1
-            
-            let scaleAnim = CASpringAnimation(keyPath: "transform.scale")
-            scaleAnim.fromValue = 0.85
-            scaleAnim.toValue = 1.0
-            scaleAnim.mass = 1.0
-            scaleAnim.stiffness = 280
-            scaleAnim.damping = 20
-            scaleAnim.initialVelocity = 8
-            scaleAnim.duration = scaleAnim.settlingDuration
-            scaleAnim.fillMode = .forwards
-            scaleAnim.isRemovedOnCompletion = false
-            layer.add(scaleAnim, forKey: "scaleSpring")
-            layer.transform = CATransform3DIdentity
-        }
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1.0
-        })
+        AppKitMotion.animateIn(panel, initialScale: 1.0, duration: 0.2)
     }
     
     func dismiss() {
-        window?.close()
-        window = nil
-        
-        // Restore basket if we were reordering basket items
-        if currentTarget == .basket {
-            if let hiddenBasketController {
-                hiddenBasketController.basketWindow?.orderFront(nil)
-            } else {
-                FloatingBasketWindowController.shared.basketWindow?.orderFront(nil)
-            }
-        }
-        hiddenBasketController = nil
+        let targetToRestore = currentTarget
+        let basketControllerToRestore = hiddenBasketController
         currentTarget = nil
+        hiddenBasketController = nil
+
+        guard let panel = window else {
+            restoreBasketIfNeeded(target: targetToRestore, basketController: basketControllerToRestore)
+            return
+        }
+
+        window = nil
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) {
+            panel.orderOut(nil)
+            panel.close()
+            AppKitMotion.resetPresentationState(panel)
+            self.restoreBasketIfNeeded(target: targetToRestore, basketController: basketControllerToRestore)
+        }
+    }
+
+    private func restoreBasketIfNeeded(target: ReorderTarget?, basketController: FloatingBasketWindowController?) {
+        guard target == .basket else { return }
+        if let basketController {
+            basketController.basketWindow?.orderFront(nil)
+        } else {
+            FloatingBasketWindowController.shared.basketWindow?.orderFront(nil)
+        }
     }
 }
 

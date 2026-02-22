@@ -74,6 +74,7 @@ enum AppPreferenceKey {
     // MARK: - Lock Screen Media Widget
     static let enableLockScreenMediaWidget = "enableLockScreenMediaWidget"
     static let hideNotchMediaHUDWithLockScreen = "hideNotchMediaHUDWithLockScreen"  // Sub-option: hide small media HUD when lock screen media is active
+    static let lockScreenMediaLiquidGlassVariant = "lockScreenMediaLiquidGlassVariant"  // Private NSGlassEffectView variant (0...19)
     
     // MARK: - Shelf Behavior
     static let autoCollapseShelf = "autoCollapseShelf"
@@ -86,6 +87,11 @@ enum AppPreferenceKey {
     static let showMediaShelfSwitchBadge = "showMediaShelfSwitchBadge"  // Show top-left switch badge in shelf/media views
     static let autoShrinkShelf = "autoShrinkShelf"  // Legacy
     static let autoShrinkDelay = "autoShrinkDelay"  // Legacy
+    static let shelfWidgetsConfiguration = "shelfWidgetsConfiguration"
+    static let shelfWidgetsMigrationCompleted = "shelfWidgetsMigrationCompleted"
+    static let shelfWidgetsOnboardingSeen = "shelfWidgetsOnboardingSeen"
+    static let shelfWidgetsPendingPrompts = "shelfWidgetsPendingPrompts"
+    static let shelfWidgetsIgnoredMissingPlacements = "shelfWidgetsIgnoredMissingPlacements"
     
     // MARK: - Basket Behavior
     static let enableBasketAutoHide = "enableBasketAutoHide"
@@ -154,6 +160,7 @@ enum AppPreferenceKey {
     static let elementCaptureEditorBackgroundCornerRadius = "elementCapture_editorBackgroundCornerRadius"
     static let elementCaptureEditorScreenshotCornerRadius = "elementCapture_editorScreenshotCornerRadius"
     static let elementCaptureEditorScreenshotShadowStrength = "elementCapture_editorScreenshotShadowStrength"
+    static let elementCaptureOpenEditorInstantly = "elementCapture_openEditorInstantly"
     static let ocrAutoCopyExtractedText = "ocr_autoCopyExtractedText"  // Auto-copy OCR results and skip result window
 
     // MARK: - Extension: Window Snap
@@ -193,6 +200,13 @@ enum AppPreferenceKey {
     static let caffeineEnabled = "caffeine_enabled"  // Whether to show in HUD section
     static let caffeineMode = "caffeine_mode"  // CaffeineMode rawValue
     static let caffeineInstantlyExpandShelfOnHover = "caffeine_instantlyExpandShelfOnHover"  // Skip hover timer HUD and keep normal shelf auto-expand
+
+    // MARK: - Extension: Pomodoro
+    static let pomodoroInstalled = "pomodoro_installed"
+    static let pomodoroEnabled = "pomodoro_enabled"  // Whether to show Pomodoro controls in shelf/HUD
+    static let pomodoroInstantlyExpandShelfOnHover = "pomodoro_instantlyExpandShelfOnHover"  // Skip hover timer HUD and keep normal shelf auto-expand
+    static let pomodoroSectionsJSON = "pomodoro_sectionsJSON"  // JSON array of custom Pomodoro sections
+    static let pomodoroLastUsedSelectionJSON = "pomodoro_lastUsedSelectionJSON"  // JSON object storing the last used section and timer
 
     // MARK: - Extension: Todo
     static let todoInstalled = "todo_installed"
@@ -298,6 +312,7 @@ enum PreferenceDefault {
     // MARK: - Lock Screen Media Widget
     static let enableLockScreenMediaWidget = false  // Uses private APIs, opt-in
     static let hideNotchMediaHUDWithLockScreen = false  // When lock screen media is showing, hide small notch/island media HUD
+    static let lockScreenMediaLiquidGlassVariant = 11  // Default liquid-glass variant
     
     // MARK: - Shelf Behavior
     static let autoCollapseShelf = true
@@ -311,6 +326,11 @@ enum PreferenceDefault {
     static let showMediaShelfSwitchBadge = true  // Keep media/shelf switch badge visible by default
     static let autoShrinkShelf = true  // Legacy
     static let autoShrinkDelay = 3  // Legacy
+    static let shelfWidgetsConfiguration = ""
+    static let shelfWidgetsMigrationCompleted = false
+    static let shelfWidgetsOnboardingSeen = false
+    static let shelfWidgetsPendingPrompts = ""
+    static let shelfWidgetsIgnoredMissingPlacements = ""
     
     // MARK: - Basket Behavior
     static let enableBasketAutoHide = false
@@ -375,6 +395,7 @@ enum PreferenceDefault {
     static let elementCaptureEditorBackgroundCornerRadius: Double = 44
     static let elementCaptureEditorScreenshotCornerRadius: Double = 24
     static let elementCaptureEditorScreenshotShadowStrength: Double = 0.55
+    static let elementCaptureOpenEditorInstantly = false
     static let ocrAutoCopyExtractedText = false
 
     // MARK: - Extension: Window Snap
@@ -422,6 +443,13 @@ thank you.
     static let caffeineEnabled = true  // Enabled by default when installed
     static let caffeineMode = "Both"  // CaffeineMode.both.rawValue
     static let caffeineInstantlyExpandShelfOnHover = false  // Keep current behavior by default: show High Alert timer on hover
+
+    // MARK: - Extension: Pomodoro
+    static let pomodoroInstalled = false
+    static let pomodoroEnabled = true
+    static let pomodoroInstantlyExpandShelfOnHover = false
+    static let pomodoroSectionsJSON = ""
+    static let pomodoroLastUsedSelectionJSON = ""
 
     // MARK: - Extension: Todo
     static let todoInstalled = false  // Disabled by default, user installs from Extension Store

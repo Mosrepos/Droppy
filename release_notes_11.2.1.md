@@ -27,8 +27,8 @@
 - Fixed restore-task cancellation flow by applying the same dismissal behavior before canceling in-flight restore when a restore/menu session exists.
 - Fixed wrong-screen menu-session persistence by hardening interactive-zone screen resolution using divider-edge anchoring.
 - Fixed floating bar placement/hover behavior so it stays under the divider and no longer disappears on hover or jumps under left menu-bar items.
-- Fixed Notification HUD foreground contrast in transparent modes by switching to adaptive dark/light foregrounds.
-- Fixed white-on-white regressions in HUD/media components by removing hardcoded white text and unifying adaptive foreground logic for transparent non-physical-notch modes.
+- Fixed Notification HUD foreground contrast in Liquid modes by switching to adaptive dark/light foregrounds.
+- Fixed white-on-white regressions in HUD/media components by removing hardcoded white text and unifying adaptive foreground logic for Liquid non-physical-notch modes.
 - Fixed Caffeine/High Alert foreground contrast to follow the same adaptive HUD/media foreground behavior.
 - Fixed terminal panel readability for command output, command text, placeholder text, and input chrome in light backgrounds.
 - Fixed light-mode color handling for volume/brightness HUDs.

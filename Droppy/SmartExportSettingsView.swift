@@ -211,7 +211,7 @@ struct SmartExportSettingsView: View {
             } label: {
                 Text("Done")
             }
-            .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+            .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
         }
         .padding(DroppySpacing.lg)
     }
@@ -575,7 +575,7 @@ struct SmartExportInfoSheet: View {
                 } label: {
                     Text("Configure")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }

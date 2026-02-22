@@ -4,12 +4,13 @@ import SwiftUI
 // Extracted from SettingsView.swift for faster incremental builds
 
 struct ExtensionsShopView: View {
-    @State private var selectedCategory: ExtensionCategory? = nil  // nil = show all
-    @Namespace private var categoryAnimation
+    private static var hasPrewarmedExtensionAssetsThisSession = false
+
+    let selectedCategory: ExtensionCategory?
     @State private var extensionCounts: [String: Int] = [:]
-    @State private var extensionRatings: [String: AnalyticsService.ExtensionRating] = [:]
-    @State private var refreshTrigger = UUID() // Force view refresh
+    @State private var extensionStateVersion = 0
     @AppStorage(AppPreferenceKey.disableAnalytics) private var disableAnalytics = PreferenceDefault.disableAnalytics
+    @AppStorage(AppPreferenceKey.pomodoroInstalled) private var isPomodoroInstalled = PreferenceDefault.pomodoroInstalled
     
     // MARK: - Installed State Checks
     private var isAIInstalled: Bool { AIInstallManager.shared.isInstalled }
@@ -22,7 +23,9 @@ struct ExtensionsShopView: View {
     }
     private var isWindowSnapInstalled: Bool { !WindowSnapManager.shared.shortcuts.isEmpty }
     private var isFFmpegInstalled: Bool { FFmpegInstallManager.shared.isInstalled }
-    private var isVoiceTranscribeInstalled: Bool { VoiceTranscribeManager.shared.isModelDownloaded }
+    private var isVoiceTranscribeInstalled: Bool {
+        VoiceTranscribeRuntimeManager.shared.isInstalled && VoiceTranscribeManager.shared.isModelDownloaded
+    }
     private var isTerminalNotchInstalled: Bool { TerminalNotchManager.shared.isInstalled }
     private var isNotificationHUDInstalled: Bool { UserDefaults.standard.bool(forKey: AppPreferenceKey.notificationHUDInstalled) }
     private var isCaffeineInstalled: Bool { UserDefaults.standard.bool(forKey: AppPreferenceKey.caffeineInstalled) }
@@ -30,263 +33,203 @@ struct ExtensionsShopView: View {
     private var isTodoInstalled: Bool { UserDefaults.standard.bool(forKey: AppPreferenceKey.todoInstalled) }
     private var isCameraInstalled: Bool { UserDefaults.standard.bool(forKey: AppPreferenceKey.cameraInstalled) }
 
+    init(selectedCategory: ExtensionCategory? = nil) {
+        self.selectedCategory = selectedCategory
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Featured Hero Section
-                featuredSection
-                
-                // Extensions List (includes header, filters, and list)
-                extensionsList
-            }
-            .padding(.top, 4)
+        VStack(alignment: .leading, spacing: 12) {
+            // Extensions section content (filters + cards/rows)
+            extensionsList
         }
-        .id(refreshTrigger)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .animation(nil, value: extensionCounts)
+        .animation(nil, value: extensionStateVersion)
         .onAppear {
+            if !Self.hasPrewarmedExtensionAssetsThisSession {
+                Self.hasPrewarmedExtensionAssetsThisSession = true
+                let urls = extensionAssetPrewarmURLs
+                Task {
+                    await ExtensionIconCache.shared.prewarm(urls: urls)
+                }
+            }
+
             Task {
                 guard !disableAnalytics else {
                     extensionCounts = [:]
-                    extensionRatings = [:]
                     return
                 }
                 async let countsTask = AnalyticsService.shared.fetchExtensionCounts()
-                async let ratingsTask = AnalyticsService.shared.fetchExtensionRatings()
-                
                 if let counts = try? await countsTask {
                     extensionCounts = counts
-                }
-                if let ratings = try? await ratingsTask {
-                    extensionRatings = ratings
                 }
             }
         }
         .onChange(of: disableAnalytics) { _, isDisabled in
             if isDisabled {
                 extensionCounts = [:]
-                extensionRatings = [:]
                 return
             }
 
             Task {
                 async let countsTask = AnalyticsService.shared.fetchExtensionCounts()
-                async let ratingsTask = AnalyticsService.shared.fetchExtensionRatings()
-                
                 if let counts = try? await countsTask {
                     extensionCounts = counts
-                }
-                if let ratings = try? await ratingsTask {
-                    extensionRatings = ratings
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .extensionStateChanged)) { _ in
-            refreshTrigger = UUID()
+            extensionStateVersion += 1
         }
     }
     
-    // MARK: - Featured Hero Section
-    
-    private var featuredSection: some View {
-        VStack(spacing: 12) {
-            // Section header
-            HStack {
-                HStack {
-                    Text("Featured")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(AdaptiveColors.primaryTextAuto)
-                }
-                
-                Spacer()
-            }
-            
-            // Row 1: AI Background Removal + Voice Transcribe
-            HStack(spacing: 12) {
-                FeaturedExtensionCardCompact(
-                    category: "",
-                    title: "Remove Backgrounds",
-                    subtitle: "Local AI processing",
-                    iconURL: "https://getdroppy.app/assets/icons/ai-bg.jpg",
-                    screenshotURL: "https://getdroppy.app/assets/images/ai-bg-screenshot.png",
-                    accentColor: .cyan,
-                    isInstalled: isAIInstalled
-                ) {
-                    AIInstallView(
-                        installCount: extensionCounts["aiBackgroundRemoval"],
-                        rating: extensionRatings["aiBackgroundRemoval"]
-                    )
-                }
-                
-                FeaturedExtensionCardCompact(
-                    category: "",
-                    title: "Voice Transcribe",
-                    subtitle: "Speech to text",
-                    iconURL: "https://getdroppy.app/assets/icons/voice-transcribe.jpg",
-                    screenshotURL: "https://getdroppy.app/assets/images/voice-transcribe-screenshot.png",
-                    accentColor: .cyan,
-                    isInstalled: isVoiceTranscribeInstalled
-                ) {
-                    VoiceTranscribeInfoView(
-                        installCount: extensionCounts["voiceTranscribe"],
-                        rating: extensionRatings["voiceTranscribe"]
-                    )
-                }
-            }
-            
-            // Row 2: Main featured extension (Reminders)
-            FeaturedExtensionCardWide(
-                title: "Reminders",
-                subtitle: "Tasks & Notes",
-                iconURL: "https://getdroppy.app/assets/icons/reminders.png",
-                screenshotURL: "https://getdroppy.app/assets/images/reminders-screenshot.gif",
-                accentColor: .blue,
-                isInstalled: isTodoInstalled,
-                features: ["Natural language", "List mentions", "Apple sync"],
-                badgeText: "Version 2.0!"
-            ) {
-                ToDoInfoView(
-                    installCount: extensionCounts["todo"],
-                    rating: extensionRatings["todo"]
-                )
-            }
-            
-            // Row 3: Community extensions + Quickshare (bottom-left)
-            HStack(spacing: 12) {
-                if !ExtensionType.quickshare.isRemoved {
-                    FeaturedExtensionCardCompact(
-                        category: "",
-                        title: "Droppy Quickshare",
-                        subtitle: "Share files instantly",
-                        iconURL: "https://getdroppy.app/assets/icons/quickshare.jpg",
-                        screenshotURL: "https://getdroppy.app/assets/images/quickshare-screenshot.png",
-                        accentColor: .cyan,
-                        isInstalled: true
-                    ) {
-                        QuickshareInfoView(
-                            installCount: extensionCounts["quickshare"],
-                            rating: extensionRatings["quickshare"]
-                        )
-                    }
-                }
+    private var shouldShowEditorialFeaturedBlocks: Bool {
+        selectedCategory == nil || selectedCategory == .all
+    }
 
-                FeaturedExtensionCardCompact(
-                    category: "COMMUNITY",
-                    title: "Notify me!",
-                    subtitle: "Show notifications",
-                    iconURL: "https://getdroppy.app/assets/icons/notification-hud.png",
-                    screenshotURL: "https://getdroppy.app/assets/images/notification-hud-screenshot.png",
-                    accentColor: .red,
-                    isInstalled: isNotificationHUDInstalled,
-                    isCommunity: true
-                ) {
-                    NotificationHUDInfoView()
-                }
-                
-                FeaturedExtensionCardCompact(
-                    category: "COMMUNITY",
-                    title: "High Alert",
-                    subtitle: "Keep Mac awake",
-                    iconURL: "https://getdroppy.app/assets/icons/high-alert.jpg",
-                    screenshotURL: "https://getdroppy.app/assets/images/high-alert-screenshot.gif",
-                    accentColor: .orange,
-                    isInstalled: isCaffeineInstalled,
-                    isCommunity: true
-                ) {
-                    CaffeineInfoView(
-                        installCount: extensionCounts["caffeine"],
-                        rating: extensionRatings["caffeine"]
-                    )
-                }
-            }
-        }
-        .padding(DroppySpacing.xs) // Allow room for hover scale animation
+    private var editorialFeaturedBlockOneItems: [EditorialFeaturedItem] {
+        [
+            EditorialFeaturedItem(
+                id: "menuBarManager-editorial",
+                panelID: "menuBarManager",
+                title: "Menu Bar Manager",
+                subtitle: "Floating menu bar with Liquid Glass design",
+                iconURL: "https://getdroppy.app/assets/icons/menubarmanager.png",
+                imageURL: "https://getdroppy.app/assets/screenshots/menu-bar-manager.png",
+                isInstalled: isMenuBarManagerInstalled
+            ) {
+                AnyView(MenuBarManagerInfoView(
+                    installCount: extensionCounts["menuBarManager"],
+                ))
+            },
+            EditorialFeaturedItem(
+                id: "todo-editorial",
+                panelID: "todo",
+                title: "Reminders",
+                subtitle: "Calendar + Reminders with natural language and instant join",
+                iconURL: "https://getdroppy.app/assets/icons/reminders.png",
+                imageURL: "https://getdroppy.app/assets/images/reminders-screenshot.gif",
+                isInstalled: isTodoInstalled
+            ) {
+                AnyView(ToDoInfoView(
+                    installCount: extensionCounts["todo"],
+                ))
+            },
+        ]
     }
-    
-    // MARK: - Category Swiper
-    
-    private var categorySwiperHeader: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                // Filter out .all - it's now the default when no filter selected
-                ForEach(ExtensionCategory.allCases.filter { $0 != .all }) { category in
-                    CategoryPillButton(
-                        category: category,
-                        isSelected: selectedCategory == category,
-                        namespace: categoryAnimation
-                    ) {
-                        withAnimation(DroppyAnimation.state) {
-                            // Double-click/toggle behavior: clicking selected category deselects it
-                            if selectedCategory == category {
-                                selectedCategory = nil  // Back to "all"
-                            } else {
-                                selectedCategory = category
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
-        }
+
+    private var editorialFeaturedBlockTwoItems: [EditorialFeaturedItem] {
+        [
+            EditorialFeaturedItem(
+                id: "pomodoro-editorial",
+                panelID: "pomodoro",
+                title: "Pomodoro",
+                subtitle: "Focus sessions, breaks, and momentum",
+                iconURL: "https://getdroppy.app/assets/icons/pomodoro.png?v=20260221",
+                imageURL: "https://getdroppy.app/assets/images/pomodoro-screenshot.png",
+                isInstalled: isPomodoroInstalled
+            ) {
+                AnyView(PomodoroInfoView(
+                    installCount: extensionCounts["pomodoro"],
+                ))
+            },
+            EditorialFeaturedItem(
+                id: "elementCapture-editorial",
+                panelID: "elementCapture",
+                title: "Element Capture",
+                subtitle: "Full screenshot capture and editing",
+                iconURL: "https://getdroppy.app/assets/icons/element-capture.jpg",
+                imageURL: "https://getdroppy.app/assets/images/element-capture-screenshot.gif",
+                isInstalled: isElementCaptureInstalled
+            ) {
+                AnyView(ElementCaptureInfoViewWrapper(
+                    installCount: extensionCounts["elementCapture"],
+                ))
+            },
+        ]
+    }
+
+    private var extensionAssetPrewarmURLs: [URL] {
+        let extensionIconURLs = filteredExtensions
+            .compactMap(\.iconURL)
+            .compactMap(URL.init(string:))
+        let editorialItems = editorialFeaturedBlockOneItems + editorialFeaturedBlockTwoItems
+        let editorialImageURLs = editorialItems.compactMap { URL(string: $0.imageURL) }
+        let editorialIconURLs = editorialItems.compactMap { URL(string: $0.iconURL) }
+        return extensionIconURLs + editorialImageURLs + editorialIconURLs
     }
     
     // MARK: - Extensions List
     
     private var extensionsList: some View {
-        VStack(spacing: 12) {
-            // Section header
-            HStack {
-                HStack {
-                    Text("Extensions")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(AdaptiveColors.primaryTextAuto)
+        VStack(alignment: .leading, spacing: 14) {
+            let extensions = filteredExtensions
+            if shouldShowEditorialFeaturedBlocks {
+                EditorialFeaturedBlock(items: editorialFeaturedBlockOneItems)
+                extensionsRows(items: Array(extensions.prefix(6)))
+                EditorialFeaturedBlock(items: editorialFeaturedBlockTwoItems)
+                if extensions.count > 6 {
+                    extensionsRows(items: Array(extensions.dropFirst(6)))
                 }
-                
-                Spacer()
+            } else {
+                extensionsRows(items: extensions)
             }
-            
-            // Category filter pills
-            categorySwiperHeader
-            
-            // Extensions list
-            VStack(spacing: 0) {
-                // Filter extensions based on selected category
-                let extensions = filteredExtensions
-                
-                ForEach(Array(extensions.enumerated()), id: \.1.id) { index, ext in
-                    CompactExtensionRow(
-                        iconURL: ext.iconURL,
-                        iconPlaceholder: ext.iconPlaceholder,
-                        iconPlaceholderColor: ext.iconPlaceholderColor,
-                        title: ext.title,
-                        subtitle: ext.subtitle,
-                        isInstalled: ext.isInstalled,
-                        isDisabled: ext.extensionType.isRemoved,
-                        installCount: extensionCounts[ext.analyticsKey],
-                        isCommunity: ext.isCommunity,
-                        onEnableAction: {
-                            enableExtension(ext.extensionType)
-                        }
-                    ) {
-                        ext.detailView()
-                    }
-                    
-                    if index < extensions.count - 1 {
-                        Divider()
-                    }
-                }
-            }
-            .background(AdaptiveColors.overlayAuto(0.03))
-            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                    .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
-            )
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func extensionsRows(items: [ExtensionListItem]) -> some View {
+        if items.isEmpty {
+            EmptyView()
+        } else {
+            let leftColumn = stride(from: 0, to: items.count, by: 2).map { items[$0] }
+            let rightColumn = stride(from: 1, to: items.count, by: 2).map { items[$0] }
+
+            HStack(alignment: .top, spacing: 20) {
+                extensionsColumn(items: leftColumn)
+                extensionsColumn(items: rightColumn)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func extensionsColumn(items: [ExtensionListItem]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.1.id) { index, ext in
+                CompactExtensionRow(
+                    iconURL: ext.iconURL,
+                    iconPlaceholder: ext.iconPlaceholder,
+                    iconPlaceholderColor: ext.iconPlaceholderColor,
+                    title: ext.title,
+                    subtitle: ext.subtitle,
+                    categoryLabel: ext.category.rawValue,
+                    panelID: ext.id,
+                    isInstalled: ext.isInstalled,
+                    isDisabled: ext.extensionType.isRemoved,
+                    installCount: extensionCounts[ext.analyticsKey],
+                    isCommunity: ext.isCommunity,
+                    onEnableAction: {
+                        enableExtension(ext.extensionType)
+                    }
+                ) {
+                    ext.detailView()
+                }
+                if index < items.count - 1 {
+                    Divider()
+                        .padding(.leading, 78)
+                        .padding(.trailing, 8)
+                        .opacity(0.42)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
     
     // MARK: - Filtered Extensions
     
     private var filteredExtensions: [ExtensionListItem] {
+        let _ = extensionStateVersion
         let allExtensions: [ExtensionListItem] = [
             // AI Extensions
             ExtensionListItem(
@@ -301,7 +244,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(AIInstallView(
                     installCount: extensionCounts["aiBackgroundRemoval"],
-                    rating: extensionRatings["aiBackgroundRemoval"]
                 ))
             },
             ExtensionListItem(
@@ -316,7 +258,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(VoiceTranscribeInfoView(
                     installCount: extensionCounts["voiceTranscribe"],
-                    rating: extensionRatings["voiceTranscribe"]
                 ))
             },
             // Media Extensions
@@ -332,7 +273,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(FFmpegInstallView(
                     installCount: extensionCounts["ffmpegVideoCompression"],
-                    rating: extensionRatings["ffmpegVideoCompression"]
                 ))
             },
             // Productivity Extensions
@@ -354,14 +294,13 @@ struct ExtensionsShopView: View {
                         }
                     },
                     installCount: extensionCounts["alfred"],
-                    rating: extensionRatings["alfred"]
                 ))
             },
             ExtensionListItem(
                 id: "elementCapture",
                 iconURL: "https://getdroppy.app/assets/icons/element-capture.jpg",
                 title: "Element Capture",
-                subtitle: "Screenshot UI elements",
+                subtitle: "Full screenshot capture and editing",
                 category: .productivity,
                 isInstalled: isElementCaptureInstalled,
                 analyticsKey: "elementCapture",
@@ -369,7 +308,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(ElementCaptureInfoViewWrapper(
                     installCount: extensionCounts["elementCapture"],
-                    rating: extensionRatings["elementCapture"]
                 ))
             },
             ExtensionListItem(
@@ -388,7 +326,6 @@ struct ExtensionsShopView: View {
                         _ = openFinderServicesSettings()
                     },
                     installCount: extensionCounts["finder"],
-                    rating: extensionRatings["finder"]
                 ))
             },
             ExtensionListItem(
@@ -409,7 +346,6 @@ struct ExtensionsShopView: View {
                         }
                     },
                     installCount: extensionCounts["spotify"],
-                    rating: extensionRatings["spotify"]
                 ))
             },
             ExtensionListItem(
@@ -432,7 +368,6 @@ struct ExtensionsShopView: View {
                         AppleMusicController.shared.refreshState()
                     },
                     installCount: extensionCounts["appleMusic"],
-                    rating: extensionRatings["appleMusic"]
                 ))
             },
             ExtensionListItem(
@@ -447,7 +382,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(WindowSnapInfoView(
                     installCount: extensionCounts["windowSnap"],
-                    rating: extensionRatings["windowSnap"]
                 ))
             },
             ExtensionListItem(
@@ -462,7 +396,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(TerminalNotchInfoView(
                     installCount: extensionCounts["terminalNotch"],
-                    rating: extensionRatings["terminalNotch"]
                 ))
             },
             ExtensionListItem(
@@ -477,7 +410,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(CameraInfoView(
                     installCount: extensionCounts["camera"],
-                    rating: extensionRatings["camera"]
                 ))
             },
             ExtensionListItem(
@@ -492,7 +424,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(QuickshareInfoView(
                     installCount: extensionCounts["quickshare"],
-                    rating: extensionRatings["quickshare"]
                 ))
             },
             ExtensionListItem(
@@ -521,14 +452,13 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(CaffeineInfoView(
                     installCount: extensionCounts["caffeine"],
-                    rating: extensionRatings["caffeine"]
                 ))
             },
             ExtensionListItem(
                 id: "menuBarManager",
                 iconURL: "https://getdroppy.app/assets/icons/menubarmanager.png",
                 title: "Menu Bar Manager",
-                subtitle: "Organize your menu bar",
+                subtitle: "Floating menu bar with Liquid Glass design",
                 category: .productivity,
                 isInstalled: isMenuBarManagerInstalled,
                 analyticsKey: "menuBarManager",
@@ -536,14 +466,27 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(MenuBarManagerInfoView(
                     installCount: extensionCounts["menuBarManager"],
-                    rating: extensionRatings["menuBarManager"]
+                ))
+            },
+            ExtensionListItem(
+                id: "pomodoro",
+                iconURL: "https://getdroppy.app/assets/icons/pomodoro.png?v=20260221",
+                title: "Pomodoro",
+                subtitle: "Focus sessions, breaks, and momentum",
+                category: .productivity,
+                isInstalled: isPomodoroInstalled,
+                analyticsKey: "pomodoro",
+                extensionType: .pomodoro
+            ) {
+                AnyView(PomodoroInfoView(
+                    installCount: extensionCounts["pomodoro"],
                 ))
             },
             ExtensionListItem(
                 id: "todo",
                 iconURL: "https://getdroppy.app/assets/icons/reminders.png",
                 title: "Reminders",
-                subtitle: "Natural language tasks",
+                subtitle: "Calendar + Reminders with natural language and instant join",
                 category: .productivity,
                 isInstalled: isTodoInstalled,
                 analyticsKey: "todo",
@@ -552,7 +495,6 @@ struct ExtensionsShopView: View {
             ) {
                 AnyView(ToDoInfoView(
                     installCount: extensionCounts["todo"],
-                    rating: extensionRatings["todo"]
                 ))
             },
         ]
@@ -644,9 +586,196 @@ private struct ExtensionListItem: Identifiable {
     }
 }
 
+private struct EditorialFeaturedItem: Identifiable {
+    let id: String
+    let panelID: String
+    let title: String
+    let subtitle: String
+    let iconURL: String
+    let imageURL: String
+    let isInstalled: Bool
+    let detailView: () -> AnyView
+}
+
+private struct EditorialFeaturedBlock: View {
+    let items: [EditorialFeaturedItem]
+    private let cardHeight: CGFloat = EditorialFeaturedCard.layout.cardHeight
+    private let columnSpacing: CGFloat = 20
+    private let rowSpacing: CGFloat = 14
+
+    private var leftColumnItems: [EditorialFeaturedItem] {
+        stride(from: 0, to: items.count, by: 2).map { items[$0] }
+    }
+
+    private var rightColumnItems: [EditorialFeaturedItem] {
+        stride(from: 1, to: items.count, by: 2).map { items[$0] }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: columnSpacing) {
+            editorialColumn(items: leftColumnItems)
+            editorialColumn(items: rightColumnItems)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func editorialColumn(items: [EditorialFeaturedItem]) -> some View {
+        VStack(spacing: rowSpacing) {
+            ForEach(items) { item in
+                EditorialFeaturedCard(item: item)
+                    .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .topLeading)
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct EditorialFeaturedCard: View {
+    let item: EditorialFeaturedItem
+    @State private var isActionHovering = false
+
+    fileprivate struct layout {
+        static let cardHeight: CGFloat = 300
+        static let mediaHeight: CGFloat = 152
+        static let iconSize: CGFloat = 44
+        static let iconInset: CGFloat = 12
+        static let contentHorizontalInset: CGFloat = 12
+        static let contentTopInset: CGFloat = 12
+        static let contentBottomInset: CGFloat = 12
+        static let titleSlotHeight: CGFloat = 24
+        static let subtitleSlotHeight: CGFloat = 42
+    }
+
+    private var actionTitle: String {
+        item.isInstalled ? "Manage" : "Get"
+    }
+
+    var body: some View {
+        Button {
+            ExtensionDetailWindowController.shared.present(
+                id: item.panelID,
+                parent: SettingsWindowController.shared.activeSettingsWindow
+            ) {
+                item.detailView()
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .bottomLeading) {
+                    GeometryReader { geometry in
+                        let mediaSize = geometry.size
+
+                        CachedAsyncImage(url: URL(string: item.imageURL)) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: mediaSize.width, height: mediaSize.height, alignment: .center)
+                                .clipped()
+                        } placeholder: {
+                            Rectangle()
+                                .fill(AdaptiveColors.overlayAuto(0.08))
+                                .frame(width: mediaSize.width, height: mediaSize.height, alignment: .center)
+                                .clipped()
+                        }
+                    }
+
+                    LinearGradient(
+                        colors: [Color.clear, AdaptiveColors.panelBackgroundAuto.opacity(0.74)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    CachedAsyncImage(url: URL(string: item.iconURL)) { image in
+                        image.droppyExtensionIcon(contentMode: .fill)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous)
+                            .fill(AdaptiveColors.overlayAuto(0.1))
+                    }
+                    .frame(width: layout.iconSize, height: layout.iconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous))
+                    .droppyCardShadow(opacity: 0.28)
+                    .padding(layout.iconInset)
+                }
+                .frame(height: layout.mediaHeight)
+                .clipped()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(item.title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(AdaptiveColors.primaryTextAuto)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, minHeight: layout.titleSlotHeight, maxHeight: layout.titleSlotHeight, alignment: .topLeading)
+
+                    Text(item.subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AdaptiveColors.secondaryTextAuto)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+                        .allowsTightening(true)
+                        .frame(maxWidth: .infinity, minHeight: layout.subtitleSlotHeight, maxHeight: layout.subtitleSlotHeight, alignment: .topLeading)
+
+                    Spacer(minLength: 0)
+
+                    HStack {
+                        Text(actionTitle)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(Color.white.opacity(isActionHovering ? 1.0 : 0.92))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1)
+                            )
+                            .scaleEffect(isActionHovering ? 1.02 : 1.0)
+                            .animation(DroppyAnimation.hoverQuick, value: isActionHovering)
+                            .onHover { hovering in
+                                isActionHovering = hovering
+                            }
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal, layout.contentHorizontalInset)
+                .padding(.top, layout.contentTopInset)
+                .padding(.bottom, layout.contentBottomInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                LinearGradient(
+                    colors: [AdaptiveColors.panelBackgroundAuto, AdaptiveColors.overlayAuto(0.04)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.lx, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: DroppyRadius.lx, style: .continuous)
+                    .strokeBorder(AdaptiveColors.overlayAuto(0.16), lineWidth: 1)
+            )
+        }
+        .buttonStyle(EditorialFeaturedCardButtonStyle())
+        .frame(height: layout.cardHeight, alignment: .topLeading)
+    }
+}
+
+private struct EditorialFeaturedCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.99 : 1.0)
+            .animation(DroppyAnimation.hoverQuick, value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.lx, style: .continuous))
+    }
+}
+
 // MARK: - Featured Extension Card (Large)
 
 struct FeaturedExtensionCard<DetailView: View>: View {
+    let panelID: String
     let category: String
     let title: String
     let subtitle: String
@@ -657,7 +786,6 @@ struct FeaturedExtensionCard<DetailView: View>: View {
     var installCount: Int?
     let detailView: () -> DetailView
     
-    @State private var showSheet = false
     @State private var isHovering = false
 
     private var titleColor: Color {
@@ -707,7 +835,12 @@ struct FeaturedExtensionCard<DetailView: View>: View {
     
     var body: some View {
         Button {
-            showSheet = true
+            ExtensionDetailWindowController.shared.present(
+                id: panelID,
+                parent: SettingsWindowController.shared.activeSettingsWindow
+            ) {
+                detailView()
+            }
         } label: {
             ZStack(alignment: .leading) {
                 // Screenshot background on right side with fade
@@ -749,11 +882,16 @@ struct FeaturedExtensionCard<DetailView: View>: View {
                         Text(title)
                             .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(titleColor)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         
                         // Subtitle
                         Text(subtitle)
                             .font(.system(size: 13))
                             .foregroundStyle(subtitleColor)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+                            .allowsTightening(true)
                         
                         Spacer()
                         
@@ -814,12 +952,6 @@ struct FeaturedExtensionCard<DetailView: View>: View {
         .onHover { hovering in
             isHovering = hovering
         }
-        .sheet(isPresented: $showSheet, onDismiss: {
-            SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-        }) {
-            detailView()
-                .presentationBackground(.clear)
-        }
     }
 }
 
@@ -827,6 +959,7 @@ struct FeaturedExtensionCard<DetailView: View>: View {
 // MARK: - Featured Extension Card (Wide)
 
 struct FeaturedExtensionCardWide<DetailView: View>: View {
+    let panelID: String
     let title: String
     let subtitle: String
     let iconURL: String
@@ -838,7 +971,6 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
     var badgeText: String? = nil
     let detailView: () -> DetailView
     
-    @State private var showSheet = false
     @State private var isHovering = false
 
     private var titleColor: Color {
@@ -876,7 +1008,12 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
     
     var body: some View {
         Button {
-            showSheet = true
+            ExtensionDetailWindowController.shared.present(
+                id: panelID,
+                parent: SettingsWindowController.shared.activeSettingsWindow
+            ) {
+                detailView()
+            }
         } label: {
             ZStack(alignment: .leading) {
                 // Screenshot background on right side with fade
@@ -911,6 +1048,8 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
                             Text(title)
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundStyle(titleColor)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                             
                             if let badgeText {
                                 Text(badgeText)
@@ -933,6 +1072,9 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
                         Text(subtitle)
                             .font(.system(size: 13))
                             .foregroundStyle(subtitleColor)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+                            .allowsTightening(true)
                         
                         // Feature badges
                         HStack(spacing: 8) {
@@ -983,12 +1125,6 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
         .onHover { hovering in
             isHovering = hovering
         }
-        .sheet(isPresented: $showSheet, onDismiss: {
-            SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-        }) {
-            detailView()
-                .presentationBackground(.clear)
-        }
     }
 }
 
@@ -996,6 +1132,7 @@ struct FeaturedExtensionCardWide<DetailView: View>: View {
 // MARK: - Featured Extension Card (Compact)
 
 struct FeaturedExtensionCardCompact<DetailView: View>: View {
+    let panelID: String
     let category: String
     let title: String
     let subtitle: String
@@ -1009,7 +1146,6 @@ struct FeaturedExtensionCardCompact<DetailView: View>: View {
     var isCommunity: Bool = false
     let detailView: () -> DetailView
     
-    @State private var showSheet = false
     @State private var isHovering = false
 
     private var titleColor: Color {
@@ -1043,7 +1179,12 @@ struct FeaturedExtensionCardCompact<DetailView: View>: View {
     
     var body: some View {
         Button {
-            showSheet = true
+            ExtensionDetailWindowController.shared.present(
+                id: panelID,
+                parent: SettingsWindowController.shared.activeSettingsWindow
+            ) {
+                detailView()
+            }
         } label: {
             ZStack(alignment: .leading) {
                 // Screenshot background on right side with fade
@@ -1108,6 +1249,8 @@ struct FeaturedExtensionCardCompact<DetailView: View>: View {
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(titleColor)
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
                         
                         if isNew {
                             Text("New")
@@ -1123,7 +1266,8 @@ struct FeaturedExtensionCardCompact<DetailView: View>: View {
                     Text(subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(subtitleColor)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(DroppySpacing.mdl)
                 
@@ -1162,12 +1306,6 @@ struct FeaturedExtensionCardCompact<DetailView: View>: View {
         .onHover { hovering in
             isHovering = hovering
         }
-        .sheet(isPresented: $showSheet, onDismiss: {
-            SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-        }) {
-            detailView()
-                .presentationBackground(.clear)
-        }
     }
 }
 
@@ -1179,21 +1317,42 @@ struct CompactExtensionRow<DetailView: View>: View {
     var iconPlaceholderColor: Color? = nil
     let title: String
     let subtitle: String
+    let categoryLabel: String
+    let panelID: String
     let isInstalled: Bool
     var isDisabled: Bool = false
     var installCount: Int?
     var isCommunity: Bool = false
     var onEnableAction: (() -> Void)? = nil
     let detailView: () -> DetailView
+    @State private var isActionHovering = false
 
-    @State private var showSheet = false
-    @State private var isHovering = false
+    private var actionTitle: String {
+        isDisabled ? "Disabled" : (isInstalled ? "Manage" : "Get")
+    }
+
+    private var headerText: String {
+        isCommunity ? "Community Extension" : categoryLabel
+    }
+
+    private var actionTextColor: Color {
+        isDisabled ? AdaptiveColors.secondaryTextAuto.opacity(0.88) : .blue
+    }
+
+    private var actionFill: Color {
+        isDisabled ? AdaptiveColors.overlayAuto(0.08) : Color.white.opacity(0.92)
+    }
 
     var body: some View {
         Button {
-            showSheet = true
+            ExtensionDetailWindowController.shared.present(
+                id: panelID,
+                parent: SettingsWindowController.shared.activeSettingsWindow
+            ) {
+                detailView()
+            }
         } label: {
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
                 // Icon
                 if let urlString = iconURL, let url = URL(string: urlString) {
                     CachedAsyncImage(url: url) { image in
@@ -1202,15 +1361,15 @@ struct CompactExtensionRow<DetailView: View>: View {
                         RoundedRectangle(cornerRadius: DroppyRadius.ms)
                             .fill(AdaptiveColors.overlayAuto(0.1))
                     }
-                    .frame(width: 44, height: 44)
+                    .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous))
                     .saturation(isDisabled ? 0 : 1)
                     .opacity(isDisabled ? 0.65 : 1)
                 } else if let placeholder = iconPlaceholder {
                     Image(systemName: placeholder)
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.system(size: 22, weight: .medium))
                         .foregroundStyle(iconPlaceholderColor ?? .blue)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 56, height: 56)
                         .background((iconPlaceholderColor ?? .blue).opacity(0.15))
                         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.ms, style: .continuous))
                         .saturation(isDisabled ? 0 : 1)
@@ -1218,72 +1377,61 @@ struct CompactExtensionRow<DetailView: View>: View {
                 } else {
                     RoundedRectangle(cornerRadius: DroppyRadius.ms)
                         .fill(AdaptiveColors.overlayAuto(0.1))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 56, height: 56)
                         .opacity(isDisabled ? 0.65 : 1)
                 }
                 
-                // Title + Subtitle
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(isDisabled ? AdaptiveColors.secondaryTextAuto : AdaptiveColors.primaryTextAuto)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(headerText)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AdaptiveColors.secondaryTextAuto)
+                        .lineLimit(1)
 
-                        if isDisabled {
-                            HStack(spacing: 3) {
-                                Image(systemName: "slash.circle.fill")
-                                    .font(.system(size: 8))
-                                Text("Disabled")
-                                    .font(.system(size: 9, weight: .medium))
-                            }
-                            .foregroundStyle(AdaptiveColors.secondaryTextAuto.opacity(0.9))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(AdaptiveColors.overlayAuto(0.1)))
-                        }
-                        
-                        if isCommunity {
-                            HStack(spacing: 3) {
-                                Image(systemName: "person.2.fill")
-                                    .font(.system(size: 8))
-                                Text("Community")
-                                    .font(.system(size: 9, weight: .medium))
-                            }
-                            .foregroundStyle(.purple.opacity(0.9))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.purple.opacity(0.15)))
-                        }
-                    }
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(isDisabled ? AdaptiveColors.secondaryTextAuto : AdaptiveColors.primaryTextAuto)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     
                     Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(isDisabled ? AdaptiveColors.secondaryTextAuto : .secondary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(isDisabled ? AdaptiveColors.secondaryTextAuto : AdaptiveColors.secondaryTextAuto.opacity(0.92))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+                        .allowsTightening(true)
+                        .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34, alignment: .topLeading)
+
+                    Text(actionTitle)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(actionTextColor)
+                        .frame(minWidth: 84)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(isDisabled ? actionFill : Color.white.opacity(isActionHovering ? 1.0 : 0.92))
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1)
+                        )
+                        .scaleEffect(isActionHovering ? 1.02 : 1.0)
+                        .animation(DroppyAnimation.hoverQuick, value: isActionHovering)
+                        .onHover { hovering in
+                            isActionHovering = hovering
+                        }
+                        .padding(.top, 4)
                 }
-                
-                Spacer()
-                
-                // Setup/Manage Button
-                Text(isDisabled ? "Disabled" : (isInstalled ? "Manage" : "Set Up"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isDisabled ? AdaptiveColors.secondaryTextAuto.opacity(0.9) : .secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(isDisabled ? AdaptiveColors.overlayAuto(0.08) : AdaptiveColors.buttonBackgroundAuto)
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
-                    )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(isHovering ? AdaptiveColors.overlayAuto(0.03) : Color.clear)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 106, alignment: .topLeading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(DroppyCardButtonStyle())
+        .buttonStyle(ExtensionRowButtonStyle())
         .contextMenu {
             if isDisabled {
                 Button {
@@ -1293,18 +1441,16 @@ struct CompactExtensionRow<DetailView: View>: View {
                 }
             }
         }
-        .onHover { hovering in
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
-        }
-        .sheet(isPresented: $showSheet, onDismiss: {
-            SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-        }) {
-            detailView()
-                .presentationBackground(.clear)
-        }
         .opacity(isDisabled ? 0.78 : 1)
+    }
+}
+
+private struct ExtensionRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.99 : 1.0)
+            .animation(DroppyAnimation.hoverQuick, value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
     }
 }
 
@@ -1315,8 +1461,6 @@ struct CategoryPillButton: View {
     let isSelected: Bool
     let namespace: Namespace.ID
     let action: () -> Void
-    
-    @State private var isHovering = false
     
     var body: some View {
         Button(action: action) {
@@ -1332,11 +1476,11 @@ struct CategoryPillButton: View {
             .background {
                 if isSelected {
                     Capsule()
-                        .fill(Color.blue.opacity(isHovering ? 1.0 : 0.85))
+                        .fill(Color.blue.opacity(0.9))
                         .matchedGeometryEffect(id: "SelectedCategory", in: namespace)
                 } else {
                     Capsule()
-                        .fill(isHovering ? AdaptiveColors.hoverBackgroundAuto : AdaptiveColors.buttonBackgroundAuto)
+                        .fill(AdaptiveColors.buttonBackgroundAuto)
                 }
             }
             .overlay(
@@ -1345,11 +1489,6 @@ struct CategoryPillButton: View {
             )
         }
         .buttonStyle(DroppySelectableButtonStyle(isSelected: isSelected))
-        .onHover { hovering in
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
-        }
     }
 }
 
@@ -1483,7 +1622,6 @@ struct AIExtensionIcon: View {
 
 struct AIBackgroundRemovalSettingsRow: View {
     @ObservedObject private var manager = AIInstallManager.shared
-    @State private var showInstallSheet = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1536,12 +1674,13 @@ struct AIBackgroundRemovalSettingsRow: View {
         .frame(minHeight: 160)
         .aiExtensionCardStyle()
         .contentShape(Rectangle())
-        .onTapGesture { showInstallSheet = true }
-        .sheet(isPresented: $showInstallSheet, onDismiss: {
-            SettingsWindowController.shared.cleanupAttachedSheetIfPresent()
-        }) {
-            AIInstallView()
-                .presentationBackground(.clear)
+        .onTapGesture {
+            ExtensionDetailWindowController.shared.present(
+                id: "aiBackgroundRemoval",
+                parent: SettingsWindowController.shared.activeSettingsWindow
+            ) {
+                AIInstallView()
+            }
         }
     }
 }
@@ -1558,7 +1697,6 @@ struct BackgroundRemovalSettingsRow: View {
 
 struct ElementCaptureInfoViewWrapper: View {
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     @State private var currentShortcut: SavedShortcut? = {
         if let data = UserDefaults.standard.data(forKey: "elementCaptureShortcut"),
@@ -1571,8 +1709,7 @@ struct ElementCaptureInfoViewWrapper: View {
     var body: some View {
         ElementCaptureInfoView(
             currentShortcut: $currentShortcut,
-            installCount: installCount,
-            rating: rating
+            installCount: installCount
         )
     }
 }

@@ -608,10 +608,12 @@ struct MediaPlayerView: View {
     ) {
         // Cancel any pending hide
         inlineHUDHideWorkItem?.cancel()
-        
-        // Update type, value, and mute state INSTANTLY (no animation - matches regular HUD)
+
+        let normalizedValue: CGFloat = value.isFinite ? max(0, min(1, value)) : 0
+
+        // Keep type/state updates immediate while value itself flows smoothly for key repeat.
         inlineHUDType = type
-        inlineHUDValue = value
+        inlineHUDValue = normalizedValue
         inlineHUDMuted = muted
         inlineHUDBatteryCharging = isCharging
         inlineHUDSymbolOverride = symbolOverride
@@ -896,7 +898,7 @@ struct MediaPlayerView: View {
                         .shadow(color: visualizerColor.opacity(0.3), radius: 1)
                         .shadow(color: visualizerColor.opacity(0.15 + (currentProgress * 0.15)), radius: 3)
                         .shadow(color: visualizerColor.opacity(0.1 + (currentProgress * 0.1)), radius: 5 + (currentProgress * 3))
-                        .animation(.interpolatingSpring(stiffness: 350, damping: 28), value: currentProgress)
+                        .animation(DroppyAnimation.tracking, value: currentProgress)
                 }
             }
             .frame(height: trackHeight)
@@ -984,7 +986,12 @@ struct MediaPlayerView: View {
                 // Center: Core playback controls
                 HStack(spacing: 32) {
                     // Previous
-                    MediaControlButton(icon: "backward.fill", size: 24, foregroundColor: controlForeground) {
+                    MediaControlButton(
+                        icon: "backward.fill",
+                        size: 24,
+                        foregroundColor: controlForeground,
+                        nudgeDirection: .left
+                    ) {
                         musicManager.previousTrack()
                     }
                     
@@ -998,7 +1005,12 @@ struct MediaPlayerView: View {
                     }
                     
                     // Next
-                    MediaControlButton(icon: "forward.fill", size: 24, foregroundColor: controlForeground) {
+                    MediaControlButton(
+                        icon: "forward.fill",
+                        size: 24,
+                        foregroundColor: controlForeground,
+                        nudgeDirection: .right
+                    ) {
                         musicManager.nextTrack()
                     }
                 }
@@ -1075,10 +1087,10 @@ struct MediaPlayerView: View {
                     }
                 }
                 
-                // Previous (nudges left)
+                // Previous (looping chevron motion)
                 MediaControlButton(
                     icon: "backward.fill",
-                    size: 18,
+                    size: 24,
                     foregroundColor: controlForeground,
                     tapPadding: 6,
                     nudgeDirection: .left
@@ -1086,7 +1098,7 @@ struct MediaPlayerView: View {
                     musicManager.previousTrack()
                 }
                 
-                // Play/Pause (wiggles - slightly larger)
+                // Play/Pause (native symbol morph - slightly larger)
                 MediaControlButton(
                     icon: musicManager.isPlaying ? "pause.fill" : "play.fill",
                     size: 24,
@@ -1097,10 +1109,10 @@ struct MediaPlayerView: View {
                     musicManager.togglePlay()
                 }
                 
-                // Next (nudges right)
+                // Next (looping chevron motion)
                 MediaControlButton(
                     icon: "forward.fill",
-                    size: 18,
+                    size: 24,
                     foregroundColor: controlForeground,
                     tapPadding: 6,
                     nudgeDirection: .right

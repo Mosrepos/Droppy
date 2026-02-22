@@ -15,6 +15,7 @@ struct HUDSlider: View {
     
     @State private var isDragging = false
     @State private var displayedMuted = false  // PREMIUM: Delayed mute state for drain-then-color effect
+    @State private var displayedValue: CGFloat = 0
     
     /// Whether slider should be expanded (dragging OR externally active)
     private var isExpanded: Bool { isDragging || isActive }
@@ -44,6 +45,16 @@ struct HUDSlider: View {
             return Color(red: 0.08, green: 0.25, blue: 0.12)  // Dark faded green
         }
     }
+
+    private func normalized(_ rawValue: CGFloat) -> CGFloat {
+        guard rawValue.isFinite else { return 0 }
+        return max(0, min(1, rawValue))
+    }
+
+    /// Rendered value used for smooth keyboard-driven updates while keeping drag direct.
+    private var renderedValue: CGFloat {
+        isDragging ? normalized(value) : displayedValue
+    }
     
     var body: some View {
         HStack(spacing: 12) {  // Matches icon-to-slider spacing in HUDOverlayView
@@ -52,40 +63,39 @@ struct HUDSlider: View {
             
             // PREMIUM: Animated percentage text with natural width
             AnimatedPercentageText(
-                value: value,
+                value: renderedValue,
                 foregroundColor: percentageColor
             )
                 .fixedSize()  // Natural width - no extra padding
         }
         .frame(height: 20)
-        // PREMIUM: Smooth width animation when text changes size (e.g. 9→10, 99→100)
-        .animation(DroppyAnimation.state, value: Int(value * 100))
-        // PREMIUM: Delayed mute color transition - bar drains first, then color changes
+        .onChange(of: value) { _, newValue in
+            let nextValue = normalized(newValue)
+            if isDragging {
+                displayedValue = nextValue
+                return
+            }
+            withAnimation(DroppyAnimation.tracking) {
+                displayedValue = nextValue
+            }
+        }
+        // Keep color response immediate so glass reflections stay in sync during key-repeat.
         .onChange(of: isMuted) { _, newMuted in
-            if newMuted {
-                // When muting: delay color change so bar drains to 0 first (green -> empty -> red)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    withAnimation(DroppyAnimation.easeInOut(duration: 0.2)) {
-                        displayedMuted = true
-                    }
-                }
-            } else {
-                // When unmuting: immediately show green (red -> green instantly, then bar fills)
-                withAnimation(DroppyAnimation.easeInOut(duration: 0.15)) {
-                    displayedMuted = false
-                }
+            withAnimation(DroppyAnimation.easeInOut(duration: 0.12)) {
+                displayedMuted = newMuted
             }
         }
         .onAppear {
             // Sync initial state
             displayedMuted = isMuted
+            displayedValue = normalized(value)
         }
     }
     
     private var sliderTrack: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let progress = max(0, min(1, value))
+            let progress = renderedValue
             let progressWidth = max(0, min(width, width * progress))
             let trackHeight: CGFloat = isExpanded ? 5 : 4
             
@@ -95,7 +105,7 @@ struct HUDSlider: View {
                     .fill(trackColor)
                     .frame(height: trackHeight)
                     // PREMIUM: Smooth color transition for mute state
-                    .animation(DroppyAnimation.easeInOut(duration: 0.25), value: isMuted)
+                    .animation(DroppyAnimation.easeInOut(duration: 0.12), value: displayedMuted)
                 
                 // PREMIUM: Gradient fill with glow
                 if progress > 0 {
@@ -127,9 +137,7 @@ struct HUDSlider: View {
                         .shadow(color: fillColor.opacity(0.3), radius: 1)
                         .shadow(color: fillColor.opacity(0.15 + (progress * 0.15)), radius: 3)
                         .shadow(color: fillColor.opacity(0.1 + (progress * 0.1)), radius: 5 + (progress * 3))
-                        // PREMIUM: Smooth animation for both progress AND mute color transition
-                        .animation(.interpolatingSpring(stiffness: 350, damping: 28), value: progress)
-                        .animation(DroppyAnimation.easeInOut(duration: 0.25), value: isMuted)
+                        .animation(DroppyAnimation.easeInOut(duration: 0.12), value: displayedMuted)
                 }
             }
             .frame(height: trackHeight)

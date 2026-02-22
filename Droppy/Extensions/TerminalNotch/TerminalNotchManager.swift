@@ -193,7 +193,7 @@ class TerminalNotchManager: ObservableObject {
         pulsePosition = 0
         
         // Animate position from 0 to past 1 (so the pulse sweeps completely across)
-        withAnimation(.easeInOut(duration: 0.6)) {
+        withAnimation(DroppyAnimation.smooth(duration: 0.6)) {
             pulsePosition = 1.15
         }
         

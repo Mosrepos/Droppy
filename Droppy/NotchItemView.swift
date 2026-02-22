@@ -12,6 +12,7 @@ struct NotchItemView: View {
     var useAdaptiveForegroundsForTransparentNotch: Bool = false
     
     @AppStorage(AppPreferenceKey.enablePowerFolders) private var enablePowerFolders = PreferenceDefault.enablePowerFolders
+    @ObservedObject private var backgroundRemovalManager = BackgroundRemovalManager.shared
     
     @State private var thumbnail: NSImage?
     @State private var isHovering = false
@@ -305,6 +306,7 @@ struct NotchItemView: View {
             isCompressing: isCompressing,
             isUnzipping: isUnzipping,
             isCreatingZIP: isCreatingZIP,
+            backgroundRemovalProgress: backgroundRemovalManager.progress,
             isPoofing: $isPoofing,
             pendingConvertedItem: $pendingConvertedItem,
             renamingItemId: $renamingItemId,
@@ -1049,10 +1051,11 @@ struct NotchItemView: View {
                     }
                 }
             } catch {
+                let errorMessage = error.localizedDescription
                 await MainActor.run {
                     isRemovingBackground = false
                     state.endFileOperation()
-                    print("Background removal failed: \(error.localizedDescription)")
+                    HapticFeedback.error()
                     withAnimation(DroppyAnimation.stateEmphasis) {
                         isShakeAnimating = true
                     }
@@ -1068,6 +1071,10 @@ struct NotchItemView: View {
                         withAnimation { isShakeAnimating = false }
                     }
                 }
+                await DroppyAlertController.shared.showError(
+                    title: "Background Removal Failed",
+                    message: errorMessage
+                )
             }
         }
     }
@@ -1266,6 +1273,8 @@ struct NotchItemView: View {
         }
         
         Task {
+            var failedItems: [(name: String, message: String)] = []
+
             for selectedItem in imagesToProcess {
                 do {
                     let outputURL = try await selectedItem.removeBackground()
@@ -1284,7 +1293,7 @@ struct NotchItemView: View {
                         // End processing even on failure
                         state.endProcessing(for: selectedItem.id)
                     }
-                    print("Background removal failed for \(selectedItem.name): \(error.localizedDescription)")
+                    failedItems.append((name: selectedItem.name, message: error.localizedDescription))
                 }
             }
             
@@ -1292,6 +1301,31 @@ struct NotchItemView: View {
                 isRemovingBackground = false
                 state.endFileOperation()
             }
+
+            guard !failedItems.isEmpty else { return }
+
+            let successCount = max(0, imagesToProcess.count - failedItems.count)
+            let shownFailures = failedItems.prefix(10)
+            var failureLines = shownFailures
+                .map { "- \($0.name): \($0.message)" }
+                .joined(separator: "\n")
+
+            if failedItems.count > shownFailures.count {
+                failureLines += "\n- \(failedItems.count - shownFailures.count) more failures not shown."
+            }
+
+            let message = """
+            Removed background from \(successCount) of \(imagesToProcess.count) images.
+
+            Failed files:
+            \(failureLines)
+            """
+
+            await MainActor.run { HapticFeedback.error() }
+            await DroppyAlertController.shared.showError(
+                title: "Background Removal Completed with Issues",
+                message: message
+            )
         }
     }
 
@@ -1375,6 +1409,7 @@ private struct NotchItemContent: View {
     let isCompressing: Bool
     let isUnzipping: Bool
     let isCreatingZIP: Bool
+    let backgroundRemovalProgress: Double
     @Binding var isPoofing: Bool
     @Binding var pendingConvertedItem: DroppedItem?
     @Binding var renamingItemId: UUID?
@@ -1447,7 +1482,12 @@ private struct NotchItemContent: View {
                 }
                 .overlay {
                     // Magic processing animation for background removal
-                    if isRemovingBackground || state.processingItemIds.contains(item.id) {
+                    if isRemovingBackground {
+                        MagicProcessingOverlay(progress: backgroundRemovalProgress)
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous))
+                            .transition(.opacity.animation(DroppyAnimation.viewChange))
+                    } else if state.processingItemIds.contains(item.id) {
                         MagicProcessingOverlay()
                             .frame(width: 56, height: 56)
                             .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xs, style: .continuous))
@@ -1692,7 +1732,7 @@ private struct RenameTooltipPopover: View {
                     Text(String(localized: "action.save"))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .disabled(trimmedText.isEmpty)
             }
         }

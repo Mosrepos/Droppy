@@ -51,86 +51,8 @@ final class ThumbnailCache {
         pageCache.countLimit = 50
         pageCache.totalCostLimit = 4 * 1024 * 1024 // 4MB max
         
-        // CRITICAL: Warmup QuickLook and Metal shaders on background thread during startup
-        // This eliminates the ~1 second lag on first file drop by forcing Metal shader compilation now
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.warmupQuickLook()
-        }
-    }
-    
-    /// Warms up the icon rendering system to preload Metal shaders
-    /// This eliminates the ~1 second lag on first file drop by forcing the
-    /// IconRendering.framework Metal shaders to load during app startup
-    private func warmupQuickLook() {
-        // 1. SYNCHRONOUS: Warmup NSWorkspace icon rendering AND cache by UTType
-        let commonTypes: [UTType] = [
-            .image, .pdf, .plainText, .data, .folder, .application,
-            .jpeg, .png, .gif, .movie, .mp3, .zip, .audio, .video,
-            .html, .json, .xml, .sourceCode, .swiftSource, .text,
-            .rtf, .archive, .diskImage, .executable, .bundle, .package
-        ]
-        
-        // Pre-cache icons AND force GPU rendering to trigger Metal shader compilation DURING startup
-        for type in commonTypes {
-            let icon = NSWorkspace.shared.icon(for: type)
-            let cacheKey = type.identifier as NSString
-            iconCache.setObject(icon, forKey: cacheKey, cost: 4096)
-            forceGPURender(icon)
-        }
-        
-        // Also warmup file-based icon (different code path)
-        let testIcon = NSWorkspace.shared.icon(forFile: "/System/Applications/Utilities/Terminal.app")
-        forceGPURender(testIcon)
-        
-        // 2. SYNCHRONOUS: Warmup QuickLook with MULTIPLE file types
-        let warmupPaths = [
-            "/System/Applications/Utilities/Terminal.app",
-            "/System/Library/Desktop Pictures/Sequoia.heic",
-            "/System/Library/CoreServices/Finder.app",
-            NSHomeDirectory()
-        ]
-        
-        for path in warmupPaths {
-            Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                let url = URL(fileURLWithPath: path)
-                let request = QLThumbnailGenerator.Request(
-                    fileAt: url,
-                    size: CGSize(width: 64, height: 64),
-                    scale: 2.0,
-                    representationTypes: .all
-                )
-                if let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request) {
-                    // Force GPU render the QuickLook thumbnail too
-                    await MainActor.run {
-                        self.forceGPURender(rep.nsImage)
-                    }
-                }
-            }
-        }
-    }
-    
-    /// Forces an NSImage to be rendered to GPU, triggering Metal shader compilation
-    private func forceGPURender(_ image: NSImage) {
-        guard image.size.width > 0 else { return }
-        let size = NSSize(width: 32, height: 32)
-        let bitmap = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: Int(size.width),
-            pixelsHigh: Int(size.height),
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        )
-        guard let bitmap = bitmap else { return }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-        image.draw(in: NSRect(origin: .zero, size: size))
-        NSGraphicsContext.restoreGraphicsState()
+        // Intentionally no eager warmup here.
+        // Startup should stay memory-light; warmup can be triggered only when needed.
     }
     
     /// Get or create a thumbnail for the given clipboard item
@@ -244,12 +166,12 @@ final class ThumbnailCache {
         }
         
         let icon = NSWorkspace.shared.icon(forFile: path)
-        iconCache.setObject(icon, forKey: cacheKey, cost: 4096) // ~4KB per icon
-        return icon
+        let normalized = normalizedIcon(icon, targetSize: 64)
+        iconCache.setObject(normalized, forKey: cacheKey, cost: estimatedCost(for: normalized))
+        return normalized
     }
     
-    /// Get pre-warmed icon for UTType (avoids Metal shader compilation lag)
-    /// Icons are pre-cached during app startup in warmupQuickLook()
+    /// Get cached icon for UTType.
     func cachedIconForType(_ type: UTType) -> NSImage {
         let cacheKey = type.identifier as NSString
         
@@ -260,8 +182,9 @@ final class ThumbnailCache {
         
         // Fallback: load and cache (may trigger Metal compilation, but rare)
         let icon = NSWorkspace.shared.icon(for: type)
-        iconCache.setObject(icon, forKey: cacheKey, cost: 4096)
-        return icon
+        let normalized = normalizedIcon(icon, targetSize: 64)
+        iconCache.setObject(normalized, forKey: cacheKey, cost: estimatedCost(for: normalized))
+        return normalized
     }
     
     /// Async load QuickLook thumbnail for any file path (used by clipboard)
@@ -407,7 +330,8 @@ final class ThumbnailCache {
         
         // PDFs: Use PDFKit for high-quality page rendering
         if ext == "pdf" {
-            return await Task.detached(priority: .userInitiated) {
+            let renderTask = Task.detached(priority: .userInitiated) { () -> NSImage? in
+                guard !Task.isCancelled else { return nil }
                 guard let pdf = PDFDocument(url: url),
                       let page = pdf.page(at: pageIndex) else { return nil }
                 
@@ -430,15 +354,23 @@ final class ThumbnailCache {
                 }
                 
                 image.unlockFocus()
+                guard !Task.isCancelled else { return nil }
                 
                 // Cache on main thread
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     let estimatedCost = Int(scaledSize.width * scaledSize.height * 4)
                     self.pageCache.setObject(image, forKey: cacheKey, cost: estimatedCost)
                 }
                 
                 return image
-            }.value
+            }
+
+            return await withTaskCancellationHandler {
+                await renderTask.value
+            } onCancel: {
+                renderTask.cancel()
+            }
         }
         
         // For other file types (first page only via QuickLook)
@@ -494,6 +426,28 @@ final class ThumbnailCache {
         fileCache.removeAllObjects()
         iconCache.removeAllObjects()
         pageCache.removeAllObjects()
+    }
+
+    private func normalizedIcon(_ image: NSImage, targetSize: CGFloat) -> NSImage {
+        let size = NSSize(width: targetSize, height: targetSize)
+        if !Thread.isMainThread {
+            let copy = image.copy() as? NSImage ?? image
+            copy.size = size
+            return copy
+        }
+        let output = NSImage(size: size)
+        output.lockFocus()
+        defer { output.unlockFocus() }
+        NSColor.clear.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        image.draw(in: NSRect(origin: .zero, size: size))
+        return output
+    }
+
+    private func estimatedCost(for image: NSImage) -> Int {
+        let width = Int(max(image.size.width, 1))
+        let height = Int(max(image.size.height, 1))
+        return max(width * height * 4, 1)
     }
 }
 

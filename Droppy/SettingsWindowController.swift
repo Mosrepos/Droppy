@@ -8,9 +8,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     
     /// The settings window
     private var window: NSWindow?
+
+    var activeSettingsWindow: NSWindow? {
+        window
+    }
     
     /// Dedicated lightweight window for Menu Bar Manager quick settings
     private var menuBarManagerWindow: NSWindow?
+    private var isClosingSettingsWindow = false
+    private var isClosingMenuBarManagerWindow = false
+    private var settingsDeferredTeardownWorkItem: DispatchWorkItem?
+    private var menuBarDeferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private override init() {
         super.init()
@@ -34,8 +43,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Tab to open when settings loads (cleared after use)
     private(set) var pendingTabToOpen: SettingsTab?
     
-    /// Shows the settings window with optional extension sheet
-    /// - Parameter extensionType: If provided, will navigate to Extensions and open this extension's info sheet
+    /// Shows the settings window with optional extension detail panel
+    /// - Parameter extensionType: If provided, will navigate to Extensions and open this extension's detail panel
     func showSettings(openingExtension extensionType: ExtensionType?) {
         let licenseManager = LicenseManager.shared
         if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
@@ -54,8 +63,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         
         // If window already exists, just bring it to front
         if let window = window {
+            cancelSettingsDeferredTeardown()
             NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
+            if window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                AppKitMotion.prepareForPresent(window, initialScale: 0.9)
+                window.orderFront(nil)
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(window, initialScale: 0.9, duration: 0.2)
+            }
             
             // Post notification so SettingsView can handle the extension
             if extensionType != nil {
@@ -69,8 +89,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         let hostingView = NSHostingView(rootView: settingsView)
         
-        // Keep all settings tabs at extensions width for layout consistency
-        let windowWidth: CGFloat = 920
+        let windowWidth: CGFloat = Self.baseWidth
         let windowHeight: CGFloat = 650
         
         // Create the window
@@ -82,9 +101,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         )
         
         newWindow.center()
-        newWindow.title = "Settings"
+        newWindow.title = ""
         newWindow.titlebarAppearsTransparent = true
-        newWindow.titleVisibility = .visible
+        newWindow.titleVisibility = .hidden
+        newWindow.standardWindowButton(.closeButton)?.isHidden = true
+        newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        newWindow.standardWindowButton(.zoomButton)?.isHidden = true
         
         // Configure background and appearance
         // NOTE: Do NOT use isMovableByWindowBackground to avoid buttons triggering window drag
@@ -132,23 +154,44 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        // If full settings is already open, route to the extension sheet there.
+        // If full settings is already open, route to the extension detail panel there.
         if let window {
+            cancelSettingsDeferredTeardown()
             NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
+            if window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                AppKitMotion.prepareForPresent(window, initialScale: 0.9)
+                window.orderFront(nil)
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(window, initialScale: 0.9, duration: 0.2)
+            }
             NotificationCenter.default.post(name: .openExtensionFromDeepLink, object: ExtensionType.menuBarManager)
             return
         }
 
         if let menuBarManagerWindow {
+            cancelMenuBarDeferredTeardown()
             NSApp.activate(ignoringOtherApps: true)
-            menuBarManagerWindow.makeKeyAndOrderFront(nil)
+            if menuBarManagerWindow.isVisible {
+                menuBarManagerWindow.makeKeyAndOrderFront(nil)
+            } else {
+                AppKitMotion.prepareForPresent(menuBarManagerWindow, initialScale: 0.95)
+                menuBarManagerWindow.orderFront(nil)
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    menuBarManagerWindow.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(menuBarManagerWindow, initialScale: 0.95, duration: 0.2)
+            }
             return
         }
 
         let content = MenuBarManagerInfoView(
-            installCount: nil,
-            rating: nil
+            installCount: nil
         )
         let hostingView = NSHostingView(rootView: content)
         let availableHeight = NSScreen.main?.visibleFrame.height ?? 800
@@ -191,13 +234,72 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     
     /// Close the settings window
     func close() {
-        window?.close()
-        menuBarManagerWindow?.close()
+        closeSettingsWindow()
+        closeMenuBarManagerQuickSettings()
     }
     
     /// Close the lightweight Menu Bar Manager quick settings window.
     func closeMenuBarManagerQuickSettings() {
-        menuBarManagerWindow?.close()
+        guard let panel = menuBarManagerWindow, !isClosingMenuBarManagerWindow else { return }
+        cancelMenuBarDeferredTeardown()
+        isClosingMenuBarManagerWindow = true
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+            guard let self else { return }
+            panel.orderOut(nil)
+            AppKitMotion.resetPresentationState(panel)
+            self.isClosingMenuBarManagerWindow = false
+            self.scheduleMenuBarDeferredTeardown()
+        }
+    }
+
+    private func closeSettingsWindow() {
+        guard let panel = window, !isClosingSettingsWindow else { return }
+        cancelSettingsDeferredTeardown()
+        ExtensionDetailWindowController.shared.close()
+        isClosingSettingsWindow = true
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+            guard let self else { return }
+            panel.orderOut(nil)
+            AppKitMotion.resetPresentationState(panel)
+            self.isClosingSettingsWindow = false
+            self.scheduleSettingsDeferredTeardown()
+        }
+    }
+
+    private func scheduleSettingsDeferredTeardown() {
+        settingsDeferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.settingsDeferredTeardownWorkItem = nil
+        }
+        settingsDeferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func scheduleMenuBarDeferredTeardown() {
+        menuBarDeferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.menuBarManagerWindow, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.menuBarManagerWindow = nil
+            self.menuBarDeferredTeardownWorkItem = nil
+        }
+        menuBarDeferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelSettingsDeferredTeardown() {
+        settingsDeferredTeardownWorkItem?.cancel()
+        settingsDeferredTeardownWorkItem = nil
+    }
+
+    private func cancelMenuBarDeferredTeardown() {
+        menuBarDeferredTeardownWorkItem?.cancel()
+        menuBarDeferredTeardownWorkItem = nil
     }
     
     /// Clears the pending extension (called after SettingsView consumes it)
@@ -210,27 +312,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         pendingTabToOpen = nil
     }
 
-    /// Ensures no stale AppKit sheet remains attached after SwiftUI sheet dismissal.
-    /// This prevents the settings window from staying dimmed due to a dangling sheet link.
-    func cleanupAttachedSheetIfPresent() {
-        guard let window = window, let sheet = window.attachedSheet else { return }
-        window.endSheet(sheet, returnCode: .cancel)
-    }
-    
     // MARK: - Window Sizing
     
     /// Base width for regular settings tabs
     static let baseWidth: CGFloat = 920
     
     /// Extended width for extensions tab
-    static let extensionsWidth: CGFloat = 920
+    static let extensionsWidth: CGFloat = baseWidth
     
     /// Resize the settings window based on the current tab
     /// - Parameter isExtensions: Whether the extensions tab is selected
     func resizeForTab(isExtensions: Bool) {
         guard let window = window else { return }
         
-        let targetWidth = isExtensions ? Self.extensionsWidth : Self.baseWidth
+        let targetWidth = Self.baseWidth
         let currentFrame = window.frame
         
         // Only resize if width actually changed
@@ -245,10 +340,26 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             height: currentFrame.height
         )
         
-        AppKitMotion.animateFrame(window, to: newFrame, duration: 0.2)
+        // Avoid animated frame updates here; they can re-enter layout while SwiftUI
+        // is already invalidating constraints during tab/content updates.
+        window.setFrame(newFrame, display: true, animate: false)
     }
     
     // MARK: - NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if sender === window {
+            closeSettingsWindow()
+            return false
+        }
+
+        if sender === menuBarManagerWindow {
+            closeMenuBarManagerQuickSettings()
+            return false
+        }
+
+        return true
+    }
     
     func windowWillClose(_ notification: Notification) {
         if let closingWindow = notification.object as? NSWindow {
@@ -256,10 +367,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             closingWindow.contentView = nil
             closingWindow.delegate = nil
             if closingWindow === window {
+                ExtensionDetailWindowController.shared.close()
                 window = nil
+                isClosingSettingsWindow = false
+                cancelSettingsDeferredTeardown()
             }
             if closingWindow === menuBarManagerWindow {
                 menuBarManagerWindow = nil
+                isClosingMenuBarManagerWindow = false
+                cancelMenuBarDeferredTeardown()
             }
         }
     }

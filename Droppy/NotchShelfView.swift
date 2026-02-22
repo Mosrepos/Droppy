@@ -10,10 +10,17 @@ import UniformTypeIdentifiers
 import Combine
 
 private let notchShelfDebugLogs = false
+private let lockTransitionDiagnosticsEnabled = false
 
 @inline(__always)
 private func notchShelfDebugLog(_ message: @autoclosure () -> String) {
     guard notchShelfDebugLogs else { return }
+    print(message())
+}
+
+@inline(__always)
+private func lockTransitionDebugLog(_ message: @autoclosure () -> String) {
+    guard lockTransitionDiagnosticsEnabled else { return }
     print(message())
 }
 
@@ -60,7 +67,6 @@ struct NotchShelfView: View {
     @AppStorage(AppPreferenceKey.enableAutoClean) private var enableAutoClean = PreferenceDefault.enableAutoClean
     @AppStorage(AppPreferenceKey.enableQuickActions) private var enableQuickActions = PreferenceDefault.enableQuickActions
     @AppStorage(AppPreferenceKey.enableRightClickHide) private var enableRightClickHide = PreferenceDefault.enableRightClickHide
-    @AppStorage(AppPreferenceKey.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget = PreferenceDefault.enableLockScreenMediaWidget
     @AppStorage(AppPreferenceKey.enableGradientVisualizer) private var enableGradientVisualizer = PreferenceDefault.enableGradientVisualizer
     @AppStorage(AppPreferenceKey.enableMediaAlbumArtGlow) private var enableMediaAlbumArtGlow = PreferenceDefault.enableMediaAlbumArtGlow
     @AppStorage(AppPreferenceKey.cameraInstalled) private var cameraInstalled = PreferenceDefault.cameraInstalled
@@ -87,11 +93,15 @@ struct NotchShelfView: View {
     @ObservedObject private var cameraManager = CameraManager.shared
     @ObservedObject private var telepromptyManager = TelepromptyManager.shared
     var caffeineManager = CaffeineManager.shared  // @Observable - no wrapper needed
+    var pomodoroManager = PomodoroManager.shared  // @Observable - no wrapper needed
     var todoManager = ToDoManager.shared  // @Observable - no wrapper needed
     var hudManager = HUDManager.shared  // @Observable - needed for notification HUD visibility tracking
     var notificationHUDManager = NotificationHUDManager.shared  // @Observable - needed for current notification tracking
     @AppStorage(AppPreferenceKey.caffeineEnabled) private var caffeineEnabled = PreferenceDefault.caffeineEnabled
     @AppStorage(AppPreferenceKey.caffeineInstantlyExpandShelfOnHover) private var caffeineInstantlyExpandShelfOnHover = PreferenceDefault.caffeineInstantlyExpandShelfOnHover
+    @AppStorage(AppPreferenceKey.pomodoroInstalled) private var pomodoroInstalled = PreferenceDefault.pomodoroInstalled
+    @AppStorage(AppPreferenceKey.pomodoroEnabled) private var pomodoroEnabled = PreferenceDefault.pomodoroEnabled
+    @AppStorage(AppPreferenceKey.pomodoroInstantlyExpandShelfOnHover) private var pomodoroInstantlyExpandShelfOnHover = PreferenceDefault.pomodoroInstantlyExpandShelfOnHover
     @State private var showVolumeHUD = false
     @State private var showBrightnessHUD = false
     @State private var hudWorkItem: DispatchWorkItem?
@@ -146,12 +156,12 @@ struct NotchShelfView: View {
     
     // PREMIUM: Album art interaction states
     @State private var albumArtNudgeOffset: CGFloat = 0  // ±6pt nudge on prev/next tap
-    @State private var albumArtParallaxOffset: CGSize = .zero  // Cursor-following parallax effect
     @State private var albumArtTapScale: CGFloat = 1.0  // Subtle grow effect when clicking to open source
     @State private var mediaOverlayAppeared: Bool = false  // Scale+opacity appear animation for morphing overlays
     
     // Caffeine extension view state
     @State private var showCaffeineView: Bool = false
+    @State private var showPomodoroView: Bool = false
     @State private var showCameraView: Bool = false
     @State private var showTelepromptyView: Bool = false
 
@@ -239,13 +249,13 @@ struct NotchShelfView: View {
     }
     
     /// Whether the Dynamic Island should use transparent glass effect
-    /// Uses the main "Transparent Background" setting
+    /// Uses the main "Liquid mode" setting
     private var shouldUseDynamicIslandTransparent: Bool {
         isDynamicIslandMode && useTransparentBackground
     }
     
     /// Whether transparent, non-physical-notch surfaces should use adaptive foregrounds.
-    /// Uses the main "Transparent Background" setting.
+    /// Uses the main "Liquid mode" setting.
     private var shouldUseExternalNotchTransparent: Bool {
         !hasPhysicalNotchOnDisplay && useTransparentBackground
     }
@@ -297,6 +307,7 @@ struct NotchShelfView: View {
     /// Keep hover-scale feedback strictly in collapsed mode so list expansion
     /// only grows downward and never nudges the top edge.
     private var notchHoverScale: CGFloat {
+        guard !isLockHandoffActive else { return 1.0 }
         guard hoverScaleActive && !isExpandedOnThisScreen && !isTodoListExpanded else { return 1.0 }
 
         // External Dynamic Island gets no hover scale to avoid side-to-side wobble feel.
@@ -468,14 +479,24 @@ struct NotchShelfView: View {
         UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
     }
 
+    private var pomodoroExtensionEnabled: Bool {
+        pomodoroInstalled && pomodoroEnabled
+    }
+
     private var isCaffeineViewVisible: Bool {
         showCaffeineView && caffeineExtensionEnabled
     }
 
+    private var isPomodoroViewVisible: Bool {
+        showPomodoroView && pomodoroExtensionEnabled
+    }
+
     private var isMediaPlayerVisibleInShelf: Bool {
+        let recentlyPlayingKeepsExpandedVisible = musicManager.wasRecentlyPlaying && !musicManager.isBrowserSource
+        let mediaPlaybackActiveForShelf = musicManager.isPlaying || recentlyPlayingKeepsExpandedVisible
         let isForced = musicManager.isMediaHUDForced
         let autoOrSongDriven = (autoOpenMediaHUDOnShelfExpand && !musicManager.isMediaHUDHidden) ||
-            ((musicManager.isPlaying || musicManager.wasRecentlyPlaying) &&
+            (mediaPlaybackActiveForShelf &&
              !musicManager.isMediaHUDHidden &&
              state.items.isEmpty)
         let shouldBlockAutoSwitch = shouldLockMediaForTodo
@@ -483,6 +504,7 @@ struct NotchShelfView: View {
         return showMediaPlayer &&
         !isTelepromptyViewVisible &&
         !isCameraViewVisible &&
+        !isPomodoroViewVisible &&
         !state.isDropTargeted &&
         !dragMonitor.isDragging &&
         !musicManager.isPlayerIdle &&
@@ -497,6 +519,7 @@ struct NotchShelfView: View {
         !musicManager.isPlayerIdle &&
         !isTerminalViewVisible &&
         !isCaffeineViewVisible &&
+        !isPomodoroViewVisible &&
         !isTelepromptyViewVisible &&
         !isCameraViewVisible &&
         !shouldLockMediaForTodo
@@ -549,6 +572,7 @@ struct NotchShelfView: View {
             state.shelfDisplaySlotCount == 0 &&
             !isTerminalViewVisible &&
             !isCaffeineViewVisible &&
+            !isPomodoroViewVisible &&
             !isCameraViewVisible &&
             !isTelepromptyViewVisible
 
@@ -581,6 +605,7 @@ struct NotchShelfView: View {
         isTodoExtensionActive &&
         !isTerminalViewVisible &&
         !isCaffeineViewVisible &&
+        !isPomodoroViewVisible &&
         !isTelepromptyViewVisible &&
         !isCameraViewVisible
     }
@@ -591,8 +616,11 @@ struct NotchShelfView: View {
         // Media player gets full width, shelf gets narrower width
         if isMediaPlayerVisibleInShelf {
             // Apple Music needs extra width for additional controls (shuffle, repeat, love)
-            let appleMusicExtraWidth: CGFloat = musicManager.isAppleMusicSource ? 50 : 0
-            return mediaPlayerWidth + appleMusicExtraWidth
+            // plus extra headroom for the animated skip chevrons.
+            let appleMusicExtraWidth: CGFloat = musicManager.isAppleMusicSource ? 78 : 0
+            // Spotify needs a small width bump so control row doesn't clip with animated skip icons.
+            let spotifyExtraWidth: CGFloat = musicManager.isSpotifySource ? 28 : 0
+            return mediaPlayerWidth + appleMusicExtraWidth + spotifyExtraWidth
         }
         if isTelepromptyViewVisible {
             let targetPromptWidth = CGFloat(max(320, min(telepromptyPromptWidth, 760)))
@@ -748,6 +776,7 @@ struct NotchShelfView: View {
         
         // CAFFEINE HOVER TAKES PRIORITY: When hovering with caffeine active, suppress media
         if isCaffeineHoverActive { return false }
+        if isPomodoroHoverActive { return false }
         
         // FORCED MODE: Show if user swiped to show media, regardless of playback state
         // (as long as there's a track to show)
@@ -782,6 +811,7 @@ struct NotchShelfView: View {
 
     private var isBrowserTrackLoading: Bool {
         guard musicManager.isBrowserSource else { return false }
+        guard !musicManager.isPlayerIdle else { return false }
         return Date() < browserTrackLoadingUntil
     }
 
@@ -796,6 +826,7 @@ struct NotchShelfView: View {
         guard !hudIsVisible && !HUDManager.shared.isVisible else { return false }
         guard !isExpandedOnThisScreen else { return false }
         guard !isCaffeineHoverActive else { return false }
+        guard !isPomodoroHoverActive else { return false }
         guard !shouldLockMediaForTodo else { return false }
 
         if let displayID = targetScreen?.displayID {
@@ -825,7 +856,8 @@ struct NotchShelfView: View {
         !hudIsVisible &&
         !HUDManager.shared.isVisible &&
         !isMediaHUDSurfaceActive &&
-        !isCaffeineHoverActive
+        !isCaffeineHoverActive &&
+        !isPomodoroHoverActive
     }
 
     private var collapsedShelfPeekFootprint: CGSize {
@@ -864,12 +896,37 @@ struct NotchShelfView: View {
         !HUDManager.shared.isVisible
     }
 
-    /// Inline lock HUD should only render when there is no dedicated lock-screen surface active.
-    /// This prevents duplicate lock icons and ghosting during lock/unlock handoff.
+    /// Whether pomodoro hover indicator should show (mirrors High Alert hover behavior).
+    /// Disabled when user prefers instant shelf expand on hover.
+    private var isPomodoroHoverActive: Bool {
+        isHoveringOnThisScreen &&
+        pomodoroExtensionEnabled &&
+        pomodoroManager.isActive &&
+        !pomodoroInstantlyExpandShelfOnHover &&
+        !hudIsVisible &&
+        !isExpandedOnThisScreen &&
+        !HUDManager.shared.isVisible &&
+        !isCaffeineHoverActive
+    }
+
+    /// Inline lock HUD stays fully disabled while the dedicated lock surface owns
+    /// the lock/unlock lifecycle. This prevents dual-surface overlap artifacts.
+    private var isLockHandoffActive: Bool {
+        lockScreenManager.transitionPhase == .unlockingHandoff
+    }
+
+    private var inlineLockScreenHUDTransition: AnyTransition {
+        isLockHandoffActive ? .identity : displayHUDTransition
+    }
+
     private var shouldRenderInlineLockScreenHUD: Bool {
-        HUDManager.shared.isLockScreenHUDVisible &&
-        enableLockScreenHUD &&
-        !lockScreenManager.isDedicatedHUDActive
+        guard HUDManager.shared.isLockScreenHUDVisible, enableLockScreenHUD else { return false }
+        // Dedicated lock surface owns lock/unlock lifecycle end-to-end.
+        // Keep inline lock HUD fully suppressed to prevent dual-surface overlap.
+        if lockScreenManager.isDedicatedHUDActive {
+            return false
+        }
+        return lockScreenManager.isUnlocked
     }
     
     /// Current notch width based on state
@@ -886,10 +943,12 @@ struct NotchShelfView: View {
         // CAFFEINE HOVER TAKES HIGHEST PRIORITY (after volume/brightness HUDs)
         } else if isCaffeineHoverActive {
             return highAlertHudWidth
+        } else if isPomodoroHoverActive {
+            return highAlertHudWidth
         // Pre-arm inline geometry during dedicated lock-HUD handoff to prevent width jump.
         } else if HUDManager.shared.isLockScreenHUDVisible && enableLockScreenHUD {
             return batteryHudWidth
-        } else if shouldRenderInlineLockScreenHUD && !isCaffeineHoverActive {
+        } else if shouldRenderInlineLockScreenHUD && !isCaffeineHoverActive && !isPomodoroHoverActive {
             return batteryHudWidth  // Lock Screen HUD uses same width as battery HUD
         } else if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD {
             return hudWidth  // AirPods HUD uses same width as Media HUD
@@ -899,6 +958,8 @@ struct NotchShelfView: View {
             return capsLockHudWidth  // OFF state needs a bit more width for the status badge
         } else if HUDManager.shared.isHighAlertHUDVisible && caffeineExtensionEnabled {
             return highAlertHudWidth  // High Alert HUD uses wider width for "Active/Inactive" text
+        } else if HUDManager.shared.isPomodoroHUDVisible && pomodoroExtensionEnabled {
+            return highAlertHudWidth  // Pomodoro HUD mirrors High Alert width behavior
         } else if HUDManager.shared.isDNDHUDVisible && enableDNDHUD {
             return batteryHudWidth  // Focus/DND HUD uses same width as battery HUD
         } else if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD {
@@ -912,7 +973,8 @@ struct NotchShelfView: View {
             return collapsedShelfPeekWidth
         } else if enableNotchShelf && isHoveringOnThisScreen {
             // When High Alert is active, expand enough to show timer on hover
-            if CaffeineManager.shared.isActive && caffeineExtensionEnabled && !caffeineInstantlyExpandShelfOnHover {
+            if (CaffeineManager.shared.isActive && caffeineExtensionEnabled && !caffeineInstantlyExpandShelfOnHover) ||
+                (pomodoroManager.isActive && pomodoroExtensionEnabled && !pomodoroInstantlyExpandShelfOnHover && !hudIsVisible) {
                 return highAlertHudWidth
             }
             // Keep hover width stable so collapse/open always stays visually centered.
@@ -934,6 +996,8 @@ struct NotchShelfView: View {
         } else if hudIsVisible {
             // Volume/Brightness HUD: ONLY expand horizontally, never taller
             return notchHeight
+        } else if isCaffeineHoverActive || isPomodoroHoverActive {
+            return notchHeight
         } else if shouldRenderInlineLockScreenHUD {
             return notchHeight  // Lock Screen HUD just uses notch height
         } else if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD {
@@ -945,6 +1009,8 @@ struct NotchShelfView: View {
             return notchHeight  // Caps Lock HUD just uses notch height (no slider)
         } else if HUDManager.shared.isHighAlertHUDVisible && caffeineExtensionEnabled {
             return notchHeight  // High Alert HUD just uses notch height (no slider)
+        } else if HUDManager.shared.isPomodoroHUDVisible && pomodoroExtensionEnabled {
+            return notchHeight  // Pomodoro HUD just uses notch height (no slider)
         } else if HUDManager.shared.isDNDHUDVisible && enableDNDHUD {
             return notchHeight  // Focus/DND HUD just uses notch height (no slider)
         } else if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD {
@@ -1000,6 +1066,21 @@ struct NotchShelfView: View {
             } else {
                 // Pure Island mode: 20 top + 76 content + 20 bottom = 116pt
                 return 116
+            }
+        }
+
+        if isPomodoroViewVisible {
+            let isExternalNotchStyle = isExternalDisplay && !externalDisplayUseDynamicIsland
+            let baselineSectionCount = 2
+            let extraSectionCount = max(0, pomodoroManager.sections.count - baselineSectionCount)
+            let perExtraSectionHeight: CGFloat = 43  // 34pt row + 9pt VStack spacing
+            let additionalSectionHeight = CGFloat(extraSectionCount) * perExtraSectionHeight
+            if contentLayoutNotchHeight > 0 {
+                return contentLayoutNotchHeight + 96 + additionalSectionHeight
+            } else if isExternalNotchStyle {
+                return 116 + additionalSectionHeight
+            } else {
+                return 116 + additionalSectionHeight
             }
         }
 
@@ -1111,9 +1192,13 @@ struct NotchShelfView: View {
     }
     
     private var shouldShowVisualNotch: Bool {
-        // During lock/unlock, the dedicated SkyLight lock HUD should be the only visible
-        // notch surface on built-in physical-notch displays. This prevents ghost/fade overlap.
-        if lockScreenManager.isDedicatedHUDActive && hasPhysicalNotchOnDisplay && isBuiltInDisplay {
+        // During lock-in, the dedicated SkyLight lock HUD should be the only visible
+        // notch surface on built-in physical-notch displays.
+        // Keep this strict through unlock handoff as well so users never see two
+        // independent surfaces fighting for top-edge ownership.
+        if lockScreenManager.isDedicatedHUDActive &&
+            hasPhysicalNotchOnDisplay &&
+            isBuiltInDisplay {
             return false
         }
 
@@ -1186,11 +1271,10 @@ struct NotchShelfView: View {
         return showIdleNotchOnExternalDisplays
     }
 
-    /// During lock-in we must hide the inline notch instantly (no opacity tween),
-    /// otherwise it visibly ghosts underneath the dedicated lock HUD.
+    /// While the dedicated lock HUD is active, disable inline opacity tweening.
+    /// This prevents brief ghosting and top-edge gaps during lock/unlock handoff.
     private var shouldDisableInlineNotchVisibilityAnimation: Bool {
         lockScreenManager.isDedicatedHUDActive &&
-        !lockScreenManager.isUnlocked &&
         hasPhysicalNotchOnDisplay &&
         isBuiltInDisplay
     }
@@ -1230,6 +1314,7 @@ struct NotchShelfView: View {
                     // RESET RULE: When shelf collapses, reset extension views so next open shows default shelf
                     if !isExpanded {
                         showCaffeineView = false
+                        showPomodoroView = false
                         showCameraView = false
                         showTelepromptyView = false
                         telepromptyManager.stop(hidePrompt: true)
@@ -1259,6 +1344,7 @@ struct NotchShelfView: View {
             let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
             let terminalEnabled = UserDefaults.standard.preference(AppPreferenceKey.terminalNotchEnabled, default: PreferenceDefault.terminalNotchEnabled)
             let caffeineShouldShow = caffeineInstalled && caffeineEnabled
+            let pomodoroShouldShow = pomodoroExtensionEnabled
             let terminalShouldShow = terminalManager.isInstalled && terminalEnabled
             let cameraShouldShow = canShowCameraFloatingButton
             let telepromptyShouldShow = canShowTelepromptyFloatingButton
@@ -1289,7 +1375,7 @@ struct NotchShelfView: View {
                     }
                     
                     // Regular floating buttons (caffeine/terminal/close) - appear when NOT dragging
-                    if !dragMonitor.isDragging && (shouldShowExternalMouseSwitchFloatingButton || caffeineShouldShow || terminalShouldShow || cameraShouldShow || telepromptyShouldShow || !autoCollapseShelf) {
+                    if !dragMonitor.isDragging && (shouldShowExternalMouseSwitchFloatingButton || caffeineShouldShow || pomodoroShouldShow || terminalShouldShow || cameraShouldShow || telepromptyShouldShow || !autoCollapseShelf) {
                         HStack(spacing: 12) {
                             if shouldShowExternalMouseSwitchFloatingButton {
                                 Button(action: {
@@ -1317,6 +1403,7 @@ struct NotchShelfView: View {
                                         // If activating caffeine view, close terminal if open
                                         if showCaffeineView {
                                             terminalManager.hide()
+                                            showPomodoroView = false
                                             showCameraView = false
                                             showTelepromptyView = false
                                             telepromptyManager.stop(hidePrompt: true)
@@ -1340,6 +1427,40 @@ struct NotchShelfView: View {
                                 .transition(displayElementTransition)
                             }
 
+                            // Pomodoro button (if extension installed AND enabled)
+                            if pomodoroShouldShow {
+                                let isHighlight = showPomodoroView || pomodoroManager.isActive
+
+                                Button(action: {
+                                    HapticFeedback.tap()
+                                    withAnimation(displayNotchStateAnimation) {
+                                        showPomodoroView.toggle()
+                                        if showPomodoroView {
+                                            terminalManager.hide()
+                                            showCaffeineView = false
+                                            showCameraView = false
+                                            showTelepromptyView = false
+                                            telepromptyManager.stop(hidePrompt: true)
+                                            isTodoListExpanded = false
+                                            todoManager.isShelfListExpanded = false
+                                        }
+                                    }
+                                    notchController.forceRecalculateAllWindowSizes()
+                                    DispatchQueue.main.async {
+                                        notchController.forceRecalculateAllWindowSizes()
+                                    }
+                                }) {
+                                    Image(systemName: "timer")
+                                }
+                                .buttonStyle(DroppyCircleButtonStyle(
+                                    size: 32,
+                                    useTransparent: shouldUseFloatingButtonTransparent,
+                                    solidFill: isHighlight ? .blue : (isDynamicIslandMode ? dynamicIslandGray : .black)
+                                ))
+                                .help(pomodoroManager.isActive ? "Pomodoro: \(pomodoroManager.formattedRemaining)" : (showPomodoroView ? "Hide Pomodoro" : "Show Pomodoro"))
+                                .transition(displayElementTransition)
+                            }
+
                             if cameraShouldShow {
                                 let isHighlight = isCameraViewVisible
                                 Button(action: {
@@ -1348,6 +1469,7 @@ struct NotchShelfView: View {
                                         showCameraView.toggle()
                                         if showCameraView {
                                             showCaffeineView = false
+                                            showPomodoroView = false
                                             terminalManager.hide()
                                             showTelepromptyView = false
                                             telepromptyManager.stop(hidePrompt: true)
@@ -1379,6 +1501,7 @@ struct NotchShelfView: View {
                                         showTelepromptyView.toggle()
                                         if showTelepromptyView {
                                             showCaffeineView = false
+                                            showPomodoroView = false
                                             showCameraView = false
                                             terminalManager.hide()
                                             isTodoListExpanded = false
@@ -1434,6 +1557,7 @@ struct NotchShelfView: View {
                                         terminalManager.toggle()
                                         if openingTerminal {
                                             showCaffeineView = false
+                                            showPomodoroView = false
                                             showCameraView = false
                                             showTelepromptyView = false
                                             telepromptyManager.stop(hidePrompt: true)
@@ -1626,12 +1750,14 @@ struct NotchShelfView: View {
                 let trimmedOld = oldTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 let trimmedNew = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 let titleChanged = trimmedOld != trimmedNew
+                let titleBecameEmpty = !trimmedOld.isEmpty && trimmedNew.isEmpty
 
                 if titleChanged {
-                    if musicManager.isBrowserSource {
-                        // Browser players can briefly drop metadata between tracks.
-                        // Keep HUD pinned with loading placeholder during this handoff.
-                        beginBrowserTrackLoadingHold()
+                    if musicManager.isBrowserSource && titleBecameEmpty && musicManager.isPlaying {
+                        // Browser metadata drop should hide immediately (tab close should never linger).
+                        endBrowserTrackLoadingHold()
+                    } else if musicManager.isBrowserSource && !trimmedNew.isEmpty {
+                        endBrowserTrackLoadingHold()
                     }
                     // Reset marquee scroll for new song
                     sharedMarqueeStartTime = Date()
@@ -1642,6 +1768,8 @@ struct NotchShelfView: View {
                     if musicManager.isBrowserSource && musicManager.isPlaying {
                         endBrowserTrackLoadingHold()
                     }
+                } else if titleChanged && musicManager.isBrowserSource && musicManager.isPlayerIdle {
+                    endBrowserTrackLoadingHold()
                 }
             }
             .onChange(of: musicManager.isPlaying) { wasPlaying, isPlaying in
@@ -1667,7 +1795,8 @@ struct NotchShelfView: View {
                     mediaDebounceWorkItem?.cancel()
                     isMediaStable = false
                     if musicManager.isBrowserSource {
-                        beginBrowserTrackLoadingHold(duration: 2.6)
+                        // Browser stop/pause (including tab close) should not linger.
+                        endBrowserTrackLoadingHold()
                     }
                 }
             }
@@ -1796,6 +1925,17 @@ struct NotchShelfView: View {
     private var shelfContentWithObservers: some View {
         shelfContentWithStateObservers
             .onReceive(NotificationCenter.default.publisher(for: .todoQuickOpenRequested), perform: handleTodoQuickOpenRequested)
+            .onChange(of: lockScreenManager.transitionPhase) { _, phase in
+                logLockTransitionDiagnostics(reason: "phase=\(phase)")
+            }
+            .onChange(of: currentNotchWidth) { _, _ in
+                guard lockScreenManager.transitionPhase != .unlocked || lockScreenManager.isDedicatedHUDActive else { return }
+                logLockTransitionDiagnostics(reason: "inline-width")
+            }
+            .onChange(of: currentNotchHeight) { _, _ in
+                guard lockScreenManager.transitionPhase != .unlocked || lockScreenManager.isDedicatedHUDActive else { return }
+                logLockTransitionDiagnostics(reason: "inline-height")
+            }
             .onChange(of: isTerminalViewVisible) { _, _ in
                 recalculateAllNotchWindowSizes()
             }
@@ -1803,6 +1943,9 @@ struct NotchShelfView: View {
                 recalculateAllNotchWindowSizes()
             }
             .onChange(of: isCaffeineViewVisible) { _, _ in
+                recalculateAllNotchWindowSizes()
+            }
+            .onChange(of: isPomodoroViewVisible) { _, _ in
                 recalculateAllNotchWindowSizes()
             }
             .onChange(of: isTelepromptyViewVisible) { _, _ in
@@ -1825,6 +1968,7 @@ struct NotchShelfView: View {
             }
             .onAppear {
                 todoManager.isShelfListExpanded = isTodoListExpanded
+                logLockTransitionDiagnostics(reason: "appear")
             }
             .onDisappear {
                 cancelShelfObserverWorkItems()
@@ -1878,6 +2022,38 @@ struct NotchShelfView: View {
         notchController.forceRecalculateAllWindowSizes()
     }
 
+    private func logLockTransitionDiagnostics(reason: String) {
+        guard lockTransitionDiagnosticsEnabled else { return }
+        guard let displayID = thisDisplayID else { return }
+        guard let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
+        guard let inlineFrame = notchController.windowFrame(for: displayID) else { return }
+
+        let expectedTopY = screen.frame.maxY
+        let inlineDelta = abs(inlineFrame.maxY - expectedTopY)
+        let inlineTopY = inlineFrame.maxY
+        let inlineMinY = inlineFrame.minY
+
+        let dedicatedFrame = LockScreenHUDWindowManager.shared.currentWindowFrame
+        let dedicatedDelta = dedicatedFrame.map { abs($0.maxY - expectedTopY) }
+        let dedicatedMinY = dedicatedFrame?.minY
+        let dedicatedMaxY = dedicatedFrame?.maxY
+        let phase = lockScreenManager.transitionPhase
+
+        let exceedsThreshold = inlineDelta > 0.5 || (dedicatedDelta ?? 0) > 0.5
+        let severity = exceedsThreshold ? "WARN" : "OK"
+        let dedicatedDeltaLabel = dedicatedDelta.map { String(format: "%.3f", $0) } ?? "n/a"
+        let dedicatedMinYLabel = dedicatedMinY.map { String(format: "%.3f", $0) } ?? "n/a"
+        let dedicatedMaxYLabel = dedicatedMaxY.map { String(format: "%.3f", $0) } ?? "n/a"
+
+        lockTransitionDebugLog(
+            "NotchShelfView[\(severity)]: \(reason) phase=\(phase) "
+                + "inline(minY=\(String(format: "%.3f", inlineMinY)), maxY=\(String(format: "%.3f", inlineTopY)), "
+                + "delta=\(String(format: "%.3f", inlineDelta))) "
+                + "dedicated(minY=\(dedicatedMinYLabel), maxY=\(dedicatedMaxYLabel), delta=\(dedicatedDeltaLabel)) "
+                + "expectedTop=\(String(format: "%.3f", expectedTopY))"
+        )
+    }
+
     private func cancelShelfObserverWorkItems() {
         externalCollapseVisibilityWorkItem?.cancel()
         browserTrackLoadingWorkItem?.cancel()
@@ -1894,14 +2070,20 @@ struct NotchShelfView: View {
     
     private func triggerVolumeHUD() {
         hudWorkItem?.cancel()
+        let shouldAnimateVisibility = !hudIsVisible || hudType != .volume
         hudType = .volume
         // Show 0% when muted to display muted icon, otherwise show actual volume
-        hudValue = volumeManager.isMuted ? 0 : CGFloat(volumeManager.rawVolume)
-        withAnimation(displayNotchStateAnimation) {
+        let nextValue = volumeManager.isMuted ? CGFloat(0) : CGFloat(volumeManager.rawVolume)
+        hudValue = nextValue
+        if shouldAnimateVisibility {
+            withAnimation(displayNotchStateAnimation) {
+                hudIsVisible = true
+                // Reset hover states to prevent layout shift when HUD appears
+                state.hoveringDisplayID = nil  // Clear hover on all screens
+                mediaHUDIsHovered = false
+            }
+        } else {
             hudIsVisible = true
-            // Reset hover states to prevent layout shift when HUD appears
-            state.hoveringDisplayID = nil  // Clear hover on all screens
-            mediaHUDIsHovered = false
         }
         
         let workItem = DispatchWorkItem { [self] in
@@ -1915,13 +2097,19 @@ struct NotchShelfView: View {
     
     private func triggerBrightnessHUD() {
         hudWorkItem?.cancel()
+        let shouldAnimateVisibility = !hudIsVisible || hudType != .brightness
         hudType = .brightness
-        hudValue = CGFloat(brightnessManager.rawBrightness)
-        withAnimation(displayNotchStateAnimation) {
+        let nextValue = CGFloat(brightnessManager.rawBrightness)
+        hudValue = nextValue
+        if shouldAnimateVisibility {
+            withAnimation(displayNotchStateAnimation) {
+                hudIsVisible = true
+                // Reset hover states to prevent layout shift when HUD appears
+                state.hoveringDisplayID = nil  // Clear hover on all screens
+                mediaHUDIsHovered = false
+            }
+        } else {
             hudIsVisible = true
-            // Reset hover states to prevent layout shift when HUD appears
-            state.hoveringDisplayID = nil  // Clear hover on all screens
-            mediaHUDIsHovered = false
         }
         
         let workItem = DispatchWorkItem { [self] in
@@ -2127,7 +2315,8 @@ struct NotchShelfView: View {
                 !hudIsVisible &&
                 !HUDManager.shared.isVisible &&
                 !isMediaHUDSurfaceActive &&
-                !isCaffeineHoverActive {
+                !isCaffeineHoverActive &&
+                !isPomodoroHoverActive {
                 dropIndicatorContent
                     .zIndex(4)
                     .allowsHitTesting(false)
@@ -2216,7 +2405,7 @@ struct NotchShelfView: View {
         }
         
         // Battery HUD - uses centralized HUDManager
-        if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
+        if HUDManager.shared.isBatteryHUDVisible && enableBatteryHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
             BatteryHUDView(
                 batteryManager: batteryManager,
                 hudWidth: batteryHudWidth,
@@ -2228,7 +2417,7 @@ struct NotchShelfView: View {
         }
         
         // Caps Lock HUD - uses centralized HUDManager
-        if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
+        if HUDManager.shared.isCapsLockHUDVisible && enableCapsLockHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
             CapsLockHUDView(
                 capsLockManager: capsLockManager,
                 hudWidth: capsLockHudWidth,
@@ -2240,7 +2429,7 @@ struct NotchShelfView: View {
         }
         
         // High Alert HUD - uses centralized HUDManager
-        if HUDManager.shared.isHighAlertHUDVisible && caffeineExtensionEnabled && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
+        if HUDManager.shared.isHighAlertHUDVisible && caffeineExtensionEnabled && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
             HighAlertHUDView(
                 isActive: caffeineManager.isActive,
                 hudWidth: highAlertHudWidth,
@@ -2251,9 +2440,22 @@ struct NotchShelfView: View {
             .transition(displayHUDTransition)
             .zIndex(5.2)
         }
+
+        // Pomodoro HUD - uses centralized HUDManager
+        if HUDManager.shared.isPomodoroHUDVisible && pomodoroExtensionEnabled && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
+            PomodoroHUDView(
+                isActive: pomodoroManager.isActive,
+                hudWidth: highAlertHudWidth,
+                targetScreen: targetScreen,
+                notchWidth: notchWidth
+            )
+            .frame(width: highAlertHudWidth, height: notchHeight)
+            .transition(displayHUDTransition)
+            .zIndex(5.3)
+        }
         
         // Focus/DND HUD - uses centralized HUDManager
-        if HUDManager.shared.isDNDHUDVisible && enableDNDHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
+        if HUDManager.shared.isDNDHUDVisible && enableDNDHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
             DNDHUDView(
                 dndManager: dndManager,
                 hudWidth: batteryHudWidth,
@@ -2265,7 +2467,7 @@ struct NotchShelfView: View {
         }
         
         // Update HUD - uses centralized HUDManager
-        if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
+        if HUDManager.shared.isUpdateHUDVisible && enableUpdateHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
             UpdateHUDView(
                 hudWidth: updateHudWidth,
                 targetScreen: targetScreen
@@ -2276,7 +2478,7 @@ struct NotchShelfView: View {
         }
         
         // AirPods HUD - uses centralized HUDManager
-        if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive, let airPods = airPodsManager.connectedAirPods {
+        if HUDManager.shared.isAirPodsHUDVisible && enableAirPodsHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive, let airPods = airPodsManager.connectedAirPods {
             AirPodsHUDView(
                 airPods: airPods,
                 hudWidth: hudWidth,
@@ -2288,13 +2490,13 @@ struct NotchShelfView: View {
         }
 
         // Lock Screen HUD - uses centralized HUDManager
-        if shouldRenderInlineLockScreenHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive {
+        if shouldRenderInlineLockScreenHUD && !hudIsVisible && !isExpandedOnThisScreen && !isCaffeineHoverActive && !isPomodoroHoverActive {
             LockScreenHUDView(
                 hudWidth: batteryHudWidth,
                 targetScreen: targetScreen
             )
             .frame(width: batteryHudWidth, height: notchHeight)
-            .transition(displayHUDTransition)
+            .transition(inlineLockScreenHUDTransition)
             .zIndex(7)
         }
 
@@ -2307,6 +2509,7 @@ struct NotchShelfView: View {
             hasNotification &&
             !hudIsVisible &&
             !isCaffeineHoverActive &&
+            !isPomodoroHoverActive &&
             !isExpandedOnThisScreen
 
         // DEBUG: Log render condition values (use let _ = for side effects in @ViewBuilder)
@@ -2350,6 +2553,19 @@ struct NotchShelfView: View {
             .transition(displayHUDTransition)
             .zIndex(200)  // Highest priority - always on top of other HUDs
         }
+
+        // Pomodoro Hover Indicators (matches High Alert hover precedence and geometry)
+        if isPomodoroHoverActive {
+            PomodoroHUDView(
+                isActive: true,
+                hudWidth: highAlertHudWidth,
+                targetScreen: targetScreen,
+                notchWidth: notchWidth
+            )
+            .frame(width: highAlertHudWidth, height: notchHeight)
+            .transition(displayHUDTransition)
+            .zIndex(199)
+        }
     }
     
     // MARK: - Media Player HUD
@@ -2389,11 +2605,10 @@ struct NotchShelfView: View {
                               (bypassSafeguards ? hasContent : (mediaIsPlaying && notFadedOrTransitioning && debounceOk))
         let shouldShowHovered = mediaHUDIsHovered && isMediaHUDHoverEligible
         
-        // MORPH BEHAVIOR: Hide media HUD when Caffeine Hover Indicators are showing
-        // This allows the caffeine timer to temporarily replace the media HUD on hover
-        let caffeineHoverIsActive = isCaffeineHoverActive
+        // MORPH BEHAVIOR: Hide media HUD when timer hover indicators are showing.
+        let timerHoverIsActive = isCaffeineHoverActive || isPomodoroHoverActive
         
-        if (shouldShowForced || shouldShowNormal || shouldShowHovered) && !caffeineHoverIsActive {
+        if (shouldShowForced || shouldShowNormal || shouldShowHovered) && !timerHoverIsActive {
             // Title morphing is handled by overlay for both DI and notch modes
             MediaHUDView(musicManager: musicManager, isHovered: $mediaHUDIsHovered, notchWidth: notchWidth, notchHeight: notchHeight, hudWidth: hudWidth, targetScreen: targetScreen, albumArtNamespace: albumArtNamespace, showAlbumArt: false, showVisualizer: false, showTitle: false)
                 .frame(width: hudWidth, alignment: .top)
@@ -2511,36 +2726,13 @@ struct NotchShelfView: View {
                 radius: 8,
                 y: 4
             )
-            // PREMIUM: Cursor-following parallax - MUST be applied BEFORE offset to track correct position
-            .onContinuousHover { phase in
-                guard isExpandedOnThisScreen else {
-                    albumArtParallaxOffset = .zero
-                    return
-                }
-                switch phase {
-                case .active(let location):
-                    // Calculate offset from center (album art is currentSize x currentSize)
-                    let centerX = currentSize / 2
-                    let centerY = currentSize / 2
-                    let deltaX = location.x - centerX
-                    let deltaY = location.y - centerY
-                    // Subtle parallax: max ±4pt shift
-                    let maxOffset: CGFloat = 4
-                    let parallaxX = (deltaX / centerX) * maxOffset
-                    let parallaxY = (deltaY / centerY) * maxOffset
-                    albumArtParallaxOffset = CGSize(width: parallaxX, height: parallaxY)
-                case .ended:
-                    albumArtParallaxOffset = .zero
-                }
-            }
             // PREMIUM: Subtle shrink when paused (0.95x scale), grow on tap (1.08x)
             // Tap scale is multiplied to combine with pause shrink
             .scaleEffect((isExpandedOnThisScreen && !musicManager.isPlaying ? 0.95 : 1.0) * albumArtTapScale)
             // PREMIUM: Nudge animation on prev/next/play (±6pt horizontal shift)
-            // PREMIUM: Parallax offset follows cursor for magnetic 'pull' effect
             .offset(
-                x: currentXOffset + albumArtNudgeOffset + (isExpandedOnThisScreen ? albumArtParallaxOffset.width : 0),
-                y: currentYOffset + (isExpandedOnThisScreen ? albumArtParallaxOffset.height : 0)
+                x: currentXOffset + albumArtNudgeOffset,
+                y: currentYOffset
             )
             // PREMIUM: Single unified animation for ALL expand/collapse morphing
             // This controls: size, position, cornerRadius, scaleEffect (pause shrink), shadow
@@ -2548,7 +2740,6 @@ struct NotchShelfView: View {
             .animation(displayUnifiedOpenCloseAnimation, value: musicManager.isPlaying)  // pause shrink matches expand timing
             // INTERACTIVE: User-triggered animations kept separate
             .animation(DroppyAnimation.interactiveSpring(response: 0.3, dampingFraction: 0.6, for: targetScreen), value: albumArtNudgeOffset)
-            .animation(DroppyAnimation.interactiveSpring(response: 0.25, dampingFraction: 0.7, for: targetScreen), value: albumArtParallaxOffset)
             .animation(DroppyAnimation.interactiveSpring(response: 0.2, dampingFraction: 0.5, for: targetScreen), value: albumArtTapScale)
             // PREMIUM: Scale+blur+opacity appear animation (matches notchTransition pattern)
             .scaleEffect(mediaOverlayAppeared ? 1.0 : 0.8, anchor: .top)
@@ -2767,10 +2958,9 @@ struct NotchShelfView: View {
     
     /// Whether the media HUD should be visible (for morphing calculation)
     private var shouldShowMediaHUDForMorphing: Bool {
-        // MORPH BEHAVIOR: Hide all media overlays when Caffeine Hover Indicators are showing
-        // This allows the caffeine timer to temporarily replace the media HUD on hover
-        let caffeineHoverIsActive = isCaffeineHoverActive
-        guard !caffeineHoverIsActive else { return false }
+        // MORPH BEHAVIOR: Hide all media overlays when timer hover indicators are showing.
+        let timerHoverIsActive = isCaffeineHoverActive || isPomodoroHoverActive
+        guard !timerHoverIsActive else { return false }
         
         let noHUDsVisible = !hudIsVisible && !HUDManager.shared.isVisible
         let notExpanded = !isExpandedOnThisScreen
@@ -2807,13 +2997,16 @@ struct NotchShelfView: View {
         let caffeineEnabled = UserDefaults.standard.preference(AppPreferenceKey.caffeineEnabled, default: PreferenceDefault.caffeineEnabled)
         let caffeineShouldShow = UserDefaults.standard.preference(AppPreferenceKey.caffeineInstalled, default: PreferenceDefault.caffeineInstalled) && caffeineEnabled
         guard !(showCaffeineView && caffeineShouldShow) else { return false }
+        guard !isPomodoroViewVisible else { return false }
         guard !isCameraViewVisible else { return false }
         guard !isTelepromptyViewVisible else { return false }
         let dragMonitor = DragMonitor.shared
         let shouldBlockAutoSwitch = shouldLockMediaForTodo
+        let recentlyPlayingKeepsExpandedVisible = musicManager.wasRecentlyPlaying && !musicManager.isBrowserSource
+        let mediaPlaybackActiveForShelf = musicManager.isPlaying || recentlyPlayingKeepsExpandedVisible
         let forced = musicManager.isMediaHUDForced
         let autoOrSongDriven = (autoOpenMediaHUDOnShelfExpand && !musicManager.isMediaHUDHidden) ||
-            ((musicManager.isPlaying || musicManager.wasRecentlyPlaying) && !musicManager.isMediaHUDHidden && state.items.isEmpty)
+            (mediaPlaybackActiveForShelf && !musicManager.isMediaHUDHidden && state.items.isEmpty)
         return showMediaPlayer &&
                !musicManager.isPlayerIdle &&
                !state.isDropTargeted &&
@@ -2830,7 +3023,7 @@ struct NotchShelfView: View {
 
         // This is the persistent black shape that grows/shrinks
         // NOTE: The shelf/notch always uses solid black background.
-        // The "Transparent Background" setting only applies to other UI elements
+        // The "Liquid mode" setting only applies to other UI elements
         // (Settings, Clipboard, etc.) - not the shelf, as that would look weird.
         // MORPH: Both shapes exist, crossfade with opacity for smooth transition
         return ZStack {
@@ -2893,23 +3086,23 @@ struct NotchShelfView: View {
         .opacity(shouldShowVisualNotch ? 1.0 : 0.0)
         // Keep regular transitions animated, but cut inline notch visibility instantly during lock handoff.
         .animation(
-            shouldDisableInlineNotchVisibilityAnimation ? nil : displayNotchStateAnimation,
+            (shouldDisableInlineNotchVisibilityAnimation || isLockHandoffActive) ? nil : displayNotchStateAnimation,
             value: shouldShowVisualNotch
         )
         // PREMIUM: Subtle scale feedback on hover - "I'm ready to expand!"
         // Uses dedicated state for clean single-value animation (no two-value dependency)
         .scaleEffect(notchHoverScale, anchor: .top)
         // PREMIUM: Buttery smooth animation for hover scale (matches Droppy: .bouncy.speed(1.2))
-        .animation(displayHoverAnimation, value: notchHoverScale)
+        .animation(isLockHandoffActive ? nil : displayHoverAnimation, value: notchHoverScale)
         // Note: Idle indicator removed - island is now completely invisible when idle
         // Only appears on hover, drag, or when HUDs/media are active
         .overlay(morphingOutline)
         // Keep container transitions on one curve to avoid stacked/conflicting motion.
-        .animation(displayContainerAnimation, value: notchAnimationPhase)
+        .animation(isLockHandoffActive ? nil : displayContainerAnimation, value: notchAnimationPhase)
         // Animate pure geometry deltas even when the phase remains identical
         // (for example Caps HUD ON/OFF width changes within .systemHUD).
-        .animation(displayContainerAnimation, value: currentNotchWidth)
-        .animation(displayContainerAnimation, value: currentNotchHeight)
+        .animation(isLockHandoffActive ? nil : displayContainerAnimation, value: currentNotchWidth)
+        .animation(isLockHandoffActive ? nil : displayContainerAnimation, value: currentNotchHeight)
         .padding(.top, isDynamicIslandMode ? dynamicIslandTopMargin : 0)
         .contextMenu {
             if showClipboardButton {
@@ -3196,6 +3389,18 @@ struct NotchShelfView: View {
                     .frame(height: currentExpandedHeight, alignment: .top)
                     .id("caffeine-view")
                     .transition(displayContentSwapTransition)
+            }
+            // POMODORO VIEW: Show when user clicks pomodoro button in shelf
+            else if isPomodoroViewVisible {
+                PomodoroNotchView(
+                    manager: pomodoroManager,
+                    isVisible: $showPomodoroView,
+                    notchHeight: contentLayoutNotchHeight,
+                    isExternalWithNotchStyle: isExternalDisplay && !externalDisplayUseDynamicIsland
+                )
+                .frame(height: currentExpandedHeight, alignment: .top)
+                .id("pomodoro-view")
+                .transition(displayContentSwapTransition)
             }
             else if isCameraViewVisible {
                 SnapCameraNotchView(

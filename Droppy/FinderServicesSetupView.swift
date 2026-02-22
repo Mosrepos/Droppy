@@ -185,7 +185,7 @@ struct FinderServicesSetupView: View {
                     Text(hasOpenedSettings ? "Open Again" : "Open Settings")
                 }
             }
-            .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+            .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
         }
         .padding(DroppySpacing.lg)
         .animation(DroppyAnimation.transition, value: hasOpenedSettings)
@@ -349,7 +349,7 @@ struct FinderServicesSetupSheetView: View {
                     Text(hasOpenedSettings ? "Open Again" : "Open Settings")
                 }
             }
-            .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+            .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
         }
         .padding(DroppySpacing.lg)
         .animation(DroppyAnimation.transition, value: hasOpenedSettings)
@@ -366,6 +366,9 @@ final class FinderServicesSetupWindowController: NSObject, NSWindowDelegate {
     static let shared = FinderServicesSetupWindowController()
     
     private var window: NSWindow?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private override init() {
         super.init()
@@ -377,8 +380,19 @@ final class FinderServicesSetupWindowController: NSObject, NSWindowDelegate {
             
             // If window already exists, just bring it to front
             if let window = self.window {
+                self.cancelDeferredTeardown()
                 NSApp.activate(ignoringOtherApps: true)
-                window.makeKeyAndOrderFront(nil)
+                if window.isVisible {
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    AppKitMotion.prepareForPresent(window, initialScale: 1.0)
+                    window.orderFront(nil)
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                    AppKitMotion.animateIn(window, initialScale: 1.0, duration: 0.2)
+                }
                 return
             }
             
@@ -412,25 +426,59 @@ final class FinderServicesSetupWindowController: NSObject, NSWindowDelegate {
             newWindow.contentView = hostingView
             
             self.window = newWindow
-            
-            // Bring to front and activate
+
+            AppKitMotion.prepareForPresent(newWindow, initialScale: 1.0)
             newWindow.orderFront(nil)
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
                 newWindow.makeKeyAndOrderFront(nil)
             }
+            AppKitMotion.animateIn(newWindow, initialScale: 1.0, duration: 0.2)
         }
     }
     
     func close() {
         DispatchQueue.main.async { [weak self] in
-            self?.window?.close()
+            guard let self, let window = self.window, !self.isClosing else { return }
+            self.cancelDeferredTeardown()
+            self.isClosing = true
+            AppKitMotion.animateOut(window, targetScale: 1.0, duration: 0.15) {
+                window.orderOut(nil)
+                AppKitMotion.resetPresentationState(window)
+                self.isClosing = false
+                self.scheduleDeferredTeardown()
+            }
         }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let window = self.window, !window.isVisible else { return }
+            window.contentView = nil
+            window.delegate = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     // MARK: - NSWindowDelegate
     
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        close()
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
         window = nil
+        isClosing = false
+        cancelDeferredTeardown()
     }
 }

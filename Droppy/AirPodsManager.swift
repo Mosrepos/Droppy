@@ -184,7 +184,7 @@ final class AirPodsManager {
             }
         }
         // === Beats Products ===
-        else if name.contains("beats") || name.contains("powerbeats") || name.contains("studio buds") {
+        else if isLikelyBeatsDevice(name) {
             type = .beats
         }
         // === Generic Earbuds (wireless earbuds from various brands) ===
@@ -240,48 +240,142 @@ final class AirPodsManager {
         var rightBattery: Int?
         var caseBattery: Int?
         var singleBattery: Int?
+        var combinedBattery: Int?
+        
+        func normalizedBatteryValue(_ rawValue: Any?, depth: Int = 0) -> Int? {
+            guard depth <= 4 else { return nil }
+            
+            func validatedBatteryValue(_ value: Int) -> Int? {
+                (0...100).contains(value) ? value : nil
+            }
+            
+            func normalizedBatteryValueFromDictionary(_ dictionary: [String: Any], depth: Int) -> Int? {
+                let valueKeys = [
+                    "value",
+                    "level",
+                    "percent",
+                    "batteryLevel",
+                    "batteryPercent",
+                    "Value",
+                    "Level",
+                    "Percent",
+                    "BatteryPercent"
+                ]
+                let nestedPayloadKeys = ["payload", "data", "value"]
+                
+                for key in valueKeys {
+                    guard let entry = dictionary[key] else { continue }
+                    if let resolved = normalizedBatteryValue(entry, depth: depth + 1) {
+                        return resolved
+                    }
+                }
+                
+                for key in nestedPayloadKeys {
+                    guard let entry = dictionary[key] else { continue }
+                    if let resolved = normalizedBatteryValue(entry, depth: depth + 1) {
+                        return resolved
+                    }
+                }
+                
+                return nil
+            }
+            
+            switch rawValue {
+            case let value as Int:
+                return validatedBatteryValue(value)
+            case let value as UInt8:
+                let resolved = Int(value)
+                return validatedBatteryValue(resolved)
+            case let value as Int64:
+                let resolved = Int(value)
+                return validatedBatteryValue(resolved)
+            case let value as NSNumber:
+                let resolved = value.intValue
+                return validatedBatteryValue(resolved)
+            case let value as [String: Any]:
+                return normalizedBatteryValueFromDictionary(value, depth: depth)
+            case let value as NSDictionary:
+                var dictionary: [String: Any] = [:]
+                for (key, entry) in value {
+                    guard let stringKey = key as? String else { continue }
+                    dictionary[stringKey] = entry
+                }
+                return normalizedBatteryValueFromDictionary(dictionary, depth: depth)
+            default:
+                return nil
+            }
+        }
+        
+        func readBatteryValue(for selectorName: String) -> (raw: Any?, normalized: Int?)? {
+            guard device.responds(to: Selector((selectorName))) else { return nil }
+            let rawValue = device.value(forKey: selectorName)
+            return (rawValue, normalizedBatteryValue(rawValue))
+        }
         
         // Try to get individual battery levels using private selectors
         // These selectors exist in IOBluetoothDevice but are not publicly documented
         
         // Left earbud battery
-        if device.responds(to: Selector(("batteryPercentLeft"))) {
-            if let value = device.value(forKey: "batteryPercentLeft") as? Int, value >= 0, value <= 100 {
-                leftBattery = value
-            }
-        }
+        let leftRead = readBatteryValue(for: "batteryPercentLeft")
+        leftBattery = leftRead?.normalized
         
         // Right earbud battery
-        if device.responds(to: Selector(("batteryPercentRight"))) {
-            if let value = device.value(forKey: "batteryPercentRight") as? Int, value >= 0, value <= 100 {
-                rightBattery = value
-            }
-        }
+        let rightRead = readBatteryValue(for: "batteryPercentRight")
+        rightBattery = rightRead?.normalized
         
         // Case battery
-        if device.responds(to: Selector(("batteryPercentCase"))) {
-            if let value = device.value(forKey: "batteryPercentCase") as? Int, value >= 0, value <= 100 {
-                caseBattery = value
-            }
-        }
+        let caseRead = readBatteryValue(for: "batteryPercentCase")
+        caseBattery = caseRead?.normalized
         
         // Single battery (for AirPods Max or when left/right not available)
-        if device.responds(to: Selector(("batteryPercentSingle"))) {
-            if let value = device.value(forKey: "batteryPercentSingle") as? Int, value >= 0, value <= 100 {
-                singleBattery = value
-            }
+        let singleRead = readBatteryValue(for: "batteryPercentSingle")
+        singleBattery = singleRead?.normalized
+        
+        // Combined battery is common on single-cell headphones (including some Beats models).
+        let combinedRead = readBatteryValue(for: "batteryPercentCombined")
+        combinedBattery = combinedRead?.normalized
+        
+        // Legacy headset path still used by some Bluetooth devices.
+        let headsetRead = readBatteryValue(for: "headsetBattery")
+        let headsetBattery = headsetRead?.normalized
+        
+        if type == .beats,
+           leftBattery == nil,
+           rightBattery == nil,
+           caseBattery == nil,
+           singleBattery == nil,
+           combinedBattery == nil,
+           headsetBattery == nil {
+            let rawDebugValues: [String: Any?] = [
+                "batteryPercentLeft": leftRead?.raw,
+                "batteryPercentRight": rightRead?.raw,
+                "batteryPercentCase": caseRead?.raw,
+                "batteryPercentSingle": singleRead?.raw,
+                "batteryPercentCombined": combinedRead?.raw,
+                "headsetBattery": headsetRead?.raw
+            ]
+            print("[AirPods][Beats] Battery extraction returned nil for all selectors. Raw selector values: \(rawDebugValues)")
         }
         
         // Calculate combined battery display value
         let combined: Int
-        if type == .airpodsMax || type == .headphones {
-            // AirPods Max and over-ear headphones use single battery
-            combined = singleBattery ?? 100
-        } else if let left = leftBattery, let right = rightBattery {
-            // Average of left and right for regular AirPods
+        if let left = leftBattery, let right = rightBattery {
+            // Stereo earbuds/headsets: use average when both channels are present.
             combined = (left + right) / 2
+        } else if type == .airpodsMax || type == .headphones || type == .beats {
+            // AirPods Max and over-ear headphones use single battery
+            combined = singleBattery
+                ?? combinedBattery
+                ?? headsetBattery
+                ?? leftBattery
+                ?? rightBattery
+                ?? 100
+        } else if let combinedValue = combinedBattery {
+            combined = combinedValue
         } else if let single = singleBattery {
             combined = single
+        } else if let headset = headsetBattery {
+            combined = headset
         } else if let left = leftBattery {
             combined = left
         } else if let right = rightBattery {
@@ -292,6 +386,31 @@ final class AirPodsManager {
         }
         
         return (combined, leftBattery, rightBattery, caseBattery)
+    }
+    
+    private func isLikelyBeatsDevice(_ deviceName: String) -> Bool {
+        let beatsModelTokens = [
+            "beats",
+            "powerbeats",
+            "studio buds",
+            "studio buds+",
+            "fit pro",
+            "solo buds",
+            "solo3",
+            "solo 3",
+            "solo4",
+            "solo 4",
+            "solo pro",
+            "studio3",
+            "studio 3",
+            "studio3 wireless",
+            "studio pro",
+            "beatsx",
+            "beats x",
+            "urbeats"
+        ]
+        
+        return beatsModelTokens.contains { deviceName.contains($0) }
     }
     
     // MARK: - HUD Display

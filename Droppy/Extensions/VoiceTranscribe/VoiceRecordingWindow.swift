@@ -17,6 +17,9 @@ final class VoiceRecordingWindowController {
     private var window: NSPanel?
     var isVisible = false
     private var completionWatchTask: Task<Void, Never>?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private init() {}
     
@@ -40,8 +43,21 @@ final class VoiceRecordingWindowController {
     }
     
     func showWindow() {
-        guard window == nil else {
-            window?.makeKeyAndOrderFront(nil)
+        cancelDeferredTeardown()
+
+        if let existing = window {
+            if existing.isVisible {
+                existing.makeKeyAndOrderFront(nil)
+            } else {
+                AppKitMotion.prepareForPresent(existing, initialScale: 0.94)
+                existing.orderFront(nil)
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    existing.makeKeyAndOrderFront(nil)
+                }
+                AppKitMotion.animateIn(existing, initialScale: 0.94, duration: 0.2)
+            }
+            isVisible = true
             return
         }
         
@@ -66,6 +82,7 @@ final class VoiceRecordingWindowController {
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
         
         let contentView = NSHostingView(rootView: VoiceRecordingOverlayView(controller: self)
             )
@@ -84,17 +101,36 @@ final class VoiceRecordingWindowController {
         completionWatchTask?.cancel()
         completionWatchTask = nil
 
-        guard let panel = window else { return }
-        window = nil
-        isVisible = false
+        guard let panel = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
 
         AppKitMotion.animateOut(panel, targetScale: 0.97, duration: 0.14) {
             panel.orderOut(nil)
-            panel.close()
             AppKitMotion.resetPresentationState(panel)
+            self.isClosing = false
+            self.isVisible = false
+            self.scheduleDeferredTeardown()
         }
         
         print("VoiceTranscribe: Recording window hidden")
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     func stopRecordingAndTranscribe() {
@@ -334,7 +370,7 @@ struct VoiceRecordingOverlayView: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 10))
-                Text("Powered by WhisperKit AI")
+                Text("Powered by Droppy Voice Runtime")
                     .font(.system(size: 10))
             }
             .foregroundStyle(.tertiary)

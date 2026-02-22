@@ -13,6 +13,9 @@ class UpdateWindowController: NSObject, NSWindowDelegate {
     
     /// The update window
     private var window: NSWindow?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private override init() {
         super.init()
@@ -25,8 +28,19 @@ class UpdateWindowController: NSObject, NSWindowDelegate {
             
             // If window already exists, just bring it to front
             if let window = self.window {
+                self.cancelDeferredTeardown()
                 NSApp.activate(ignoringOtherApps: true)
-                window.makeKeyAndOrderFront(nil)
+                if window.isVisible {
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    AppKitMotion.prepareForPresent(window, initialScale: 0.9)
+                    window.orderFront(nil)
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                    AppKitMotion.animateIn(window, initialScale: 0.9, duration: 0.2)
+                }
                 return
             }
             
@@ -82,13 +96,49 @@ class UpdateWindowController: NSObject, NSWindowDelegate {
     
     func closeWindow() {
         DispatchQueue.main.async { [weak self] in
-            self?.window?.close()
+            guard let self, let panel = self.window, !self.isClosing else { return }
+            self.cancelDeferredTeardown()
+            self.isClosing = true
+            AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+                panel.orderOut(nil)
+                AppKitMotion.resetPresentationState(panel)
+                self?.isClosing = false
+                self?.scheduleDeferredTeardown()
+            }
         }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
     
     // MARK: - NSWindowDelegate
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if isClosing {
+            return true
+        }
+        closeWindow()
+        return false
+    }
     
     func windowWillClose(_ notification: Notification) {
         window = nil
+        isClosing = false
+        cancelDeferredTeardown()
     }
 }

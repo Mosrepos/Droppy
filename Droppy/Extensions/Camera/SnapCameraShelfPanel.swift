@@ -56,12 +56,12 @@ struct SnapCameraShelfPanel: View {
                 Button("Allow") {
                     manager.requestAccess()
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             } else if manager.permissionStatus == .denied || manager.permissionStatus == .restricted {
                 Button("Settings") {
                     openCameraPrivacySettings()
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
         }
         .padding(.horizontal, 4)
@@ -141,12 +141,12 @@ struct SnapCameraNotchView: View {
                 Button("Allow Camera") {
                     manager.requestAccess()
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             } else if manager.permissionStatus == .denied || manager.permissionStatus == .restricted {
                 Button("Open Settings") {
                     openCameraPrivacySettings()
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .cyan, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
         }
         .padding(.horizontal, 16)

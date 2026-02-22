@@ -7,12 +7,12 @@ import SwiftUI
 
 struct CaffeineInfoView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     var caffeineManager = CaffeineManager.shared
     
     @AppStorage(AppPreferenceKey.caffeineInstalled) private var isInstalled = PreferenceDefault.caffeineInstalled
     @AppStorage(AppPreferenceKey.caffeineMode) private var selectedModeRaw = PreferenceDefault.caffeineMode
     @AppStorage(AppPreferenceKey.caffeineInstantlyExpandShelfOnHover) private var caffeineInstantlyExpandShelfOnHover = PreferenceDefault.caffeineInstantlyExpandShelfOnHover
-    @State private var showReviewsSheet = false
     
     // Derived mode from preference
     private var selectedMode: CaffeineMode {
@@ -21,7 +21,6 @@ struct CaffeineInfoView: View {
     
     // Stats passed from parent
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -58,9 +57,6 @@ struct CaffeineInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .caffeine)
-        }
     }
     
     // MARK: - Header
@@ -90,27 +86,6 @@ struct CaffeineInfoView: View {
                 }
                 .foregroundStyle(.secondary)
                 
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
                 
                 // Category Badge
                 Text("Productivity")
@@ -326,7 +301,7 @@ struct CaffeineInfoView: View {
     
     private var footerSection: some View {
         HStack {
-            Button("Close") { dismiss() }
+            Button("Close") { closePanelOrDismiss(panelCloseAction, dismiss: dismiss) }
                 .buttonStyle(DroppyPillButtonStyle(size: .small))
             
             Spacer()

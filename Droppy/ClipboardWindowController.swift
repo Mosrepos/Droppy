@@ -14,11 +14,11 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
     
     private override init() {
         super.init()
-        // Lazy setup when needed or on init? Let's do on init to be ready.
-        setupWindow()
     }
     
     func setupWindow() {
+        guard window == nil else { return }
+
         let clipboardView = ClipboardManagerView(
             onPaste: { item in
                 self.paste(item)
@@ -49,9 +49,12 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         )
         
         window.center()
-        window.title = "Clipboard"
+        window.title = ""
         window.titlebarAppearsTransparent = true
-        window.titleVisibility = .visible  // Same as Settings
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
         
         // Configure background and appearance - EXACTLY like Settings
         // NOTE: Do NOT use isMovableByWindowBackground to avoid entries/buttons triggering window drag
@@ -72,6 +75,29 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         
         // Allow clicking on it and becoming key
         window.ignoresMouseEvents = false
+    }
+
+    /// Applies Droppy sheet chrome so clipboard sheets don't show native clipped titlebar remnants.
+    func styleAttachedSheetForLiquidGlass() {
+        guard let window else { return }
+        styleAttachedSheet(of: window, delay: 0)
+        styleAttachedSheet(of: window, delay: 0.015)
+    }
+
+    private func styleAttachedSheet(of parentWindow: NSWindow, delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard let sheet = parentWindow.attachedSheet else { return }
+            sheet.title = ""
+            sheet.titleVisibility = .hidden
+            sheet.titlebarAppearsTransparent = true
+            sheet.standardWindowButton(.closeButton)?.isHidden = true
+            sheet.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            sheet.standardWindowButton(.zoomButton)?.isHidden = true
+            sheet.styleMask.insert(.fullSizeContentView)
+            sheet.isMovableByWindowBackground = false
+            sheet.backgroundColor = .clear
+            sheet.isOpaque = false
+        }
     }
 
     func resetWindowSize() {
@@ -106,11 +132,18 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
     
     private var clickMonitor: Any?
     private var localClickMonitor: Any?
+    private var deferredHardReclaimWorkItem: DispatchWorkItem?
+    private let deferredHardReclaimDelay: TimeInterval = 8
 
 
 
     func show() {
+        if window == nil {
+            setupWindow()
+        }
+
         guard !isAnimating, let window = window else { return }
+        cancelDeferredHardMemoryReclaim()
         
         // Save previous app
         if let frontmost = NSWorkspace.shared.frontmostApplication, 
@@ -136,8 +169,6 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
-            // Post notification for View to reset state (Search/Selection)
-            NotificationCenter.default.post(name: .clipboardWindowDidShow, object: nil)
         }
         
         // Start monitoring for clicks outside to auto-close (since we are not Key)
@@ -145,6 +176,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
         
         print("⌨️ Droppy: Showing Clipboard Window")
         AppKitMotion.animateIn(window, initialScale: 0.9, duration: 0.24) { [weak self] in
+            NotificationCenter.default.post(name: .clipboardWindowDidShow, object: nil)
             self?.isAnimating = false
         }
         
@@ -169,7 +201,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             if let window = self?.window {
                 AppKitMotion.resetPresentationState(window)
             }
-            NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
+            self?.notifyClipboardHiddenAndReclaimMemory()
             self?.isAnimating = false
         }
     }
@@ -177,7 +209,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         stopClickMonitoring()
         ClipboardManager.shared.isEditingContent = false
-        NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
+        notifyClipboardHiddenAndReclaimMemory()
     }
     
     // MARK: - Click Monitoring (Auto-Close)
@@ -274,7 +306,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             if let window = self?.window {
                 AppKitMotion.resetPresentationState(window)
             }
-            NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
+            self?.notifyClipboardHiddenAndReclaimMemory()
             self?.isAnimating = false
             
             // The Mirror Method (V12): Refined Sequence
@@ -327,7 +359,7 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             if let window = self?.window {
                 AppKitMotion.resetPresentationState(window)
             }
-            NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
+            self?.notifyClipboardHiddenAndReclaimMemory()
             self?.isAnimating = false
             
             // The Mirror Method (V12): Refined Sequence
@@ -502,6 +534,40 @@ class ClipboardWindowController: NSObject, NSWindowDelegate {
             NSEvent.removeMonitor(monitor)
             copyFavoriteLocalMonitor = nil
         }
+    }
+
+    private func notifyClipboardHiddenAndReclaimMemory() {
+        NotificationCenter.default.post(name: .clipboardWindowDidHide, object: nil)
+        MemoryRecoveryCoordinator.reclaimTransientMemory(forceAllocatorTrim: false)
+        scheduleDeferredHardMemoryReclaim()
+    }
+
+    private func scheduleDeferredHardMemoryReclaim() {
+        deferredHardReclaimWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if let window = self.window, window.isVisible {
+                return
+            }
+            self.destroyWindowForMemoryReclaim()
+            MemoryRecoveryCoordinator.reclaimTransientMemory(forceAllocatorTrim: true)
+        }
+        deferredHardReclaimWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredHardReclaimDelay, execute: workItem)
+    }
+
+    private func cancelDeferredHardMemoryReclaim() {
+        deferredHardReclaimWorkItem?.cancel()
+        deferredHardReclaimWorkItem = nil
+    }
+
+    private func destroyWindowForMemoryReclaim() {
+        deferredHardReclaimWorkItem = nil
+        guard let window else { return }
+        window.delegate = nil
+        window.contentView = nil
+        self.window = nil
     }
 }
 

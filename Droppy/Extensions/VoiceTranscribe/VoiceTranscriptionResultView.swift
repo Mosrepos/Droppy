@@ -3,7 +3,7 @@
 //  Droppy
 //
 //  Result window showing transcribed text with copy option
-//  Styled to match OCRResultView exactly but larger
+//  Styled to match OCRResultView
 //
 
 import SwiftUI
@@ -12,10 +12,14 @@ import AppKit
 // MARK: - Result Window Controller
 
 @MainActor
-final class VoiceTranscriptionResultController: NSObject {
+final class VoiceTranscriptionResultController: NSObject, NSWindowDelegate {
     static let shared = VoiceTranscriptionResultController()
     
-    private(set) var window: NSPanel?
+    private(set) var window: NSWindow?
+    private var hostingView: NSHostingView<VoiceTranscriptionResultView>?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
     
     private override init() {
         super.init()
@@ -32,66 +36,107 @@ final class VoiceTranscriptionResultController: NSObject {
     }
     
     func show(with text: String) {
-        // If window already exists, close and recreate to ensure clean state
-        hideWindow()
-        
         let contentView = VoiceTranscriptionResultView(text: text) { [weak self] in
             self?.hideWindow()
         }
+        cancelDeferredTeardown()
 
-        let hostingView = NSHostingView(rootView: contentView)
-        
-        let newWindow = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 450),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        
-        newWindow.center()
-        newWindow.title = "Transcription"
-        newWindow.titlebarAppearsTransparent = true
-        newWindow.titleVisibility = .visible
-        
-        newWindow.isMovableByWindowBackground = false
-        newWindow.backgroundColor = .clear
-        newWindow.isOpaque = false
-        newWindow.hasShadow = true
-        newWindow.isReleasedWhenClosed = false
-        newWindow.level = .screenSaver
-        newWindow.hidesOnDeactivate = false
-        
-        newWindow.contentView = hostingView
-        
-        // Fade in - use deferred makeKey to avoid NotchWindow conflicts
-        newWindow.alphaValue = 0
-        newWindow.orderFront(nil)
-        DispatchQueue.main.async {
+        if let hostingView {
+            hostingView.rootView = contentView
+        } else {
+            hostingView = NSHostingView(rootView: contentView)
+        }
+
+        let panel: NSWindow
+        if let existing = window {
+            panel = existing
+        } else {
+            let newWindow = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 420, height: 400),
+                styleMask: [.titled, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+
+            newWindow.title = "Transcription"
+            newWindow.titlebarAppearsTransparent = true
+            newWindow.titleVisibility = .hidden
+            newWindow.standardWindowButton(.closeButton)?.isHidden = true
+            newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            newWindow.standardWindowButton(.zoomButton)?.isHidden = true
+
+            newWindow.isMovableByWindowBackground = true
+            newWindow.backgroundColor = .clear
+            newWindow.isOpaque = false
+            newWindow.hasShadow = true
+            newWindow.isReleasedWhenClosed = false
+            newWindow.delegate = self
+            self.window = newWindow
+            panel = newWindow
+        }
+
+        if let hostingView {
+            panel.contentView = hostingView
+        }
+
+        if panel.isVisible {
             NSApp.activate(ignoringOtherApps: true)
-            newWindow.makeKeyAndOrderFront(nil)
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            AppKitMotion.prepareForPresent(panel, initialScale: 0.9)
+            panel.orderFront(nil)
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                panel.makeKeyAndOrderFront(nil)
+            }
+            AppKitMotion.animateIn(panel, initialScale: 0.9, duration: 0.2)
         }
-        
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            newWindow.animator().alphaValue = 1.0
-        }
-        
-        self.window = newWindow
+
         print("VoiceTranscribe: Result window shown at center")
     }
     
     func hideWindow() {
-        guard let panel = window else { return }
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.15
-            panel.animator().alphaValue = 0
-        }, completionHandler: {
-            Task { @MainActor [weak self] in
-                panel.close()
-                self?.window = nil
-            }
-        })
+        guard let panel = window, !isClosing else { return }
+        cancelDeferredTeardown()
+        isClosing = true
+
+        AppKitMotion.animateOut(panel, targetScale: 0.96, duration: 0.15) { [weak self] in
+            panel.orderOut(nil)
+            AppKitMotion.resetPresentationState(panel)
+            self?.isClosing = false
+            self?.scheduleDeferredTeardown()
+        }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.hostingView = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        hideWindow()
+        return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        isClosing = false
+        cancelDeferredTeardown()
+        window = nil
+        hostingView = nil
     }
 }
 
@@ -102,9 +147,6 @@ struct VoiceTranscriptionResultView: View {
     let onClose: () -> Void
     
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
-    @State private var isCopyHovering = false
-    @State private var isCloseHovering = false
-    @State private var isSaveHovering = false
     @State private var showCopiedFeedback = false
     
     private var hasRecording: Bool {
@@ -143,7 +185,7 @@ struct VoiceTranscriptionResultView: View {
                     .padding(DroppySpacing.xl)
                     .textSelection(.enabled)
             }
-            .frame(maxHeight: 350)
+            .frame(maxHeight: 300)
             
             Divider()
                 .padding(.horizontal, 20)
@@ -192,13 +234,14 @@ struct VoiceTranscriptionResultView: View {
                         Text(showCopiedFeedback ? "Copied!" : "Copy to Clipboard")
                     }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: showCopiedFeedback ? .green : .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: showCopiedFeedback ? .green : AdaptiveColors.selectionBlueAuto, size: .small))
             }
             .padding(DroppySpacing.lg)
         }
-        .frame(width: 500)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 420)
+        .fixedSize(horizontal: true, vertical: true)
         .droppyTransparentBackground(useTransparentBackground)
+        .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
     }
 }
 

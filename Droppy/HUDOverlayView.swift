@@ -107,7 +107,7 @@ struct NotchHUDView: View {
                         .foregroundStyle(hudType == .brightness ? Color(red: 1.0, green: 0.85, blue: 0.0) : neutralForeground)
                         .contentTransition(.symbolEffect(.replace.byLayer))
                         .scaleEffect(iconScale)
-                        .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: value)
+                        .animation(DroppyAnimation.tracking, value: value)
                         .frame(width: 28, height: iconSize, alignment: .center)  // Fixed width - fits max scale
                     
                     // Right side: Slider takes remaining width
@@ -143,7 +143,7 @@ struct NotchHUDView: View {
                             .foregroundStyle(hudType == .brightness ? Color(red: 1.0, green: 0.85, blue: 0.0) : neutralForeground)
                             .contentTransition(.symbolEffect(.replace.byLayer))
                             .scaleEffect(iconScale)
-                            .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: value)
+                            .animation(DroppyAnimation.tracking, value: value)
                             .frame(width: iconSize + 10, alignment: .center)  // Fixed width - fits max scale
                         
                         Text(hudType == .brightness ? "Brightness" : "Volume")

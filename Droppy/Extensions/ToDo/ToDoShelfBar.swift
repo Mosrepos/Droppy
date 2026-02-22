@@ -163,6 +163,10 @@ struct ToDoShelfBar: View {
     @State private var timelineSnapshot = TimelineSnapshot.empty
     @State private var completingTimelineItemIDs: Set<UUID> = []
     @State private var skipNextExpandedResizeRecalc = false
+    @State private var incompleteTaskCount = 0
+    @State private var timelineSnapshotRefreshWorkItem: DispatchWorkItem?
+    @State private var deferredOpenSyncWorkItem: DispatchWorkItem?
+    @State private var disableNextTimelineScrollAnimation = false
     @FocusState private var isDetailTitleFieldFocused: Bool
 
     private var useAdaptiveForegrounds: Bool {
@@ -269,23 +273,17 @@ struct ToDoShelfBar: View {
             }
         }
         .animation(DroppyAnimation.smoothContent, value: isListExpanded)
-        .animation(DroppyAnimation.smoothContent, value: manager.items.count)
         .animation(DroppyAnimation.transition, value: manager.showUndoToast)
         .animation(DroppyAnimation.transition, value: manager.showCleanupToast)
         .onAppear {
             if isListExpanded {
                 refreshTimelineSnapshot()
+                disableNextTimelineScrollAnimation = true
             }
+            refreshIncompleteTaskCount()
             manager.setShelfSplitViewEnabled(isSplitViewEnabled)
             stripWindowStartDay = selectedStripDayStart
-            if manager.isRemindersSyncEnabled || manager.isCalendarSyncEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    manager.syncExternalSourcesNow(minimumInterval: 12)
-                }
-            }
-            if manager.isRemindersSyncEnabled {
-                manager.refreshReminderListsNow()
-            }
+            scheduleDeferredOpenSyncIfNeeded()
             syncTimelineSelection()
             syncDetailDraftFromSelection()
         }
@@ -302,7 +300,11 @@ struct ToDoShelfBar: View {
             } else if isHostShelfExpanded {
                 NotchWindowController.shared.recalculateAllWindowSizesCoalesced()
             }
-            guard expanded else { return }
+            guard expanded else {
+                timelineSnapshotRefreshWorkItem?.cancel()
+                deferredOpenSyncWorkItem?.cancel()
+                return
+            }
             refreshTimelineSnapshot()
             let today = Calendar.current.startOfDay(for: Date())
             selectedStripDayStart = today
@@ -310,27 +312,27 @@ struct ToDoShelfBar: View {
             // Always reopen timeline from today/top so the view never appears
             // offset too low from the previously scrolled position.
             selectedTimelineItemID = nil
+            disableNextTimelineScrollAnimation = true
             timelineScrollTargetDay = today
             timelineScrollTargetItemID = nil
             syncTimelineSelection()
             syncDetailDraftFromSelection()
-            if manager.isRemindersSyncEnabled || manager.isCalendarSyncEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    manager.syncExternalSourcesNow(minimumInterval: 12)
-                }
-            }
+            scheduleDeferredOpenSyncIfNeeded()
         }
         .onDisappear {
             stripScrollSyncWorkItem?.cancel()
             stripSelectionUpdateWorkItem?.cancel()
             splitToggleInteractionWorkItem?.cancel()
+            timelineSnapshotRefreshWorkItem?.cancel()
+            deferredOpenSyncWorkItem?.cancel()
             commitPendingDetailTitleEdit()
             manager.isInteractingWithPopover = false
             manager.isEditingText = false
         }
         .onChange(of: manager.items) { _, _ in
+            refreshIncompleteTaskCount()
             guard isListExpanded, isHostShelfExpanded else { return }
-            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
+            scheduleTimelineSnapshotRefresh(animation: nil)
         }
         .onChange(of: calendarSyncEnabled) { _, _ in
             guard isListExpanded, isHostShelfExpanded else { return }
@@ -552,7 +554,7 @@ struct ToDoShelfBar: View {
             // so physical-notch layouts stay top-pinned without a one-frame top gap.
             manager.isShelfListExpanded = nextExpanded
             skipNextExpandedResizeRecalc = true
-            NotchWindowController.shared.forceRecalculateAllWindowSizes()
+            NotchWindowController.shared.recalculateAllWindowSizesCoalesced()
             withAnimation(DroppyAnimation.smoothContent) {
                 isListExpanded = nextExpanded
             }
@@ -564,7 +566,7 @@ struct ToDoShelfBar: View {
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         // Keep badge numbers white for strong contrast on the blue pill,
-                        // including external transparent-notch mode.
+                        // including external notch Liquid mode.
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -856,9 +858,6 @@ struct ToDoShelfBar: View {
                                     },
                                     onDelete: {
                                         manager.removeItem(item)
-                                        refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
-                                        syncTimelineSelection()
-                                        syncDetailDraftFromSelection()
                                     }
                                 )
                                 .id(
@@ -877,7 +876,6 @@ struct ToDoShelfBar: View {
                 .padding(.top, Layout.listTopPadding)
                 .padding(.bottom, Layout.listBottomPadding)
                 .padding(.horizontal, timelineColumnHorizontalPadding)
-                .animation(DroppyAnimation.itemInsertion, value: timelineDaySectionSignature)
             }
             .coordinateSpace(name: "timeline-scroll")
             .onPreferenceChange(TimelineSectionOffsetPreferenceKey.self) { offsets in
@@ -886,8 +884,13 @@ struct ToDoShelfBar: View {
             .onChange(of: timelineScrollTargetDay) { _, targetDay in
                 guard let targetDay, let resolvedDay = resolvedTimelineScrollDay(for: targetDay) else { return }
                 suspendStripSelectionSyncDuringProgrammaticScroll()
-                withAnimation(DroppyAnimation.smoothContent) {
+                if disableNextTimelineScrollAnimation {
                     proxy.scrollTo(resolvedDay, anchor: .top)
+                    disableNextTimelineScrollAnimation = false
+                } else {
+                    withAnimation(DroppyAnimation.smoothContent) {
+                        proxy.scrollTo(resolvedDay, anchor: .top)
+                    }
                 }
             }
             .onChange(of: timelineScrollTargetItemID) { _, targetItemID in
@@ -901,8 +904,13 @@ struct ToDoShelfBar: View {
                 guard let targetDay = timelineScrollTargetDay,
                       let resolvedDay = resolvedTimelineScrollDay(for: targetDay) else { return }
                 DispatchQueue.main.async {
-                    withAnimation(DroppyAnimation.smoothContent) {
+                    if disableNextTimelineScrollAnimation {
                         proxy.scrollTo(resolvedDay, anchor: .top)
+                        disableNextTimelineScrollAnimation = false
+                    } else {
+                        withAnimation(DroppyAnimation.smoothContent) {
+                            proxy.scrollTo(resolvedDay, anchor: .top)
+                        }
                     }
                 }
             }
@@ -1065,9 +1073,6 @@ struct ToDoShelfBar: View {
 
                             Button(role: .destructive) {
                                 manager.removeItem(item)
-                                refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
-                                syncTimelineSelection()
-                                syncDetailDraftFromSelection()
                             } label: {
                                 Text("Delete")
                                     .frame(maxWidth: .infinity)
@@ -1216,11 +1221,6 @@ struct ToDoShelfBar: View {
                 dueDate: resolvedDueDate,
                 reminderListID: resolvedReminderListID
             )
-        }
-        if isListExpanded {
-            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
-            syncTimelineSelection()
-            syncDetailDraftFromSelection()
         }
 
         // Reset with animation
@@ -1701,7 +1701,7 @@ private struct ToDoDueDatePopoverContentLocal: View {
                     Button(primaryButtonTitle) {
                         onPrimary?()
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 }
             }
         }
@@ -2173,7 +2173,7 @@ private struct ShelfTimelineRow: View {
                 Button("Save") {
                     saveTaskEdits()
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                 .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
@@ -2510,7 +2510,7 @@ private struct TaskRow: View {
                         Text(String(localized: "action.save"))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                    .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
                     .disabled(editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -2875,6 +2875,33 @@ private extension ToDoShelfBar {
         timelineSnapshot.hasVisibleTaskItems
     }
 
+    func scheduleTimelineSnapshotRefresh(
+        animation: Animation?,
+        debounce: TimeInterval = 0.05
+    ) {
+        timelineSnapshotRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            timelineSnapshotRefreshWorkItem = nil
+            refreshTimelineSnapshot(animation: animation)
+        }
+        timelineSnapshotRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounce, execute: workItem)
+    }
+
+    func scheduleDeferredOpenSyncIfNeeded() {
+        deferredOpenSyncWorkItem?.cancel()
+        guard manager.isRemindersSyncEnabled || manager.isCalendarSyncEnabled else { return }
+
+        let workItem = DispatchWorkItem {
+            if manager.isRemindersSyncEnabled {
+                manager.refreshReminderListsNow()
+            }
+            manager.syncExternalSourcesNow(minimumInterval: 12)
+        }
+        deferredOpenSyncWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: workItem)
+    }
+
     func refreshTimelineSnapshot(animation: Animation? = nil) {
         let sourceItems = manager.sortedItems
         let remindersByExternalID = manager.reminderItemsByExternalID(in: sourceItems)
@@ -2901,7 +2928,10 @@ private extension ToDoShelfBar {
             visibleItems = activeItems
         }
 
-        let sections = buildTimelineDaySections(from: visibleItems)
+        let sections = buildTimelineDaySections(
+            from: visibleItems,
+            remindersByExternalID: remindersByExternalID
+        )
 
         var selectionHasher = Hasher()
         selectionHasher.combine(visibleItems.count)
@@ -2964,9 +2994,6 @@ private extension ToDoShelfBar {
     private func animateTimelineCompletion(for item: ToDoItem) {
         guard !item.isCompleted else {
             manager.toggleCompletion(for: item)
-            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
-            syncTimelineSelection()
-            syncDetailDraftFromSelection()
             return
         }
 
@@ -2979,13 +3006,13 @@ private extension ToDoShelfBar {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
             manager.toggleCompletion(for: item)
-            refreshTimelineSnapshot(animation: DroppyAnimation.itemInsertion)
-            syncTimelineSelection()
-            syncDetailDraftFromSelection()
         }
     }
 
-    private func buildTimelineDaySections(from visibleItems: [ToDoItem]) -> [TimelineDaySection] {
+    private func buildTimelineDaySections(
+        from visibleItems: [ToDoItem],
+        remindersByExternalID: [String: ToDoItem]
+    ) -> [TimelineDaySection] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let maxVisibleDays = 120
@@ -2993,7 +3020,6 @@ private extension ToDoShelfBar {
 
         var undatedItems: [ToDoItem] = []
         var datedMap: [Date: [ToDoItem]] = [:]
-        let remindersByExternalID = manager.reminderItemsByExternalID(in: visibleItems)
         for item in visibleItems {
             guard let dueDate = manager.effectiveDueDate(
                 for: item,
@@ -3116,7 +3142,7 @@ private extension ToDoShelfBar {
         pendingStripSelectionOffsets = offsets
 
         let now = CACurrentMediaTime()
-        let minInterval: TimeInterval = 1.0 / 120.0
+        let minInterval: TimeInterval = 1.0 / 60.0
         let elapsed = now - lastStripSelectionUpdateAt
 
         if elapsed >= minInterval {
@@ -3304,18 +3330,22 @@ private extension ToDoShelfBar {
     }
 
     var incompleteCount: Int {
+        incompleteTaskCount
+    }
+
+    var incompleteCountLabel: String {
+        incompleteCount > 99 ? "99+" : "\(incompleteCount)"
+    }
+
+    func refreshIncompleteTaskCount() {
         let sourceItems = manager.items
         let remindersByExternalID = manager.reminderItemsByExternalID(in: sourceItems)
-        return sourceItems.reduce(0) { count, item in
+        incompleteTaskCount = sourceItems.reduce(0) { count, item in
             guard !item.isCompleted else { return count }
             guard item.externalSource != .calendar else { return count }
             guard !isHiddenUndatedReminder(item, remindersByExternalID: remindersByExternalID) else { return count }
             return count + 1
         }
-    }
-
-    var incompleteCountLabel: String {
-        incompleteCount > 99 ? "99+" : "\(incompleteCount)"
     }
 
     var shouldLiftUndoToast: Bool {

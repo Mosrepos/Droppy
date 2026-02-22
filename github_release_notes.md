@@ -28,8 +28,8 @@
 - Fixed restore-task cancellation flow by applying the same dismissal behavior before canceling in-flight restore when a restore/menu session exists.
 - Fixed wrong-screen menu-session persistence by hardening interactive-zone screen resolution using divider-edge anchoring.
 - Fixed floating bar placement/hover behavior so it stays under the divider and no longer disappears on hover or jumps under left menu-bar items.
-- Fixed Notification HUD foreground contrast in transparent modes by switching to adaptive dark/light foregrounds.
-- Fixed white-on-white regressions in HUD/media components by removing hardcoded white text and unifying adaptive foreground logic for transparent non-physical-notch modes.
+- Fixed Notification HUD foreground contrast in Liquid modes by switching to adaptive dark/light foregrounds.
+- Fixed white-on-white regressions in HUD/media components by removing hardcoded white text and unifying adaptive foreground logic for Liquid non-physical-notch modes.
 - Fixed Caffeine/High Alert foreground contrast to follow the same adaptive HUD/media foreground behavior.
 - Fixed terminal panel readability for command output, command text, placeholder text, and input chrome in light backgrounds.
 - Fixed light-mode color handling for volume/brightness HUDs.
@@ -200,7 +200,7 @@ Droppy v11 is one of the biggest updates yet, with major new extensions, big wor
 
 ## ✨ New
 - External brightness and volume controls for connected displays.
-- Full light mode support, including a brand-new transparency mode for light appearance.
+- Full light mode support, including a brand-new Liquid mode for light appearance.
 - New **Reminders** extension with native Apple Reminders + Calendar sync, natural language task creation, correct list routing, and full two-way live sync (create/edit/delete).
 - New **Notchface** extension to preview your camera directly from the notch.
 - Major Window Snap expansion:
@@ -237,7 +237,7 @@ Droppy v11 is one of the biggest updates yet, with major new extensions, big wor
 
 ## 🧹 Cleanup, Stability, and Fixes
 - Removed unused settings and old/dead code.
-- Fixed clipboard tags manager appearance consistency across light, dark, and transparency modes.
+- Fixed clipboard tags manager appearance consistency across light, dark, and Liquid modes.
 - Added many crash fixes, bug fixes, and polish improvements across Droppy.
 
 ## 🔐 New Licensing System

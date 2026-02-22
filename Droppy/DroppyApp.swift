@@ -37,7 +37,11 @@ enum MemoryRecoveryCoordinator {
         }
 
         lastReclaimDate = now
-        ThumbnailCache.shared.clearTransientPreviews()
+        if forceAllocatorTrim {
+            ThumbnailCache.shared.clearAll()
+        } else {
+            ThumbnailCache.shared.clearTransientPreviews()
+        }
         LinkPreviewService.shared.clearCache(cancelPending: true)
         ExtensionIconCache.shared.clearCache()
         DroppedItem.clearAvailableAppsCache()
@@ -657,6 +661,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppPreferenceKey.elementCaptureEditorBackgroundCornerRadius: PreferenceDefault.elementCaptureEditorBackgroundCornerRadius,
             AppPreferenceKey.elementCaptureEditorScreenshotCornerRadius: PreferenceDefault.elementCaptureEditorScreenshotCornerRadius,
             AppPreferenceKey.elementCaptureEditorScreenshotShadowStrength: PreferenceDefault.elementCaptureEditorScreenshotShadowStrength,
+            AppPreferenceKey.elementCaptureOpenEditorInstantly: PreferenceDefault.elementCaptureOpenEditorInstantly,
             AppPreferenceKey.enableClipboard: PreferenceDefault.enableClipboard,
             AppPreferenceKey.enableMultiBasket: PreferenceDefault.enableMultiBasket,
             AppPreferenceKey.quickActionsMailApp: PreferenceDefault.quickActionsMailApp,
@@ -750,7 +755,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = UpdateChecker.shared
         _ = ClipboardManager.shared
         _ = ClipboardWindowController.shared
-        _ = ThumbnailCache.shared  // Warmup QuickLook Metal shaders early
         startExternalDeletionValidation()
         
         // Start analytics (anonymous launch tracking)
@@ -883,26 +887,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // 5. Lock Screen Features
+
             // Lock HUD: Shows lock/unlock animation in the notch + dedicated SkyLight window on lock screen
             // Uses separate-window architecture — main notch window is NEVER delegated to SkyLight
             let lockScreenHUDEnabled = UserDefaults.standard.preference(
                 AppPreferenceKey.enableLockScreenHUD,
                 default: PreferenceDefault.enableLockScreenHUD
             )
+
+            // Lock manager only runs for lock/unlock HUD animation.
             if lockScreenHUDEnabled {
-                print("🔒 Droppy: Starting Lock Screen HUD")
+                print("🔒 Droppy: Starting Lock Screen Monitoring")
                 LockScreenManager.shared.enable()
             }
             
-            // Lock Screen Media Widget: Shows music controls on lock screen (separate feature)
-            let lockScreenMediaEnabled = UserDefaults.standard.preference(
-                AppPreferenceKey.enableLockScreenMediaWidget,
-                default: PreferenceDefault.enableLockScreenMediaWidget
-            )
-            if lockScreenMediaEnabled {
-                print("🔒 Droppy: Initializing Lock Screen Media Widget")
-                LockScreenMediaPanelManager.shared.configure(musicManager: MusicManager.shared)
-            }
+            // Lock Screen Media HUD is temporarily disabled for all users.
+            LockScreenMediaPanelManager.shared.configure(musicManager: MusicManager.shared)
 
             // 6. Tracked Folders (monitors folders for new files)
             let folderObservationEnabled = UserDefaults.standard.bool(forKey: AppPreferenceKey.enableTrackedFolders)
@@ -961,6 +961,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ElementCaptureManager.shared.stopMonitoringAllShortcuts()
         WindowSnapManager.shared.stopMonitoringAllShortcuts()
         HideNotchManager.shared.disable()
+        LockScreenManager.shared.disable()
         NotchWindowController.shared.closeWindow()
     }
 

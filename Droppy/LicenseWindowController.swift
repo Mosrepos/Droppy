@@ -10,6 +10,9 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
     }
 
     private var window: NSWindow?
+    private var isClosing = false
+    private var deferredTeardownWorkItem: DispatchWorkItem?
+    private let deferredTeardownDelay: TimeInterval = 8
 
     var isVisible: Bool {
         window?.isVisible == true
@@ -25,9 +28,20 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
             guard self.shouldPresentWindow(for: activationMode) else { return }
 
             // If already visible, bring it to front.
-            if let window = self.window, window.isVisible {
+            if let window = self.window {
+                self.cancelDeferredTeardown()
                 self.activateIfAllowed(for: activationMode)
-                window.makeKeyAndOrderFront(nil)
+                if window.isVisible {
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    AppKitMotion.prepareForPresent(window, initialScale: 0.9)
+                    window.orderFront(nil)
+                    DispatchQueue.main.async {
+                        self.activateIfAllowed(for: activationMode)
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                    AppKitMotion.animateIn(window, initialScale: 0.9, duration: 0.2)
+                }
                 return
             }
 
@@ -91,8 +105,34 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
 
     func close() {
         DispatchQueue.main.async { [weak self] in
-            self?.window?.close()
+            guard let self, let panel = self.window, !self.isClosing else { return }
+            self.cancelDeferredTeardown()
+            self.isClosing = true
+            AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
+                panel.orderOut(nil)
+                AppKitMotion.resetPresentationState(panel)
+                self?.isClosing = false
+                self?.scheduleDeferredTeardown()
+            }
         }
+    }
+
+    private func scheduleDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.window, !panel.isVisible else { return }
+            panel.contentView = nil
+            panel.delegate = nil
+            self.window = nil
+            self.deferredTeardownWorkItem = nil
+        }
+        deferredTeardownWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + deferredTeardownDelay, execute: workItem)
+    }
+
+    private func cancelDeferredTeardown() {
+        deferredTeardownWorkItem?.cancel()
+        deferredTeardownWorkItem = nil
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -104,12 +144,19 @@ final class LicenseWindowController: NSObject, NSWindowDelegate {
         let canClose = !manager.requiresLicenseEnforcement || manager.hasAccess
         if !canClose {
             HapticFeedback.error()
+            return false
         }
-        return canClose
+        if isClosing {
+            return true
+        }
+        close()
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {
         window = nil
+        isClosing = false
+        cancelDeferredTeardown()
     }
 
     private func shouldPresentWindow(for activationMode: ActivationMode) -> Bool {

@@ -48,15 +48,16 @@ class UpdateChecker: ObservableObject {
     /// Start the background update scheduler. Call once at app launch.
     func startBackgroundChecking() {
         print("UpdateChecker: Starting background update scheduler (interval: \(Int(checkInterval / 3600))h)")
+        backgroundTimer?.invalidate()
+        backgroundTimer = nil
         
         // Perform initial check if needed
         checkIfDailyCheckNeeded()
         
         // Schedule hourly timer to evaluate if 24h have passed
         backgroundTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
-            guard let checker = self else { return }
-            Task { @MainActor in
-                checker.checkIfDailyCheckNeeded()
+            Task { @MainActor [weak self] in
+                self?.checkIfDailyCheckNeeded()
             }
         }
     }
@@ -196,6 +197,8 @@ class UpdateChecker: ObservableObject {
         guard updateAvailable else { return }
 
         if canPresentForegroundUI() {
+            pendingBackgroundUpdatePrompt = false
+            removeDidBecomeActiveObserver()
             showUpdateWindow()
             return
         }
@@ -227,7 +230,14 @@ class UpdateChecker: ObservableObject {
         guard pendingBackgroundUpdatePrompt else { return }
         guard canPresentForegroundUI() else { return }
         pendingBackgroundUpdatePrompt = false
+        removeDidBecomeActiveObserver()
         showUpdateWindow()
+    }
+
+    private func removeDidBecomeActiveObserver() {
+        guard let observer = didBecomeActiveObserver else { return }
+        NotificationCenter.default.removeObserver(observer)
+        didBecomeActiveObserver = nil
     }
 
     private func canPresentForegroundUI() -> Bool {

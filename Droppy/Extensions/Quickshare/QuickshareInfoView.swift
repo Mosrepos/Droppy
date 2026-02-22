@@ -12,16 +12,15 @@ struct QuickshareInfoView: View {
     @AppStorage(AppPreferenceKey.showQuickshareInSidebar) private var showInSidebar = PreferenceDefault.showQuickshareInSidebar
     @AppStorage(AppPreferenceKey.quickshareRequireUploadConfirmation) private var requireUploadConfirmation = PreferenceDefault.quickshareRequireUploadConfirmation
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     
     // For list observation
     @Bindable private var manager = QuickshareManager.shared
     
     @State private var showDeleteConfirmation: QuickshareItem? = nil
     @State private var copiedItemId: UUID? = nil
-    @State private var showReviewsSheet = false
     
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     // Optional closure for when used in a standalone window
     var onClose: (() -> Void)? = nil
@@ -63,9 +62,6 @@ struct QuickshareInfoView: View {
         .fixedSize(horizontal: true, vertical: true)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .quickshare)
-        }
         .alert("Delete from Server?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {
                 showDeleteConfirmation = nil
@@ -138,27 +134,6 @@ struct QuickshareInfoView: View {
                 .foregroundStyle(.secondary)
                 
                 // Rating
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(DroppySelectableButtonStyle(isSelected: false))
                 
                 // Category badge
                 Text("Productivity")
@@ -298,7 +273,7 @@ struct QuickshareInfoView: View {
                 .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
             } else {
                 // File List - spacing 8 to match clipboard
-                VStack(spacing: 8) {
+                LazyVStack(spacing: 8) {
                     ForEach(manager.items) { item in
                         itemRow(for: item)
                     }
@@ -381,7 +356,7 @@ struct QuickshareInfoView: View {
                 if let onClose = onClose {
                     onClose()
                 } else {
-                    dismiss()
+                    closePanelOrDismiss(panelCloseAction, dismiss: dismiss)
                 }
             } label: {
                 Text("Close")

@@ -1289,7 +1289,7 @@ final class VolumeManager: NSObject, ObservableObject {
             return .airpods
         }
 
-        if name.contains("beats") || name.contains("powerbeats") || name.contains("studio buds") {
+        if isLikelyBeatsDevice(name) {
             return .beats
         }
 
@@ -1309,6 +1309,31 @@ final class VolumeManager: NSObject, ObservableObject {
         }
 
         return nil
+    }
+    
+    private func isLikelyBeatsDevice(_ deviceName: String) -> Bool {
+        let beatsModelTokens = [
+            "beats",
+            "powerbeats",
+            "studio buds",
+            "studio buds+",
+            "fit pro",
+            "solo buds",
+            "solo3",
+            "solo 3",
+            "solo4",
+            "solo 4",
+            "solo pro",
+            "studio3",
+            "studio 3",
+            "studio3 wireless",
+            "studio pro",
+            "beatsx",
+            "beats x",
+            "urbeats"
+        ]
+        
+        return beatsModelTokens.contains { deviceName.contains($0) }
     }
     
     private func shouldAttemptExternalHardwareVolume(displayID: CGDirectDisplayID) -> Bool {

@@ -55,14 +55,9 @@ final class CopiedTextToastWindowController {
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
-        panel.alphaValue = 0
+        AppKitMotion.prepareForPresent(panel, initialScale: 1.0)
         panel.orderFront(nil)
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
+        AppKitMotion.animateIn(panel, initialScale: 1.0, duration: 0.2)
 
         window = panel
 
@@ -81,18 +76,15 @@ final class CopiedTextToastWindowController {
 
         guard let panel = window else { return }
 
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.16
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
+        AppKitMotion.animateOut(panel, targetScale: 1.0, duration: 0.15) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, let currentWindow = self.window else { return }
                 currentWindow.orderOut(nil)
                 currentWindow.close()
+                AppKitMotion.resetPresentationState(currentWindow)
                 self.window = nil
             }
-        })
+        }
     }
 }
 

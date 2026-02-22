@@ -33,6 +33,11 @@ final class MenuBarFloatingScanner {
         case controlCenter = "com.apple.controlcenter"
     }
 
+    enum OwnerDiscoveryMode: String {
+        case incremental
+        case aggressive
+    }
+
     private struct Candidate {
         let identityBase: String
         let windowID: CGWindowID?
@@ -124,16 +129,25 @@ final class MenuBarFloatingScanner {
         MenuBarStatusWindowCache.signature(maxAge: 0.3)
     }
 
-    func scan(includeIcons: Bool, preferredOwnerBundleIDs: Set<String>? = nil) -> [MenuBarFloatingItemSnapshot] {
+    func scan(
+        includeIcons: Bool,
+        preferredOwnerBundleIDs: Set<String>? = nil,
+        discoveryMode: OwnerDiscoveryMode = .incremental
+    ) -> [MenuBarFloatingItemSnapshot] {
         var candidates = [Candidate]()
         candidates.reserveCapacity(64)
 
         if isIconDebugEnabled {
             let owners = preferredOwnerBundleIDs?.sorted().joined(separator: ",") ?? "auto"
-            iconDebugLog("scan begin includeIcons=\(includeIcons) preferredOwners=\(owners)")
+            iconDebugLog(
+                "scan begin includeIcons=\(includeIcons) preferredOwners=\(owners) discoveryMode=\(discoveryMode.rawValue)"
+            )
         }
 
-        for ownerBundleID in ownerBundleIDsToScan(preferredOwnerBundleIDs: preferredOwnerBundleIDs) {
+        for ownerBundleID in ownerBundleIDsToScan(
+            preferredOwnerBundleIDs: preferredOwnerBundleIDs,
+            discoveryMode: discoveryMode
+        ) {
             candidates.append(contentsOf: scanCandidates(ownerBundleID: ownerBundleID, includeIcons: includeIcons))
         }
 
@@ -374,7 +388,10 @@ final class MenuBarFloatingScanner {
         return items
     }
 
-    private func ownerBundleIDsToScan(preferredOwnerBundleIDs: Set<String>?) -> [String] {
+    private func ownerBundleIDsToScan(
+        preferredOwnerBundleIDs: Set<String>?,
+        discoveryMode: OwnerDiscoveryMode
+    ) -> [String] {
         var ordered = [String]()
         var seen = Set<String>()
 
@@ -393,10 +410,17 @@ final class MenuBarFloatingScanner {
             return ordered
         }
 
+        let statusWindowOwnerBundleIDs = MenuBarStatusWindowCache.ownerBundleIDs(maxAge: 0.18)
         let now = ProcessInfo.processInfo.systemUptime
-        let shouldRunFullDiscovery =
-            ownerHasMenuBarRoots.isEmpty
-            || (now - lastFullOwnerDiscoveryTimestamp) >= fullOwnerDiscoveryInterval
+        let shouldRunFullDiscovery: Bool
+        switch discoveryMode {
+        case .aggressive:
+            shouldRunFullDiscovery = true
+        case .incremental:
+            shouldRunFullDiscovery =
+                ownerHasMenuBarRoots.isEmpty
+                || (now - lastFullOwnerDiscoveryTimestamp) >= fullOwnerDiscoveryInterval
+        }
         let runningBundleIDs: [String]
         if shouldRunFullDiscovery {
             runningBundleIDs = runningBundleIDsSnapshot()
@@ -407,6 +431,13 @@ final class MenuBarFloatingScanner {
             // fresh menu bar apps opened within the discovery cooldown window.
             runningBundleIDs = runningBundleIDsSnapshot().filter { bundleID in
                 ownerHasMenuBarRoots[bundleID] != false
+                    || statusWindowOwnerBundleIDs.contains(bundleID)
+            }
+        }
+
+        for bundleID in statusWindowOwnerBundleIDs.sorted() {
+            if seen.insert(bundleID).inserted {
+                ordered.append(bundleID)
             }
         }
 

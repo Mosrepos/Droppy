@@ -12,7 +12,6 @@ struct AIBackgroundRemovalCard: View {
     @ObservedObject private var manager = AIInstallManager.shared
     private var isInstalled: Bool { manager.isInstalled }
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,7 +32,7 @@ struct AIBackgroundRemovalCard: View {
                 
                 Spacer()
                 
-                // Stats row: installs + rating + badge
+                // Stats row: installs + badge
                 HStack(spacing: 8) {
                     // Installs (always visible)
                     HStack(spacing: 3) {
@@ -44,20 +43,6 @@ struct AIBackgroundRemovalCard: View {
                     }
                     .foregroundStyle(.secondary)
                     
-                    // Rating (always visible)
-                    HStack(spacing: 2) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.yellow)
-                        if let r = rating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption2.weight(.medium))
-                        } else {
-                            Text("–")
-                                .font(.caption2.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
                     
                     // Category badge - shows "Installed" if model is installed
                     Text(isInstalled ? "Installed" : "AI")
@@ -78,7 +63,7 @@ struct AIBackgroundRemovalCard: View {
                     .font(.headline)
                     .foregroundStyle(.primary)
                 
-                Text("Remove image backgrounds instantly with local AI.")
+                Text("Remove backgrounds with BiRefNet external runtime inference.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -103,7 +88,7 @@ struct AIBackgroundRemovalCard: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("One-click install")
+                    Text("One-time runtime + model install")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -117,7 +102,7 @@ struct AIBackgroundRemovalCard: View {
             showInfoSheet = true
         }
         .sheet(isPresented: $showInfoSheet) {
-            AIInstallView(installCount: installCount, rating: rating)
+            AIInstallView(installCount: installCount)
         }
     }
 }

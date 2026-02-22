@@ -56,8 +56,8 @@ struct NotificationHUDView: View {
 
     /// Keep built-in physical-notch HUD text white on black.
     /// Adapt foregrounds for transparent surfaces:
-    /// - Dynamic Island transparent mode (built-in/external)
-    /// - External notch-style transparent mode
+    /// - Dynamic Island Liquid mode (built-in/external)
+    /// - External notch-style Liquid mode
     private var useAdaptiveForegrounds: Bool {
         useTransparentBackground && (layout.isDynamicIslandMode || isExternalWithNotchStyle)
     }
@@ -84,14 +84,14 @@ struct NotificationHUDView: View {
             }
         }
         .onHover { hovering in
-            withAnimation(DroppyAnimation.hover) {
-                isHovering = hovering
-            }
+            isHovering = hovering
             syncInteractionState()
         }
         .offset(y: dragOffset)
         .opacity(appearOpacity * (1.0 - Double(abs(dragOffset)) / 80.0))
         .scaleEffect(appearScale * (isPressed ? 0.97 : (isHovering ? 1.02 : 1.0)))
+        .animation(DroppyAnimation.hover, value: isHovering)
+        .animation(DroppyAnimation.hoverQuick, value: isPressed)
         .onAppear {
             print("🔔 NotificationHUDView: VIEW APPEARED - notification=\(manager.currentNotification?.appName ?? "nil")")
             withAnimation(DroppyAnimation.transition) {
@@ -337,9 +337,7 @@ struct NotificationHUDView: View {
                     print("🔔 NotificationHUDView: Gesture onChanged - press started")
                 }
                 if !isPressed {
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        isPressed = true
-                    }
+                    isPressed = true
                 }
                 if value.translation.height < -8 {
                     dragOffset = value.translation.height * 0.6
@@ -349,9 +347,7 @@ struct NotificationHUDView: View {
                 let dragDistance = abs(value.translation.height) + abs(value.translation.width)
                 print("🔔 NotificationHUDView: Gesture onEnded - dragDistance=\(dragDistance), translation=\(value.translation)")
 
-                withAnimation(.easeOut(duration: 0.15)) {
-                    isPressed = false
-                }
+                isPressed = false
 
                 if value.translation.height < -30 || value.predictedEndTranslation.height < -50 {
                     print("🔔 NotificationHUDView: Swipe up detected - dismissing")
@@ -405,9 +401,7 @@ struct NotificationHUDView: View {
         print("NotificationHUD: Opening app for bundle ID: \(bundleID)")
         debugLog("Click received - opening \(notification.appName) (\(bundleID))")
 
-        withAnimation(.easeOut(duration: 0.1)) {
-            isPressed = true
-        }
+        isPressed = true
 
         // ROBUST APP ACTIVATION STRATEGY
         // The most reliable way to bring an app to foreground on macOS (including minimized apps,
@@ -429,9 +423,6 @@ struct NotificationHUDView: View {
         // Dismiss notification after a short delay
         let notificationManager = manager
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.easeOut(duration: 0.1)) {
-                // isPressed animation handled by view lifecycle
-            }
             notificationManager.dismissCurrentOnly()
         }
     }

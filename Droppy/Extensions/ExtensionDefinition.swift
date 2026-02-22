@@ -15,7 +15,7 @@ enum ExtensionGroup: String, CaseIterable {
     case ai = "AI"
     case productivity = "Productivity"
     case media = "Media"
-    
+
     var color: Color {
         switch self {
         case .ai: return .blue
@@ -32,49 +32,49 @@ enum ExtensionGroup: String, CaseIterable {
 protocol ExtensionDefinition {
     /// Unique identifier matching ExtensionType rawValue
     static var id: String { get }
-    
+
     /// Display name shown in Extension Store
     static var title: String { get }
-    
+
     /// Short tagline under title
     static var subtitle: String { get }
-    
+
     /// Category for grouping
     static var category: ExtensionGroup { get }
-    
+
     /// Accent color for the extension card
     static var categoryColor: Color { get }
-    
+
     /// Full description for details view
     static var description: String { get }
-    
+
     /// Feature list with SF Symbol icons
     static var features: [(icon: String, text: String)] { get }
-    
+
     /// URL to screenshot image (loaded from web)
     static var screenshotURL: URL? { get }
-    
+
     /// URL to icon image (loaded from web)
     static var iconURL: URL? { get }
-    
+
     /// Placeholder SF Symbol while icon loads
     static var iconPlaceholder: String { get }
-    
+
     /// Placeholder icon color
     static var iconPlaceholderColor: Color { get }
-    
+
     /// Clean up extension resources when uninstalled
     static func cleanup()
-    
+
     /// Optional SwiftUI view to show instead of screenshot URL
     static var previewView: AnyView? { get }
-    
+
     /// Whether this is a community-contributed extension
     static var isCommunity: Bool { get }
-    
+
     /// Creator name for community extensions
     static var creatorName: String? { get }
-    
+
     /// Creator profile URL for community extensions
     static var creatorURL: URL? { get }
 }
@@ -84,22 +84,22 @@ protocol ExtensionDefinition {
 extension ExtensionDefinition {
     /// Default category color from category
     static var categoryColor: Color { category.color }
-    
+
     /// Default no-op cleanup
     static func cleanup() {}
-    
+
     /// Default placeholder color
     static var iconPlaceholderColor: Color { .blue }
-    
+
     /// Default no preview view (uses screenshotURL instead)
     static var previewView: AnyView? { nil }
-    
+
     /// Default is not a community extension
     static var isCommunity: Bool { false }
-    
+
     /// Default no creator name
     static var creatorName: String? { nil }
-    
+
     /// Default no creator URL
     static var creatorURL: URL? { nil }
 }
@@ -110,13 +110,13 @@ extension ExtensionDefinition {
 /// Provides discovery and lookup by ID
 final class ExtensionRegistry {
     static let shared = ExtensionRegistry()
-    
+
     /// All registered extension definitions
     private(set) var definitions: [any ExtensionDefinition.Type] = []
-    
+
     /// Lookup by ID
     private var definitionsByID: [String: any ExtensionDefinition.Type] = [:]
-    
+
     private init() {
         // Register all extensions
         register(AIBackgroundRemovalExtension.self)
@@ -133,22 +133,23 @@ final class ExtensionRegistry {
         register(AppleMusicExtension.self)
         register(NotificationHUDExtension.self)
         register(CaffeineExtension.self)
+        register(PomodoroExtension.self)
         register(MenuBarManagerExtension.self)
         register(ToDoExtension.self)
 
     }
-    
+
     /// Register an extension definition
     func register<T: ExtensionDefinition>(_ definition: T.Type) {
         definitions.append(definition)
         definitionsByID[definition.id] = definition
     }
-    
+
     /// Get definition by ID
     func definition(for id: String) -> (any ExtensionDefinition.Type)? {
         definitionsByID[id]
     }
-    
+
     /// Get all definitions in a category
     func definitions(in category: ExtensionGroup) -> [any ExtensionDefinition.Type] {
         definitions.filter { $0.category == category }
@@ -171,7 +172,7 @@ extension Image {
 struct ExtensionIconView<T: ExtensionDefinition>: View {
     let definition: T.Type
     var size: CGFloat = 64
-    
+
     var body: some View {
         CachedAsyncImage(url: definition.iconURL) { image in
             image.droppyExtensionIcon(contentMode: .fill)

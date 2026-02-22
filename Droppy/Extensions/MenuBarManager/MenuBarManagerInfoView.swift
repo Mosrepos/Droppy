@@ -9,11 +9,21 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MenuBarManagerInfoView: View {
-    private enum PlacementLane: Hashable {
+    private enum PlacementLane: Hashable, CaseIterable {
         case visible
         case hidden
         case alwaysHidden
         case floatingBar
+    }
+
+    private enum PlacementDropEdge {
+        case leading
+        case trailing
+    }
+
+    private enum PlacementDropDestination: Equatable {
+        case item(String, PlacementDropEdge)
+        case emptyLane
     }
 
     @AppStorage(AppPreferenceKey.useTransparentBackground) private var useTransparentBackground = PreferenceDefault.useTransparentBackground
@@ -21,23 +31,24 @@ struct MenuBarManagerInfoView: View {
     @ObservedObject private var floatingBarManager = MenuBarFloatingBarManager.shared
     @ObservedObject private var permissionManager = PermissionManager.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.droppyPanelCloseAction) private var panelCloseAction
     
     var installCount: Int?
-    var rating: AnalyticsService.ExtensionRating?
     
-    @State private var showReviewsSheet = false
     @State private var hiddenSectionWasVisibleBeforeSettings = false
     @State private var alwaysHiddenSectionWasVisibleBeforeSettings = false
     @State private var alwaysHiddenSectionWasEnabledBeforeSettings = false
     @State private var wasLockedVisibleBeforeSettings = false
     @State private var activeDropPlacement: PlacementLane?
+    @State private var activeDropPlacementItemID: String?
+    @State private var activeDropPlacementEdge: PlacementDropEdge = .leading
     @State private var draggingPlacementItemID: String?
     @State private var draggingPlacementItemSnapshot: MenuBarFloatingItemSnapshot?
+    @State private var dragPreviewOrderByLane = [PlacementLane: [String]]()
     @State private var mouseUpEventMonitor: Any?
     @State private var didEnterSettingsInspectionMode = false
     @State private var didAttemptStatsLoad = false
     @State private var resolvedInstallCount: Int?
-    @State private var resolvedRating: AnalyticsService.ExtensionRating?
     @State private var isRescanOverlayVisible = false
     @State private var rescanOverlayTimeoutTask: Task<Void, Never>?
     @State private var rescanOverlayHideTask: Task<Void, Never>?
@@ -61,10 +72,34 @@ struct MenuBarManagerInfoView: View {
         return "–"
     }
 
-    private var displayRating: AnalyticsService.ExtensionRating? {
-        rating ?? resolvedRating
+    private struct PlacementDropDelegate: DropDelegate {
+        let onEntered: (DropInfo) -> Void
+        let onUpdated: (DropInfo) -> Void
+        let onExited: () -> Void
+        let onPerformDrop: (DropInfo) -> Bool
+
+        func validateDrop(info: DropInfo) -> Bool {
+            info.hasItemsConforming(to: [UTType.text.identifier])
+        }
+
+        func dropEntered(info: DropInfo) {
+            onEntered(info)
+        }
+
+        func dropExited(info: DropInfo) {
+            onExited()
+        }
+
+        func dropUpdated(info: DropInfo) -> DropProposal? {
+            onUpdated(info)
+            return DropProposal(operation: .move)
+        }
+
+        func performDrop(info: DropInfo) -> Bool {
+            onPerformDrop(info)
+        }
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header (fixed, non-scrolling)
@@ -78,6 +113,9 @@ struct MenuBarManagerInfoView: View {
                 VStack(spacing: 20) {
                     // Features section
                     featuresSection
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    screenshotSection
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     // Usage instructions (when enabled)
@@ -104,9 +142,6 @@ struct MenuBarManagerInfoView: View {
         .frame(width: 450, height: panelHeight)
         .droppyLiquidPopoverSurface(cornerRadius: DroppyRadius.xl)
         .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.xl, style: .continuous))
-        .sheet(isPresented: $showReviewsSheet) {
-            ExtensionReviewsSheet(extensionType: .menuBarManager)
-        }
         .onAppear {
             loadStatsIfNeeded()
             didEnterSettingsInspectionMode = false
@@ -129,8 +164,7 @@ struct MenuBarManagerInfoView: View {
         .onDisappear {
             stopRescanFeedback(animated: false)
             removeMouseUpEventMonitor()
-            draggingPlacementItemID = nil
-            draggingPlacementItemSnapshot = nil
+            resetPlacementDragState()
             guard didEnterSettingsInspectionMode else { return }
             floatingBarManager.exitSettingsInspectionMode()
             manager.isLockedVisible = wasLockedVisibleBeforeSettings
@@ -153,27 +187,20 @@ struct MenuBarManagerInfoView: View {
     private func loadStatsIfNeeded() {
         guard !didAttemptStatsLoad else { return }
         guard !AnalyticsService.shared.isDisabled else { return }
-        guard installCount == nil || rating == nil else { return }
+        guard installCount == nil else { return }
 
         didAttemptStatsLoad = true
 
         Task {
             var fetchedCount: Int?
-            var fetchedRating: AnalyticsService.ExtensionRating?
 
             if installCount == nil, let counts = try? await AnalyticsService.shared.fetchExtensionCounts() {
                 fetchedCount = counts["menuBarManager"]
-            }
-            if rating == nil, let ratings = try? await AnalyticsService.shared.fetchExtensionRatings() {
-                fetchedRating = ratings["menuBarManager"]
             }
 
             await MainActor.run {
                 if installCount == nil {
                     resolvedInstallCount = fetchedCount
-                }
-                if rating == nil {
-                    resolvedRating = fetchedRating
                 }
             }
         }
@@ -182,7 +209,7 @@ struct MenuBarManagerInfoView: View {
     private var headerSection: some View {
         VStack(spacing: 12) {
             // Icon from remote URL
-            CachedAsyncImage(url: URL(string: "https://iordv.github.io/Droppy/assets/icons/menubarmanager.png")) { image in
+            CachedAsyncImage(url: MenuBarManagerExtension.iconURL) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -210,28 +237,6 @@ struct MenuBarManagerInfoView: View {
                 }
                 .foregroundStyle(.secondary)
                 
-                // Rating (clickable)
-                Button {
-                    showReviewsSheet = true
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.yellow)
-                        if let r = displayRating, r.ratingCount > 0 {
-                            Text(String(format: "%.1f", r.averageRating))
-                                .font(.caption.weight(.medium))
-                            Text("(\(r.ratingCount))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("–")
-                                .font(.caption.weight(.medium))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
                 
                 // Category badge
                 Text("Productivity")
@@ -285,6 +290,26 @@ struct MenuBarManagerInfoView: View {
             RoundedRectangle(cornerRadius: DroppyRadius.ml, style: .continuous)
                 .stroke(AdaptiveColors.overlayAuto(0.08), lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var screenshotSection: some View {
+        if let screenshotURL = MenuBarManagerExtension.screenshotURL {
+            CachedAsyncImage(url: screenshotURL) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                            .stroke(AdaptiveColors.overlayAuto(0.12), lineWidth: 1)
+                    )
+            } placeholder: {
+                RoundedRectangle(cornerRadius: DroppyRadius.medium, style: .continuous)
+                    .fill(AdaptiveColors.overlayAuto(0.08))
+                    .frame(height: 170)
+            }
+        }
     }
     
     private func featureRow(icon: String, title: String, detail: String) -> some View {
@@ -514,7 +539,7 @@ struct MenuBarManagerInfoView: View {
                             Text("Apply")
                         }
                     }
-                    .droppyAccentButton(color: .blue, size: .small)
+                    .droppyAccentButton(color: AdaptiveColors.selectionBlueAuto, size: .small)
                     .disabled(manager.isApplyingSpacing)
                 }
             }
@@ -757,7 +782,8 @@ struct MenuBarManagerInfoView: View {
         lane: PlacementLane,
         items: [MenuBarFloatingItemSnapshot]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let presentedItems = displayedItems(for: lane, fallback: items)
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 HStack(spacing: 6) {
                     Text(title)
@@ -765,28 +791,28 @@ struct MenuBarManagerInfoView: View {
                         .foregroundStyle(.primary)
                 }
                 Spacer()
-                Text("\(items.count)")
+                Text("\(presentedItems.count)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
-                    if items.isEmpty {
-                        Text("Drop icons here")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                    if presentedItems.isEmpty {
+                        emptyPlacementDropChip(for: lane)
                     } else {
-                        ForEach(items) { item in
-                            draggablePlacementItemChip(item)
+                        ForEach(presentedItems) { item in
+                            draggablePlacementItemChip(item, lane: lane)
                         }
                     }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(
+                    .interactiveSpring(response: 0.22, dampingFraction: 0.86, blendDuration: 0.08),
+                    value: presentedItems.map(\.id)
+                )
             }
             .frame(minHeight: 60)
             .background(
@@ -806,23 +832,29 @@ struct MenuBarManagerInfoView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
-                        activeDropPlacement == lane ? Color.blue.opacity(0.55) : Color.clear,
-                        lineWidth: activeDropPlacement == lane ? 1.2 : 0
+                        activeDropPlacement == lane && activeDropPlacementItemID == nil
+                            ? Color.blue.opacity(0.62)
+                            : Color.clear,
+                        lineWidth: activeDropPlacement == lane && activeDropPlacementItemID == nil ? 1.2 : 0
                     )
             )
-            .onDrop(of: [.text], isTargeted: dropTargetBinding(for: lane)) { providers in
-                handlePlacementDrop(providers: providers, to: lane)
-            }
         }
     }
 
-    private func draggablePlacementItemChip(_ item: MenuBarFloatingItemSnapshot) -> some View {
+    private func draggablePlacementItemChip(
+        _ item: MenuBarFloatingItemSnapshot,
+        lane: PlacementLane
+    ) -> some View {
         let nonHideableReason = floatingBarManager.nonHideableReason(for: item)
         let isNonHideable = nonHideableReason != nil
         let currentPlacement = floatingBarManager.placement(for: item)
         let isBlockedInVisibleLane = isNonHideable && currentPlacement == .visible
         let canDrag = !isBlockedInVisibleLane
         let isDragging = draggingPlacementItemID == item.id
+        let isDropTarget =
+            draggingPlacementItemID != nil
+            && activeDropPlacement == lane
+            && activeDropPlacementItemID == item.id
         let helpText: String = {
             let base = "\(item.displayName) (\(item.ownerBundleID))"
             if let nonHideableReason {
@@ -836,20 +868,63 @@ struct MenuBarManagerInfoView: View {
             isDimmed: isBlockedInVisibleLane,
             showLockBadge: isBlockedInVisibleLane,
             isDragging: isDragging,
+            isDropTarget: isDropTarget,
+            dropEdge: activeDropPlacementEdge,
             helpText: helpText
         )
 
+        let chipWidth = placementChipDropWidth(for: item)
+        let dropEnabledChip = chip.onDrop(
+            of: [UTType.text],
+            delegate: placementDropDelegate(
+                for: lane,
+                destinationResolver: { info in
+                    destinationForItemHover(
+                        targetID: item.id,
+                        lane: lane,
+                        locationX: info.location.x,
+                        itemWidth: chipWidth
+                    )
+                }
+            )
+        )
+
         if !canDrag {
-            return AnyView(chip)
+            return AnyView(dropEnabledChip)
         }
 
         return AnyView(
-            chip.onDrag {
+            dropEnabledChip.onDrag {
                 draggingPlacementItemID = item.id
                 draggingPlacementItemSnapshot = item
+                beginDragPreviewIfNeeded()
                 return NSItemProvider(object: item.id as NSString)
             }
         )
+    }
+
+    private func emptyPlacementDropChip(for lane: PlacementLane) -> some View {
+        let isTargetedLane = activeDropPlacement == lane && activeDropPlacementItemID == nil
+
+        return Text("Drop icons here")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(
+                        isTargetedLane ? Color.blue.opacity(0.75) : AdaptiveColors.overlayAuto(0.22),
+                        style: StrokeStyle(lineWidth: isTargetedLane ? 1.2 : 1, dash: [4, 3])
+                    )
+            )
+            .onDrop(
+                of: [UTType.text],
+                delegate: placementDropDelegate(
+                    for: lane,
+                    destinationResolver: { _ in .emptyLane }
+                )
+            )
     }
 
     private func placementItemChipContent(
@@ -857,6 +932,8 @@ struct MenuBarManagerInfoView: View {
         isDimmed: Bool,
         showLockBadge: Bool,
         isDragging: Bool,
+        isDropTarget: Bool,
+        dropEdge: PlacementDropEdge,
         helpText: String
     ) -> some View {
         let iconSize = MenuBarFloatingIconLayout.nativeIconSize(for: item)
@@ -873,10 +950,29 @@ struct MenuBarManagerInfoView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(
-                        Color.clear,
-                        lineWidth: 0
+                        isDropTarget ? Color.blue.opacity(0.55) : Color.clear,
+                        lineWidth: isDropTarget ? 1.2 : 0
                     )
             )
+            .overlay {
+                if isDropTarget {
+                    if dropEdge == .leading {
+                        Capsule(style: .continuous)
+                            .fill(Color.blue.opacity(0.92))
+                            .frame(width: 2.5, height: 20)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, -2)
+                            .transition(.opacity)
+                    } else {
+                        Capsule(style: .continuous)
+                            .fill(Color.blue.opacity(0.92))
+                            .frame(width: 2.5, height: 20)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.trailing, -2)
+                            .transition(.opacity)
+                    }
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if showLockBadge {
                     Image(systemName: "lock.fill")
@@ -924,51 +1020,165 @@ struct MenuBarManagerInfoView: View {
         }
     }
 
-    private func dropTargetBinding(for lane: PlacementLane) -> Binding<Bool> {
-        Binding(
-            get: { activeDropPlacement == lane },
-            set: { isTargeted in
-                if isTargeted {
-                    activeDropPlacement = lane
-                } else if activeDropPlacement == lane {
-                    activeDropPlacement = nil
-                }
+    private func placementDropDelegate(
+        for lane: PlacementLane,
+        destinationResolver: @escaping (DropInfo) -> PlacementDropDestination
+    ) -> PlacementDropDelegate {
+        PlacementDropDelegate(
+            onEntered: { info in
+                handlePlacementHover(
+                    lane: lane,
+                    destination: destinationResolver(info)
+                )
+            },
+            onUpdated: { info in
+                handlePlacementHover(
+                    lane: lane,
+                    destination: destinationResolver(info)
+                )
+            },
+            onExited: {
+                // Intentionally no-op: item-level exit events are noisy while dragging across siblings.
+            },
+            onPerformDrop: { info in
+                handlePlacementDrop(
+                    providers: info.itemProviders(for: [UTType.text.identifier]),
+                    to: lane,
+                    destination: destinationResolver(info)
+                )
             }
         )
     }
 
+    private func handlePlacementHover(
+        lane: PlacementLane,
+        destination: PlacementDropDestination
+    ) {
+        guard let draggedID = draggingPlacementItemID else {
+            updateActivePlacementIndicator(for: lane, destination: destination, draggedID: nil)
+            return
+        }
+
+        if case .item(let targetID, _) = destination,
+           targetID == draggedID {
+            return
+        }
+
+        updateActivePlacementIndicator(for: lane, destination: destination, draggedID: draggedID)
+        previewDraggedItemMove(draggedID: draggedID, to: lane, destination: destination)
+    }
+
+    private func placementChipDropWidth(for item: MenuBarFloatingItemSnapshot) -> CGFloat {
+        MenuBarFloatingIconLayout.nativeIconSize(for: item).width + 16
+    }
+
+    private func destinationForItemHover(
+        targetID: String,
+        lane: PlacementLane,
+        locationX: CGFloat,
+        itemWidth: CGFloat
+    ) -> PlacementDropDestination {
+        let width = max(itemWidth, 1)
+        let x = min(max(locationX, 0), width)
+        let center = width * 0.5
+        let leadingThreshold = width * 0.42
+        let trailingThreshold = width * 0.58
+        let isActiveTarget =
+            activeDropPlacement == lane
+            && activeDropPlacementItemID == targetID
+
+        let edge: PlacementDropEdge
+        if x <= leadingThreshold {
+            edge = .leading
+        } else if x >= trailingThreshold {
+            edge = .trailing
+        } else if isActiveTarget {
+            edge = activeDropPlacementEdge
+        } else {
+            edge = x < center ? .leading : .trailing
+        }
+
+        return .item(targetID, edge)
+    }
+
+    private func updateActivePlacementIndicator(
+        for lane: PlacementLane,
+        destination: PlacementDropDestination,
+        draggedID: String?
+    ) {
+        activeDropPlacement = lane
+        switch destination {
+        case .item(let targetID, let edge):
+            if let draggedID, targetID == draggedID {
+                activeDropPlacementItemID = nil
+                activeDropPlacementEdge = .leading
+                return
+            }
+            activeDropPlacementItemID = targetID
+            activeDropPlacementEdge = edge
+        case .emptyLane:
+            activeDropPlacementItemID = nil
+            activeDropPlacementEdge = .trailing
+        }
+    }
+
     private func handlePlacementDrop(
         providers: [NSItemProvider],
-        to lane: PlacementLane
+        to lane: PlacementLane,
+        destination: PlacementDropDestination
     ) -> Bool {
+        let draggedItemID = draggingPlacementItemID
         let draggedSnapshot = draggingPlacementItemSnapshot
-        draggingPlacementItemID = nil
-        activeDropPlacement = nil
+
+        if let draggedItemID {
+            previewDraggedItemMove(draggedID: draggedItemID, to: lane, destination: destination)
+        }
+
+        let commitDrop: (MenuBarFloatingItemSnapshot, String?) -> Void = { item, previewDraggedID in
+            let previewID = previewDraggedID ?? item.id
+            let beforeID = beforeIDFromPreview(draggedID: previewID, in: lane)
+            applyDroppedPlacement(
+                item,
+                to: lane,
+                before: beforeID
+            )
+            resetPlacementDragState()
+        }
 
         if let draggedSnapshot {
             let immediateItem = resolveDroppedPlacementItem(
                 itemID: draggedSnapshot.id,
                 fallback: draggedSnapshot
             ) ?? draggedSnapshot
-            applyDroppedPlacement(immediateItem, to: lane)
-            draggingPlacementItemSnapshot = nil
+            commitDrop(immediateItem, draggedItemID ?? draggedSnapshot.id)
+            return true
+        }
+
+        if let draggedItemID,
+           let immediateItem = resolveDroppedPlacementItem(itemID: draggedItemID, fallback: nil) {
+            commitDrop(immediateItem, draggedItemID)
             return true
         }
 
         guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else {
-            draggingPlacementItemSnapshot = nil
+            resetPlacementDragState()
             return false
         }
 
         provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let itemID = object as? String else { return }
             DispatchQueue.main.async {
+                if self.draggingPlacementItemID == nil {
+                    self.draggingPlacementItemID = itemID
+                }
+                self.beginDragPreviewIfNeeded()
+                self.previewDraggedItemMove(draggedID: itemID, to: lane, destination: destination)
+
                 guard let item = resolveDroppedPlacementItem(itemID: itemID, fallback: draggedSnapshot) ?? draggedSnapshot else {
-                    draggingPlacementItemSnapshot = nil
+                    resetPlacementDragState()
                     return
                 }
-                applyDroppedPlacement(item, to: lane)
-                draggingPlacementItemSnapshot = nil
+                commitDrop(item, itemID)
             }
         }
 
@@ -977,7 +1187,8 @@ struct MenuBarManagerInfoView: View {
 
     private func applyDroppedPlacement(
         _ item: MenuBarFloatingItemSnapshot,
-        to lane: PlacementLane
+        to lane: PlacementLane,
+        before targetItemID: String?
     ) {
         if lane != .visible,
            floatingBarManager.nonHideableReason(for: item) != nil {
@@ -997,6 +1208,157 @@ struct MenuBarManagerInfoView: View {
             floatingBarManager.setPlacement(.floating, for: item)
             floatingBarManager.setFloatingBarInclusion(true, for: item)
         }
+        floatingBarManager.reorderSettingsItem(
+            itemID: item.id,
+            to: managerLane(for: lane),
+            before: targetItemID
+        )
+    }
+
+    private func managerLane(
+        for lane: PlacementLane
+    ) -> MenuBarFloatingBarManager.SettingsLane {
+        switch lane {
+        case .visible:
+            return .visible
+        case .hidden:
+            return .hidden
+        case .alwaysHidden:
+            return .alwaysHidden
+        case .floatingBar:
+            return .floatingBar
+        }
+    }
+
+    private func displayedItemIDs(for lane: PlacementLane) -> [String] {
+        if let previewIDs = dragPreviewOrderByLane[lane] {
+            return previewIDs
+        }
+
+        let lanes = floatingBarManager.settingsLaneItems()
+        switch lane {
+        case .visible:
+            return lanes.visible.map(\.id)
+        case .hidden:
+            return lanes.hidden.map(\.id)
+        case .alwaysHidden:
+            return lanes.alwaysHidden.map(\.id)
+        case .floatingBar:
+            return lanes.floatingBar.map(\.id)
+        }
+    }
+
+    private func insertionIndex(
+        in destinationIDs: [String],
+        destination: PlacementDropDestination
+    ) -> Int {
+        switch destination {
+        case .item(let targetID, let edge):
+            guard let targetIndex = destinationIDs.firstIndex(of: targetID) else {
+                return destinationIDs.count
+            }
+            if edge == .trailing {
+                return min(targetIndex + 1, destinationIDs.count)
+            }
+            return targetIndex
+        case .emptyLane:
+            return destinationIDs.count
+        }
+    }
+
+    private func beforeIDFromPreview(
+        draggedID: String,
+        in lane: PlacementLane
+    ) -> String? {
+        let laneIDs = dragPreviewOrderByLane[lane] ?? displayedItemIDs(for: lane)
+        guard let draggedIndex = laneIDs.firstIndex(of: draggedID) else { return nil }
+        let nextIndex = draggedIndex + 1
+        guard nextIndex < laneIDs.count else { return nil }
+        return laneIDs[nextIndex]
+    }
+
+    private func beginDragPreviewIfNeeded() {
+        guard dragPreviewOrderByLane.isEmpty else { return }
+        let lanes = floatingBarManager.settingsLaneItems()
+        let snapshot: [PlacementLane: [String]] = [
+            .visible: lanes.visible.map(\.id),
+            .hidden: lanes.hidden.map(\.id),
+            .alwaysHidden: lanes.alwaysHidden.map(\.id),
+            .floatingBar: lanes.floatingBar.map(\.id),
+        ]
+        dragPreviewOrderByLane = snapshot
+    }
+
+    private func displayedItems(
+        for lane: PlacementLane,
+        fallback: [MenuBarFloatingItemSnapshot]
+    ) -> [MenuBarFloatingItemSnapshot] {
+        guard !dragPreviewOrderByLane.isEmpty else { return fallback }
+        guard let previewIDs = dragPreviewOrderByLane[lane] else { return fallback }
+
+        var itemByID = [String: MenuBarFloatingItemSnapshot]()
+        itemByID.reserveCapacity(max(floatingBarManager.settingsItems.count, fallback.count))
+        for item in floatingBarManager.settingsItems where itemByID[item.id] == nil {
+            itemByID[item.id] = item
+        }
+        for item in fallback where itemByID[item.id] == nil {
+            itemByID[item.id] = item
+        }
+        if let draggingPlacementItemSnapshot,
+           itemByID[draggingPlacementItemSnapshot.id] == nil {
+            itemByID[draggingPlacementItemSnapshot.id] = draggingPlacementItemSnapshot
+        }
+
+        var presented = previewIDs.compactMap { itemByID[$0] }
+        let presentedIDs = Set(presented.map(\.id))
+        for item in fallback where !presentedIDs.contains(item.id) {
+            presented.append(item)
+        }
+        return presented
+    }
+
+    private func previewDraggedItemMove(
+        draggedID: String,
+        to lane: PlacementLane,
+        destination: PlacementDropDestination
+    ) {
+        if case .item(let targetID, _) = destination,
+           targetID == draggedID {
+            return
+        }
+        beginDragPreviewIfNeeded()
+
+        var nextOrder = dragPreviewOrderByLane
+
+        for laneKey in PlacementLane.allCases {
+            nextOrder[laneKey] = (nextOrder[laneKey] ?? []).filter { $0 != draggedID }
+        }
+
+        var destinationIDs = nextOrder[lane] ?? []
+        let index = insertionIndex(
+            in: destinationIDs,
+            destination: destination
+        )
+        if index <= destinationIDs.count {
+            destinationIDs.insert(draggedID, at: index)
+        } else {
+            destinationIDs.append(draggedID)
+        }
+        nextOrder[lane] = destinationIDs
+
+        guard nextOrder != dragPreviewOrderByLane else { return }
+        withAnimation(.interactiveSpring(response: 0.22, dampingFraction: 0.86, blendDuration: 0.08)) {
+            dragPreviewOrderByLane = nextOrder
+        }
+    }
+
+    private func resetPlacementDragState() {
+        draggingPlacementItemID = nil
+        activeDropPlacement = nil
+        activeDropPlacementItemID = nil
+        activeDropPlacementEdge = .leading
+        draggingPlacementItemSnapshot = nil
+        dragPreviewOrderByLane.removeAll()
     }
 
     private func resolveDroppedPlacementItem(
@@ -1073,8 +1435,7 @@ struct MenuBarManagerInfoView: View {
     private func installMouseUpEventMonitor() {
         guard mouseUpEventMonitor == nil else { return }
         mouseUpEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { event in
-            self.draggingPlacementItemID = nil
-            self.draggingPlacementItemSnapshot = nil
+            self.resetPlacementDragState()
             return event
         }
     }
@@ -1137,7 +1498,7 @@ struct MenuBarManagerInfoView: View {
     
     private var buttonSection: some View {
         HStack(spacing: 8) {
-            Button("Close") { dismiss() }
+            Button("Close") { closePanelOrDismiss(panelCloseAction, dismiss: dismiss) }
                 .buttonStyle(DroppyPillButtonStyle(size: .small))
             
             Spacer()
@@ -1150,7 +1511,7 @@ struct MenuBarManagerInfoView: View {
                 } label: {
                     Text("Enable")
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: .blue, size: .small))
+                .buttonStyle(DroppyAccentButtonStyle(color: AdaptiveColors.selectionBlueAuto, size: .small))
             }
         }
         .padding(DroppySpacing.lg)
