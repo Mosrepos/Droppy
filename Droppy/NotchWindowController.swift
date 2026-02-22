@@ -711,7 +711,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         // CRITICAL: Raise window level to Shielding to be visible above lock screen wallpaper
         // Also ensure collection behavior allows it to persist
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         
         // CRITICAL: Bring to front of the shielding level
         window.orderFrontRegardless()
@@ -731,7 +731,7 @@ final class NotchWindowController: NSObject, ObservableObject {
             // Restore standard desktop window properties (recycling the window)
             // This prevents SwiftUI view recreation and the associated 'jump' animations
             window.level = .statusBar
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
             window.isOnLockScreen = false
             window.ignoresMouseEvents = true // Reset to safe idle state
             
@@ -1039,7 +1039,7 @@ final class NotchWindowController: NSObject, ObservableObject {
         lastActiveSpaceTransitionAt = Date()
         checkFullscreenState()
 
-        let requiredBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        let requiredBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         for window in notchWindows.values {
             window.collectionBehavior.formUnion(requiredBehavior)
         }
@@ -1050,6 +1050,9 @@ final class NotchWindowController: NSObject, ObservableObject {
             guard let self else { return }
             self.applyWindowOrderingPolicy()
             for (displayID, window) in self.notchWindows where self.shouldOrderWindowFront(on: displayID) {
+                window.orderFrontRegardless()
+            }
+            for window in self.notchWindows.values where window.isVisible {
                 window.orderFrontRegardless()
             }
             self.updateAllWindowsMouseEventHandling()
@@ -2686,10 +2689,11 @@ final class NotchWindowController: NSObject, ObservableObject {
         } else {
             // Lock screen not enabled, just reset window state normally
             for window in notchWindows.values {
-                window.level = .init(Int(CGShieldingWindowLevel()) + 2)
+                window.level = .statusBar
                 window.ignoresMouseEvents = true
                 window.ignoresMouseEvents = false
                 window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+                window.orderFrontRegardless()
                 window.updateMouseEventHandling()
             }
         }
@@ -3645,7 +3649,7 @@ class NotchWindow: NSPanel {
         self.backgroundColor = .clear
         self.hasShadow = false
         self.level = .statusBar
-        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         self.isMovableByWindowBackground = false
         self.hidesOnDeactivate = false
         
