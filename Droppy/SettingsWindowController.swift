@@ -46,15 +46,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Shows the settings window with optional extension detail panel
     /// - Parameter extensionType: If provided, will navigate to Extensions and open this extension's detail panel
     func showSettings(openingExtension extensionType: ExtensionType?) {
-        let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
-            pendingExtensionToOpen = nil
-            pendingTabToOpen = nil
-            close()
-            LicenseWindowController.shared.show()
-            return
-        }
-
         // Full settings takes precedence over the lightweight MBM quick window.
         closeMenuBarManagerQuickSettings()
 
@@ -144,16 +135,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Opens a lightweight window that renders only Menu Bar Manager settings.
     /// Used by the menu-bar context menu path for faster startup than full SettingsView.
     func showMenuBarManagerQuickSettings() {
-        let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
-            pendingExtensionToOpen = nil
-            pendingTabToOpen = nil
-            close()
-            closeMenuBarManagerQuickSettings()
-            LicenseWindowController.shared.show()
-            return
-        }
-
         // If full settings is already open, route to the extension detail panel there.
         if let window {
             cancelSettingsDeferredTeardown()
@@ -380,3 +361,4 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 }
+

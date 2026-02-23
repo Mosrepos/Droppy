@@ -70,14 +70,13 @@ struct DroppyMenuContent: View {
     @AppStorage(AppPreferenceKey.showIdleNotchOnExternalDisplays) private var showIdleNotchOnExternalDisplays = PreferenceDefault.showIdleNotchOnExternalDisplays
     
     // Check if Quickshare menu bar is enabled
-    // Check if Quickshare menu bar is enabled
     @AppStorage(AppPreferenceKey.showQuickshareInMenuBar) private var showQuickshareInMenuBar = PreferenceDefault.showQuickshareInMenuBar
 
     // Check if Clipboard menu bar is enabled
     @AppStorage(AppPreferenceKey.showClipboardInMenuBar) private var showClipboardInMenuBar = PreferenceDefault.showClipboardInMenuBar
     @AppStorage(AppPreferenceKey.todoInstalled) private var todoInstalled = PreferenceDefault.todoInstalled
     @AppStorage(AppPreferenceKey.todoShowUpcomingInMenuBar) private var showUpcomingInMenuBar = PreferenceDefault.todoShowUpcomingInMenuBar
-    @ObservedObject private var licenseManager = LicenseManager.shared
+    
     
     // Check if extensions are disabled
     private var isElementCaptureDisabled: Bool {
@@ -91,63 +90,7 @@ struct DroppyMenuContent: View {
     }
     
     var body: some View {
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
-            Button {
-                LicenseWindowController.shared.show()
-            } label: {
-                Label("Activate License…", systemImage: "key.fill")
-            }
-            
-            if licenseManager.canStartTrial {
-                Button {
-                    if licenseManager.needsEmailForTrialStart {
-                        LicenseWindowController.shared.show()
-                    } else {
-                        Task {
-                            if await licenseManager.startTrial() {
-                                HapticFeedback.expand()
-                            } else {
-                                HapticFeedback.error()
-                            }
-                        }
-                    }
-                } label: {
-                    Label("Start 3-Day Trial", systemImage: "clock.badge.checkmark")
-                }
-
-                if licenseManager.needsEmailForTrialStart {
-                    Text("Enter purchase email in Activate window to start trial.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text(licenseManager.trialStatusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Label("Quit Droppy", systemImage: "power")
-            }
-            .keyboardShortcut("q", modifiers: .command)
-        } else {
-            Group {
-            if licenseManager.requiresLicenseEnforcement && licenseManager.isTrialActive && !licenseManager.isActivated {
-                Text(licenseManager.trialStatusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button {
-                    LicenseWindowController.shared.show()
-                } label: {
-                    Label("Activate License…", systemImage: "key.fill")
-                }
-                Divider()
-            }
-
+        Group {
             // Show/Hide Notch or Dynamic Island toggle
             // Also available when idle surface is kept visible without shelf interactions.
             if enableNotchShelf || showIdleNotchOnExternalDisplays {
@@ -164,18 +107,18 @@ struct DroppyMenuContent: View {
                         Label("Hide \(notchController.displayModeLabel)", systemImage: "eye.slash")
                     }
                 }
-                
+
                 Divider()
             }
-            
+
             Button {
                 UpdateChecker.shared.checkAndNotify()
             } label: {
                 Label("Check for Updates…", systemImage: "arrow.clockwise")
             }
-            
+
             Divider()
-            
+
             if showQuickshareInMenuBar && !ExtensionType.quickshare.isRemoved {
                 Menu {
                     QuickshareMenuContent()
@@ -183,7 +126,7 @@ struct DroppyMenuContent: View {
                     Label("Quickshare", systemImage: "drop.fill")
                 }
             }
-            
+
             // Clipboard Menu (New)
             if showClipboardInMenuBar {
                 Menu {
@@ -199,24 +142,24 @@ struct DroppyMenuContent: View {
                                 Label(item.title, systemImage: iconFor(item: item))
                             }
                         }
-                        
+
                         Divider()
-                        
+
                         Button(role: .destructive) {
                             clipboardManager.clearAllHistory()
                         } label: {
                             Label("Clear History", systemImage: "trash")
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     Button {
                         ClipboardWindowController.shared.show()
                     } label: {
                         Label("Manage…", systemImage: "list.bullet.rectangle")
                     }
-                    
+
                 } label: {
                     Label("Clipboard", systemImage: "clipboard")
                 }
@@ -277,30 +220,30 @@ struct DroppyMenuContent: View {
                     Label("Upcoming", systemImage: "calendar.badge.clock")
                 }
             }
-            
+
             // Element Capture submenu (hidden when disabled)
             if !isElementCaptureDisabled {
                 elementCaptureMenu
                     .id(shortcutRefreshId)  // Force rebuild when shortcut changes
             }
-            
+
             // Window Snap submenu (hidden when disabled)
             if !isWindowSnapDisabled {
                 windowSnapMenu
                     .id(shortcutRefreshId)
             }
-            
+
             Divider()
-            
+
             Button {
                 SettingsWindowController.shared.showSettings()
             } label: {
                 Label("Settings…", systemImage: "gear")
             }
             .keyboardShortcut(",", modifiers: .command)
-            
+
             Divider()
-            
+
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {
@@ -316,7 +259,6 @@ struct DroppyMenuContent: View {
             .onReceive(NotificationCenter.default.publisher(for: .extensionStateChanged)) { _ in
                 // Refresh when extension is disabled/enabled
                 shortcutRefreshId = UUID()
-            }
             }
         }
     }
@@ -670,16 +612,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppPreferenceKey.enableMultiBasket: PreferenceDefault.enableMultiBasket,
             AppPreferenceKey.quickActionsMailApp: PreferenceDefault.quickActionsMailApp,
             AppPreferenceKey.quickActionsCloudProvider: PreferenceDefault.quickActionsCloudProvider,
-            AppPreferenceKey.gumroadLicenseActive: PreferenceDefault.gumroadLicenseActive,
-            AppPreferenceKey.gumroadLicenseEmail: PreferenceDefault.gumroadLicenseEmail,
-            AppPreferenceKey.gumroadLicenseKeyHint: PreferenceDefault.gumroadLicenseKeyHint,
-            AppPreferenceKey.gumroadLicenseDeviceName: PreferenceDefault.gumroadLicenseDeviceName,
-            AppPreferenceKey.gumroadLicenseLastValidatedAt: PreferenceDefault.gumroadLicenseLastValidatedAt,
-            AppPreferenceKey.licenseTrialConsumed: PreferenceDefault.licenseTrialConsumed,
-            AppPreferenceKey.licenseTrialStartedAt: PreferenceDefault.licenseTrialStartedAt,
-            AppPreferenceKey.licenseTrialExpiresAt: PreferenceDefault.licenseTrialExpiresAt,
-            AppPreferenceKey.licenseTrialLastRemoteSyncAt: PreferenceDefault.licenseTrialLastRemoteSyncAt,
-            AppPreferenceKey.licenseTrialAccountHash: PreferenceDefault.licenseTrialAccountHash,
             AppPreferenceKey.terminalNotchExternalApp: PreferenceDefault.terminalNotchExternalApp,
             AppPreferenceKey.cameraPreferredDeviceID: PreferenceDefault.cameraPreferredDeviceID,
             AppPreferenceKey.telepromptyInstalled: PreferenceDefault.telepromptyInstalled,
@@ -765,49 +697,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnalyticsService.shared.logAppLaunch()
 
         startMemoryPressureMonitoring()
-        configureLicenseFlow()
-    }
-
-    private func configureLicenseFlow() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleLicenseStateDidChange(_:)),
-            name: .licenseStateDidChange,
-            object: nil
-        )
-
-        let licenseManager = LicenseManager.shared
-        licenseManager.bootstrap()
-
-        if !licenseManager.requiresLicenseEnforcement || licenseManager.hasAccess {
-            startLicensedFeaturesIfNeeded()
-            showOnboardingIfNeeded()
-        } else {
-            stopLicensedFeatures()
-            ClipboardManager.shared.stopMonitoring()
-            SettingsWindowController.shared.close()
-            LicenseWindowController.shared.show(activationMode: .onlyIfAlreadyActive)
-        }
-    }
-
-    @objc
-    private func handleLicenseStateDidChange(_ notification: Notification) {
-        let licenseManager = LicenseManager.shared
-        guard licenseManager.requiresLicenseEnforcement else { return }
-
-        if licenseManager.hasAccess {
-            let licenseWindowWasVisible = LicenseWindowController.shared.isVisible
-            startLicensedFeaturesIfNeeded()
-            if !licenseWindowWasVisible {
-                showOnboardingIfNeeded()
-            }
-        } else {
-            stopLicensedFeatures()
-            SettingsWindowController.shared.close()
-            DispatchQueue.main.async {
-                LicenseWindowController.shared.show(activationMode: .onlyIfAlreadyActive)
-            }
-        }
+        startLicensedFeaturesIfNeeded()
+        showOnboardingIfNeeded()
     }
 
     private func startLicensedFeaturesIfNeeded() {
@@ -982,12 +873,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         backgroundMemoryReclaimWorkItem?.cancel()
         backgroundMemoryReclaimWorkItem = nil
-
-        let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
-            LicenseWindowController.shared.show()
-            return
-        }
 
         showOnboardingIfNeeded()
 
@@ -1171,3 +1056,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+

@@ -26,16 +26,6 @@ struct URLSchemeHandler {
     static func handle(_ url: URL) {
         print("🔗 URLSchemeHandler: Received URL: \(url.absoluteString)")
 
-        let licenseManager = LicenseManager.shared
-        if licenseManager.requiresLicenseEnforcement && !licenseManager.hasAccess {
-            print("🔒 URLSchemeHandler: Blocked while license is not active")
-            DispatchQueue.main.async {
-                NSApp.activate(ignoringOtherApps: true)
-                LicenseWindowController.shared.show()
-            }
-            return
-        }
-        
         // Parse the action from the host component (e.g., "add")
         guard let host = url.host else {
             print("⚠️ URLSchemeHandler: No action specified in URL")
@@ -203,3 +193,4 @@ struct URLSchemeHandler {
         }
     }
 }
+
